@@ -73,7 +73,7 @@ Function Select-Item {
     $i = 1
     foreach ($item in $items) {
         Write-Host "$i. $item"
-        $i++ 
+        $i++
     }
 
     $userChoice = Read-Host "Enter the number of your choice"
@@ -130,6 +130,7 @@ Function Select-ATCStream {
     return @{
         StreamUrl = $selectedStream.'Stream URL'
         WebcamUrl = $selectedStream.'Webcam URL'
+        AirportInfo = $selectedStream
     }
 }
 
@@ -145,8 +146,174 @@ Function Get-RandomATCStream {
     return @{
         StreamUrl = $selectedStream.'Stream URL'
         WebcamUrl = $selectedStream.'Webcam URL'
+        AirportInfo = $selectedStream
     }
 }
+
+# Function to fetch METAR and TAF data from the web
+# Function Get-METAR-TAF {
+#     param (
+#         [string]$ICAO
+#     )
+#     $url = "https://metar-taf.com/$ICAO"
+#     try {
+#         $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+#         $metarDescription = if ($response.Content -match '<meta name="description" content="([^"]+)">') {
+#             $matches[1]
+#         }
+#         return $metarDescription
+#     } catch {
+#         Write-Error "Failed to fetch METAR/TAF data for $ICAO."
+#         return "METAR/TAF data unavailable."
+#     }
+# }
+Function Get-METAR-TAF {
+    param (
+        [string]$ICAO
+    )
+    $url = "https://metar-taf.com/$ICAO"
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $metarDescription = if ($response.Content -match '<meta name="description" content="([^"]+)">') {
+            $matches[1]
+        }
+
+        # Extract the METAR string before the first period
+        if ($metarDescription) {
+            $rawMETAR = $metarDescription -split "\.", 2
+            return $rawMETAR[0].Trim()
+        } else {
+            return "METAR/TAF data unavailable."
+        }
+    } catch {
+        Write-Error "Failed to fetch METAR/TAF data for $ICAO."
+        return "METAR/TAF data unavailable."
+    }
+}
+
+# Decoding METAR message
+Function Decode-METAR {
+    param (
+        [string]$metar
+    )
+
+    # Initialize a hashtable for the decoded values
+    $decoded = @{}
+
+    # Match wind information, including gusts
+    if ($metar -match "(?<windDir>\d{3})(?<windSpeed>\d{2})(G(?<gustSpeed>\d{2}))?KT") {
+        $decoded["Wind"] = if ($matches.gustSpeed) {
+            "$($matches.windDir)° at $($matches.windSpeed) knots, gusting to $($matches.gustSpeed) knots"
+        } else {
+            "$($matches.windDir)° at $($matches.windSpeed) knots"
+        }
+    }
+
+    # Match visibility
+    if ($metar -match "(?<visibility>9999)") {
+        $decoded["Visibility"] = "10+ km (Unlimited)"
+    } elseif ($metar -match "\b(?<visibility>\d{4})\b") {
+        $decoded["Visibility"] = "$([int]$matches.visibility / 1000) km"
+    } elseif ($metar -match "(?<visibility>\d+SM)") {
+        $decoded["Visibility"] = "$([math]::Round([double]($matches.visibility -replace 'SM','') * 1.60934, 3)) km"
+    } else {
+        $decoded["Visibility"] = "Unavailable"
+    }
+
+    # Match cloud coverage and ceiling, including vertical visibility
+    if ($metar -match "VV(?<vv>\d{3})") {
+        $decoded["Ceiling"] = "Vertical Visibility at $([int]$matches.vv * 100) ft"
+    } elseif ($metar -match "(?<clouds>BKN|OVC|SCT|FEW)(?<ceiling>\d{3})") {
+        $cloudType = switch ($matches.clouds) {
+            "BKN" { "Broken" }
+            "OVC" { "Overcast" }
+            "SCT" { "Scattered" }
+            "FEW" { "Few" }
+            default { $matches.clouds }
+        }
+        $decoded["Ceiling"] = "$cloudType at $([int]$matches.ceiling * 100) ft"
+    } else {
+        $decoded["Ceiling"] = "Unavailable"
+    }
+
+    # Match temperature and dew point
+    if ($metar -match "(?<temp>-?\d{1,2})/(?<dew>-?\d{1,2}|M\d{1,2})") {
+        $decoded["Temperature"] = if ($matches.temp -eq "-00") { "0°C" } else { "$($matches.temp)°C" }
+        $decoded["DewPoint"] = if ($matches.dew -eq "-00") { "0°C" } elseif ($matches.dew -like "M*") {
+            "-" + ($matches.dew.Trim('M')) + "°C"
+        } else {
+            "$($matches.dew)°C"
+        }
+    } else {
+        $decoded["Temperature"] = "Unavailable"
+        $decoded["DewPoint"] = "Unavailable"
+    }
+
+    # Match pressure in hPa (e.g., Q1023) or inHg (e.g., A2996)
+    if ($metar -match "Q(?<pressureHPA>\d{4})") {
+        $decoded["Pressure"] = "$([int]$matches.pressureHPA) hPa"
+    } elseif ($metar -match "A(?<pressureINHG>\d{4})") {
+        $pressureHPA = [double]($matches.pressureINHG / 100) * 33.8639
+        $decoded["Pressure"] = "$([math]::Round($pressureHPA, 1)) hPa"
+    } else {
+        $decoded["Pressure"] = "Unavailable"
+    }
+
+    # Return as a custom object
+    return [PSCustomObject]$decoded
+}
+
+
+Function Get-AiportDateTime {
+    param (
+        [string]$ICAO
+    )
+    $url = "https://metar-taf.com/$ICAO"
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $dateAndTime = if ($response.Content -match '<div class="d-flex align-items-center m-auto text-nowrap px-3">\s*<span class="[^"]+">([^<]+)</span>\s*([^<]+)\s*</div>') {
+            ($matches[1].Trim() + " " + $matches[2].Trim())
+        }
+        return $dateAndTime
+    } catch {
+        Write-Error "Date and time not found for $ICAO."
+        return "Date/time data unavailable"
+    }
+}
+
+# Function to display welcome message
+Function Display-Welcome {
+    param (
+        [object]$airportInfo
+    )
+
+    # Fetch raw METAR
+    $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
+
+    # Decode METAR into structured data
+    $decodedMetar = Decode-METAR -metar $metar
+
+    # Fetch current airport date/time
+    $airportDateTime = Get-AiportDateTime -ICAO $airportInfo.ICAO
+
+    # Display welcome message
+    Write-Output "`nWelcome to $($airportInfo.'Airport Name')!"
+    Write-Output "City: $($airportInfo.City), Country: $($airportInfo.Country)"
+    Write-Output "ICAO: $($airportInfo.'ICAO')`n"
+
+    # Display raw and decoded METAR
+    Write-Output "Weather Info:"
+    Write-Output "Wind: $($decodedMetar.Wind)"
+    Write-Output "Visibility: $($decodedMetar.Visibility)"
+    Write-Output "Ceiling: $($decodedMetar.Ceiling)"
+    Write-Output "Temperature: $($decodedMetar.Temperature) | Dew Point: $($decodedMetar.DewPoint)"
+    Write-Output "Pressure: $($decodedMetar.Pressure)"
+    Write-Output "Raw: $metar`n"
+
+    Write-Output "Channel: $($airportInfo.'Channel Description')"
+    Write-Output "Current Date/Time: $airportDateTime"
+}
+
 
 # Function to start VLC with a given URL
 Function Start-VLC {
@@ -179,6 +346,7 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Host "Selected random ATC stream: $selectedATCUrl" -ForegroundColor Green
+    Display-Welcome -airportInfo $selectedATC.AirportInfo
 } else {
     $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
     Write-Host "Selected continent: $selectedContinent" -ForegroundColor Green
@@ -190,6 +358,7 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Host "Selected ATC stream: $selectedATCUrl" -ForegroundColor Green
+    Display-Welcome -airportInfo $selectedATC.AirportInfo
 }
 
 # Starting the ATC audio stream
