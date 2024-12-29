@@ -23,7 +23,7 @@ git clone https://github.com/RoMinjun/lofiatc.ps1.git
 ```
 
 > [!TIP]
-Check the possibilities of script using `Get-Help` 
+Check the possibilities of the script using `Get-Help` 
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
