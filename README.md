@@ -3,6 +3,10 @@ lofiatc alternative using PowerShell and VLC
 
 # Gettings Started
 
+## Requirements
+- VLC
+- PowerShell 5.1 or later
+
 ## Clone repo locally
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
