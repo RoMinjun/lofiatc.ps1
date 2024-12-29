@@ -9,7 +9,7 @@ a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC, allow
 # Gettings Started
 
 ## Requirements
-- VLC Media Player
+- VLC Media Player (Can be installed using winget: `winget install -e --id VideoLAN.VLC`)  
 - PowerShell 5.1 or later
 
 ## Clone repo locally
