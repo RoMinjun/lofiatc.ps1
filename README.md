@@ -4,7 +4,9 @@ lofiatc alternative using PowerShell and VLC
 # Gettings Started
 
 ## Clone repo locally
+```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
+```
 
 ## Run script
 ```powershell
