@@ -1,10 +1,10 @@
 # lofiatc.ps1
-lofiatc alternative using PowerShell and VLC
+[lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC
 
 # Gettings Started
 
 ## Requirements
-- VLC
+- VLC Media Player
 - PowerShell 5.1 or later
 
 ## Clone repo locally
