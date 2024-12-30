@@ -5,7 +5,8 @@ Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Ground,https://www.liveatc.net
 Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Del/Tower/TCA/Ground,https://www.liveatc.net/play/rjtt_gnd.pls
 Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Company Channels,https://www.liveatc.net/play/rjtt2.pls
 Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Control,https://www.liveatc.net/play/rjtt_control.pls
-Asia,Japan,Tokyo,Narita International Airport,RJAA,Tower,https://www.liveatc.net/play/rjaa_twr.pls
+Asia,Japan,Tokyo,Narita International Airport,RJAA,Tower,https://www.liveatc.net/play/rjaa_twr.pls,https://youtu.be/jWCdG6mTTkk
+Asia,Japan,Tokyo,Narita International Airport,RJAA,Approach,https://www.liveatc.net/play/rjaa_app_s.pls,https://youtu.be/jWCdG6mTTkk
 Asia,Hong Kong,Hong Kong,Hong Kong International - Chek Lap Kok,VHHH,Approach/Departure/Dir/Zone,https://www.liveatc.net/play/vhhh5.pls
 Asia,Russia,Novosibirsk,Tolmachevo Airport,UNNT,Ground/Tower/Approach/Radar/Misc,https://www.liveatc.net/play/unnt.pls
 Asia,Taiwan,Taipei,Taipei Songshan Airport,RCSS,Tower/Approach/Departure,https://www.liveatc.net/play/rcss2.pls
@@ -60,6 +61,6 @@ South America,Costa Rica,San Jose,Juan Santamaria International Airport,MROC,Del
 Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,Brisbane Center (128.6),https://www.liveatc.net/play/yssy1_ctr_128600.pls
 Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,Brisbane Center (129.000),https://www.liveatc.net/play/ybbn9_ctr.pls
 Oceania,Australia,Melbourne,Melbourne International Airport,YMML,Tower/Approach/Center,https://www.liveatc.net/play/ymml3.pls
-Africa,Reunion,Rolland Garros Airport,FMEE,Approach/Departure,https://www.liveatc.net/play/fmee3.pls
-Africa,Mauritius,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #1,https://www.liveatc.net/play/fimp.pls
-Africa,Mauritius,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #2,https://www.liveatc.net/play/fimp2.pls
+Africa,Reunion,Sainte-Marie,Rolland Garros Airport,FMEE,Approach/Departure,https://www.liveatc.net/play/fmee3.pls
+Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #1,https://www.liveatc.net/play/fimp.pls
+Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #2,https://www.liveatc.net/play/fimp2.pls
