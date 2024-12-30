@@ -61,7 +61,7 @@ Function Import-ATCSources {
     return Import-Csv -Path $csvPath
 }
 
-# Function to select an item from a list
+#Function to select an item from a list
 Function Select-Item {
     param (
         [string]$prompt,
@@ -92,7 +92,7 @@ Function Select-Item {
     exit
 }
 
-# Function to select an ATC stream
+#Function to select an ATC stream
 Function Select-ATCStream {
     param (
         [array]$atcSources,
@@ -102,7 +102,10 @@ Function Select-ATCStream {
 
     Clear-Host
     # Filter ATC sources by selected continent and country
-    $choices = $atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $continent.Trim().ToLower() -and $_.Country.Trim().ToLower() -eq $country.Trim().ToLower() }
+    $choices = $atcSources | Where-Object {
+        $_.Continent.Trim().ToLower() -eq $continent.Trim().ToLower() -and
+        $_.Country.Trim().ToLower() -eq $country.Trim().ToLower()
+    }
 
     if ($choices.Count -eq 0) {
         Write-Error "No ATC streams available for the selected country."
@@ -111,18 +114,21 @@ Function Select-ATCStream {
 
     Write-Host "Select an airport from ${country}:" -ForegroundColor Yellow
     # Get unique city and airport name combinations
-    $airports = $choices | Select-Object @{Name="CityAirport";Expression={ "[{0}] {1}" -f $_.City, $_.'Airport Name' }} | Sort-Object -Property CityAirport -Unique
+    $airports = $choices | Select-Object @{Name = "CityAirport"; Expression = { "[{0}] {1}" -f $_.City, $_.'Airport Name' }} | Sort-Object -Property CityAirport -Unique
     $selectedAirport = Select-Item -prompt "Select an airport:" -items $airports.CityAirport
+
     # Filter choices by selected airport
-    $airportChoices = $choices | Where-Object { "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq $selectedAirport }
+    $airportChoices = $choices | Where-Object {
+        "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq $selectedAirport
+    }
 
     if ($airportChoices.Count -gt 1) {
-        Write-Host "Select a category for ${selectedAirport}:" -ForegroundColor Yellow
-        # Get unique categories for the selected airport
-        $categories = $airportChoices | Select-Object -ExpandProperty 'Channel Description' | Sort-Object -Property 'Channel Description' -Unique
-        $selectedCategory = Select-Item -prompt "Select a category:" -items $categories
-        # Filter choices by selected category
-        $selectedStream = $airportChoices | Where-Object { $_.'Channel Description' -eq $selectedCategory }
+        Write-Host "Select a channel for ${selectedAirport}:" -ForegroundColor Yellow
+        # Get unique channel descriptions for the selected airport
+        $channels = $airportChoices | Select-Object -ExpandProperty 'Channel Description' | Sort-Object -Unique
+        $selectedChannel = Select-Item -prompt "Select a channel:" -items $channels
+        # Filter choices by selected channel
+        $selectedStream = $airportChoices | Where-Object { $_.'Channel Description' -eq $selectedChannel }
     } else {
         $selectedStream = $airportChoices[0]
     }
@@ -133,6 +139,7 @@ Function Select-ATCStream {
         AirportInfo = $selectedStream
     }
 }
+
 
 # Function to get a random ATC stream
 Function Get-RandomATCStream {
@@ -150,23 +157,6 @@ Function Get-RandomATCStream {
     }
 }
 
-# Function to fetch METAR and TAF data from the web
-# Function Get-METAR-TAF {
-#     param (
-#         [string]$ICAO
-#     )
-#     $url = "https://metar-taf.com/$ICAO"
-#     try {
-#         $response = Invoke-WebRequest -Uri $url -UseBasicParsing
-#         $metarDescription = if ($response.Content -match '<meta name="description" content="([^"]+)">') {
-#             $matches[1]
-#         }
-#         return $metarDescription
-#     } catch {
-#         Write-Error "Failed to fetch METAR/TAF data for $ICAO."
-#         return "METAR/TAF data unavailable."
-#     }
-# }
 Function Get-METAR-TAF {
     param (
         [string]$ICAO
