@@ -193,9 +193,9 @@ Function ConvertFrom-METAR {
     # Match wind information, including gusts
     if ($metar -match "(?<windDir>\d{3})(?<windSpeed>\d{2})(G(?<gustSpeed>\d{2}))?KT") {
         $decoded["Wind"] = if ($matches.gustSpeed) {
-            "$($matches.windDir)° at $($matches.windSpeed) knots, gusting to $($matches.gustSpeed) knots"
+            "$([int]$matches.windDir)° at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots"
         } else {
-            "$($matches.windDir)° at $($matches.windSpeed) knots"
+            "$([int]$matches.windDir)° at $([int]$matches.windSpeed) knots"
         }
     }
 
@@ -263,7 +263,6 @@ Function ConvertFrom-METAR {
     # Return as a custom object
     return [PSCustomObject]$decoded
 }
-
 
 Function Get-AiportDateTime {
     param (
