@@ -225,15 +225,26 @@ Function ConvertFrom-METAR {
     } else {
         $decoded["Ceiling"] = "Unavailable"
     }
-
     # Match temperature and dew point
     if ($metar -match "(?<temp>-?\d{1,2})/(?<dew>-?\d{1,2}|M\d{1,2})") {
-        $decoded["Temperature"] = if ($matches.temp -eq "-00") { "0°C" } else { "$($matches.temp)°C" }
-        $decoded["DewPoint"] = if ($matches.dew -eq "-00") { "0°C" } elseif ($matches.dew -like "M*") {
-            "-" + ($matches.dew.Trim('M')) + "°C"
-        } else {
-            "$($matches.dew)°C"
+        # Remove leading zeros for temperature
+        $temperature = if ($matches.temp -eq "-00") { 
+            "0°C" 
+        } else { 
+            "$([int]$matches.temp)°C" 
         }
+
+        # Remove leading zeros for dew point
+        $dewPoint = if ($matches.dew -eq "-00") { 
+            "0°C" 
+        } elseif ($matches.dew -like "M*") {
+            "-$([int]($matches.dew.Trim('M')))°C"
+        } else {
+            "$([int]$matches.dew)°C"
+        }
+
+        $decoded["Temperature"] = $temperature
+        $decoded["DewPoint"] = $dewPoint
     } else {
         $decoded["Temperature"] = "Unavailable"
         $decoded["DewPoint"] = "Unavailable"
