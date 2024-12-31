@@ -73,7 +73,7 @@ Function Select-Item {
     $i = 1
     foreach ($item in $items) {
         Write-Host "$i. $item"
-        $i++
+        $i++ 
     }
 
     $userChoice = Read-Host "Enter the number of your choice"
@@ -182,7 +182,7 @@ Function Get-METAR-TAF {
 }
 
 # Decoding METAR message
-Function Decode-METAR {
+Function ConvertFrom-METAR {
     param (
         [string]$metar
     )
@@ -272,7 +272,7 @@ Function Get-AiportDateTime {
 }
 
 # Function to display welcome message
-Function Display-Welcome {
+Function Write-Welcome {
     param (
         [object]$airportInfo
     )
@@ -281,7 +281,7 @@ Function Display-Welcome {
     $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
 
     # Decode METAR into structured data
-    $decodedMetar = Decode-METAR -metar $metar
+    $decodedMetar = ConvertFrom-METAR -metar $metar
 
     # Fetch current airport date/time
     $airportDateTime = Get-AiportDateTime -ICAO $airportInfo.ICAO
@@ -289,7 +289,7 @@ Function Display-Welcome {
     # Display welcome message
     Write-Output "`nWelcome to $($airportInfo.'Airport Name')!"
     Write-Output "City: $($airportInfo.City), Country: $($airportInfo.Country)"
-    Write-Output "ICAO: $($airportInfo.'ICAO')`n"
+    Write-Output "ICAO: $($airportInfo.'ICAO') | IATA: $($airportInfo.'IATA')`n"
 
     # Display raw and decoded METAR
     Write-Output "Weather Info:"
@@ -303,7 +303,6 @@ Function Display-Welcome {
     Write-Output "Channel: $($airportInfo.'Channel Description')"
     Write-Output "Current Date/Time: $airportDateTime"
 }
-
 
 # Function to start VLC with a given URL
 Function Start-VLC {
@@ -336,7 +335,7 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Host "Selected random ATC stream: $selectedATCUrl" -ForegroundColor Green
-    Display-Welcome -airportInfo $selectedATC.AirportInfo
+    Write-Welcome -airportInfo $selectedATC.AirportInfo
 } else {
     $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
     Write-Host "Selected continent: $selectedContinent" -ForegroundColor Green
@@ -348,7 +347,7 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Host "Selected ATC stream: $selectedATCUrl" -ForegroundColor Green
-    Display-Welcome -airportInfo $selectedATC.AirportInfo
+    Write-Welcome -airportInfo $selectedATC.AirportInfo
 }
 
 # Starting the ATC audio stream

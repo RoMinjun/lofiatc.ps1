@@ -1,66 +1,114 @@
-Continent,Country,City,Airport Name,ICAO,Channel Description,Stream URL,Webcam URL
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Approach/Departure,https://www.liveatc.net/play/rjtt_app_dep.pls,https://youtu.be/My-xcE-_9as
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Tower,https://www.liveatc.net/play/rjtt_app.pls
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Ground,https://www.liveatc.net/play/rjtt_gnd.pls
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Del/Tower/TCA/Ground,https://www.liveatc.net/play/rjtt_gnd.pls
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Company Channels,https://www.liveatc.net/play/rjtt2.pls
-Asia,Japan,Tokyo,Tokyo International Airport,RJTT,Control,https://www.liveatc.net/play/rjtt_control.pls
-Asia,Japan,Tokyo,Narita International Airport,RJAA,Tower,https://www.liveatc.net/play/rjaa_twr.pls,https://youtu.be/jWCdG6mTTkk
-Asia,Japan,Tokyo,Narita International Airport,RJAA,Approach,https://www.liveatc.net/play/rjaa_app_s.pls,https://youtu.be/jWCdG6mTTkk
-Asia,Hong Kong,Hong Kong,Hong Kong International - Chek Lap Kok,VHHH,Approach/Departure/Dir/Zone,https://www.liveatc.net/play/vhhh5.pls
-Asia,Russia,Novosibirsk,Tolmachevo Airport,UNNT,Ground/Tower/Approach/Radar/Misc,https://www.liveatc.net/play/unnt.pls
-Asia,Taiwan,Taipei,Taipei Songshan Airport,RCSS,Tower/Approach/Departure,https://www.liveatc.net/play/rcss2.pls
-Asia,Philipines,Manila,Ninoy Aquino International Airport,RPLL,Tower,https://www.liveatc.net/play/rpll.pls
-Europe,Netherlands,Amsterdam,Schiphol International Airport,EHAM,Approach/Departure,https://www.liveatc.net/play/eham_app_119055.pls
-Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,Approach #1,https://www.liveatc.net/play/epwa_app.pls
-Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,Approach #2,https://www.liveatc.net/play/epwa_app2.pls
-Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,Tower,https://www.liveatc.net/play/epwa_twr2.pls
-Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,Ground,https://www.liveatc.net/play/epwa_gnd.pls
-Europe,Poland,Krakow,John Paul II Balice International Airport,EPKK,Tower/Approach,https://www.liveatc.net/play/epkk_app.pls
-Europe,Ireland,Dublin,Dublin International Airport,EIDW,Ground/Tower/Approach/Centre,https://www.liveatc.net/play/eidw8.pls
-Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,Approach,https://www.liveatc.net/play/lhbp_app2.pls
-Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,Ground,https://www.liveatc.net/play/lhbp_gnd.pls
-Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,Tower,https://www.liveatc.net/play/lhbp_twr3.pls
-Europe,Lithuania,Vilnius,Vilnius International Airport,EYVI,Tower/Approach/Misc,https://www.liveatc.net/play/eyvi.pls
-Europe,Norway,Langnes,Tromso Airport,ENTC,Tower/Approach,https://www.liveatc.net/play/entc.pls
-Europe,Norway,Trondheim,Vaernes Airport,ENVA,Ground/Tower/Approach,https://www.liveatc.net/play/enva.pls
-Europe,Portugal,Lisbon,Lisboa Airport,LPPT,Approach,https://www.liveatc.net/play/lppt_app_1191_2.pls
-Europe,Switzerland,Zurich,Zurich International Airport,LSZH,Tower,https://www.liveatc.net/play/lszh1_twr.pls
-Europe,Istanbul, Istanbul Sabiha Gokcen International Airport,LTFJ,Del/Ground/Tower,https://www.liveatc.net/play/ltfj2.pls
-Europe,Russia,Sochi,Sochi International Airport,URSS,Ground/Tower/Approach,https://www.liveatc.net/play/urss.pls
-North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,Approach/Departure,https://www.liveatc.net/play/cyul_app.pls
-North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,Tower,https://www.liveatc.net/play/cyul_twr.pls
-North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,Ground,https://www.liveatc.net/play/cyul_gnd.pls
-North America,Canada,Ottawa,Ottawa Macdonald-Cartier International Airport,CYOW,Ground/Tower/Approach,https://www.liveatc.net/play/cyow3.pls
-North America,Canada,Toronto,Lester B. Pearson International Airport,CYYZ,Tower,https://www.liveatc.net/play/cyyz7.pls
-North America,United States,Chicago,Chicago O'Hare International Airport,KORD,Approach/Departure,https://www.liveatc.net/play/kord_app_dep.pls
-North America,United States,Boston,Boston General Edward Lawrence Logan International Airport,KBOS,Tower,https://www.liveatc.net/play/kbos_twr.pls
-North America,United States,New York,John F Kennedy International Airport,KJFK,Ground/Tower,https://www.liveatc.net/play/kjfk9_s.pls
-North America,United States,New York,John F Kennedy International Airport,KJFK,Departure,https://www.liveatc.net/play/kjfk_dep.pls
-North America,United States,San Diego,San Diego International Airport,KSAN,Tower,https://www.liveatc.net/play/ksan1_twr.pls
-North America,United States,San Diego,San Diego International Airport,KSAN,Ramp/Del/Ground/Tower,https://www.liveatc.net/play/ksan1_all.pls
-North America,United States,Newark,Newark Liberty International Airport,KEWR,Tower #1,https://www.liveatc.net/play/kewr_twr.pls
-North America,United States,Newark,Newark Liberty International Airport,KEWR,Tower #2,https://www.liveatc.net/play/kewr_twr_sf1.pls
-North America,United States,Atlanta,Hartsfield-Jackson Atlanta International Airport,KATL,Tower,https://www.liveatc.net/play/katl_twr.pls
-North America,United States,Long Beach,Long Beach Airport,KLGB,Tower,https://www.liveatc.net/play/klgb_twr.pls
-North America,United States,Hawaii,Honolulu International Airport,PHNL,Del/Ground/Ramp,https://www.liveatc.net/play/phnl1_dgr.pls
-North America,United States,Hawaii,Honolulu International Airport,PHNL,Ground,https://www.liveatc.net/play/phnl1_gnd.pls
-North America,United States,Hawaii,Honolulu International Airport,PHNL,Tower (Primary),https://www.liveatc.net/play/phnl1_twr_pri.pls
-North America,United States,Chicago,Chicago Midway International Airport,KMDW,Tower #1,https://www.liveatc.net/play/kmdw_1.pls
-North America,United States,San Francisco,San Francisco International Airport,KSFO,Ground/Tower,https://www.liveatc.net/play/ksfo_twr.pls
-North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,Tower (Rwys 12R/30L|4/22),https://www.liveatc.net/play/kmsp3_twr_12r.pls
-North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,Tower (Rwy 12L/30R),https://www.liveatc.net/play/kmsp3_twr_12l.pls
-North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,Tower (Rwy 17/35),https://www.liveatc.net/play/kmsp3_twr_1735.pls
-South America,Brazil,Fortaleza,Pinto Martins International Airport,SBFZ,Gnd/Twr/App,https://www.liveatc.net/play/sbfz6.pls
-South America,Brazil,Fortaleza,Pinto Martins International Airport,SBFZ,Gnd/Twr/App,https://www.liveatc.net/play/sbfz4.pls
-South America,Brazil,Teresina,Teresina-Senador Petronio Portella Airport,SBTE,Tower/Approach,https://www.liveatc.net/play/sbte2.pls
-South America,Curacao,Willemstad,Aeropuerto Hato,TNCC,Tower,https://www.liveatc.net/play/tncc3_twr.pls
-South America,Curacao,Willemstad,Aeropuerto Hato,TNCC,Control,https://www.liveatc.net/play/tncc.pls
-South America,El Salvador,San Salvador,Ilopango International Airport,MSSS,Ground/Tower/Approach,https://www.liveatc.net/play/msss4.pls
-South America,Costa Rica,San Jose,Juan Santamaria International Airport,MROC,Del/Ground/Tower/Approach/Center/Misc,https://www.liveatc.net/play/mroc.pls
-Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,Brisbane Center (128.6),https://www.liveatc.net/play/yssy1_ctr_128600.pls
-Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,Brisbane Center (129.000),https://www.liveatc.net/play/ybbn9_ctr.pls
-Oceania,Australia,Melbourne,Melbourne International Airport,YMML,Tower/Approach/Center,https://www.liveatc.net/play/ymml3.pls
-Africa,Reunion,Sainte-Marie,Rolland Garros Airport,FMEE,Approach/Departure,https://www.liveatc.net/play/fmee3.pls
-Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #1,https://www.liveatc.net/play/fimp.pls
-Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,Tower/Approach/Control #2,https://www.liveatc.net/play/fimp2.pls
+Continent,Country,City,Airport Name,ICAO,IATA,Channel Description,Stream URL,Webcam URL
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Approach/Departure,https://www.liveatc.net/play/rjtt_app_dep.pls,https://youtu.be/My-xcE-_9as
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Tower,https://www.liveatc.net/play/rjtt_app.pls
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Ground,https://www.liveatc.net/play/rjtt_gnd.pls
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Del/Tower/TCA/Ground,https://www.liveatc.net/play/rjtt_gnd.pls
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Company Channels,https://www.liveatc.net/play/rjtt2.pls
+Asia,Japan,Tokyo,Tokyo International Airport,RJTT,HND,Control,https://www.liveatc.net/play/rjtt_control.pls
+Asia,Japan,Tokyo,Narita International Airport,RJAA,NRT,Tower,https://www.liveatc.net/play/rjaa_twr.pls,https://youtu.be/jWCdG6mTTkk
+Asia,Japan,Tokyo,Narita International Airport,RJAA,NRT,Approach,https://www.liveatc.net/play/rjaa_app_s.pls,https://youtu.be/jWCdG6mTTkk
+Asia,Japan,Tokyo,Yokota Air Base,RJTY,OKO,Approach,https://www.liveatc.net/play/rjty1_app.pls
+Asia,Japan,Tokyo,Yokota Air Base,RJTY,OKO,Ground/Tower,https://www.liveatc.net/play/rjty1_gnd_twr.pls
+Asia,Japan,Tokyo,Yokota Air Base,RJTY,OKO,Tower,https://www.liveatc.net/play/rjty1_twr.pls
+Asia,Japan,Osaka,Osaka International Airport,RJOO,ITM,Tower,https://www.liveatc.net/play/rjoo1.pls,https://youtu.be/PBix2SwpRDs
+Asia,Japan,Fukuoka,Fukuoka Airport,RJFF,FUK,Tower,https://www.liveatc.net/play/rjff3_twr.pls
+Asia,Japan,Fukuoka,Fukuoka Airport,RJFF,FUK,Del/Ground/TCA,https://www.liveatc.net/play/rjff3_app2.pls
+Asia,Japan,Sukagawa,Fukushima Airport,RJSF,FKS,RDO,https://www.liveatc.net/play/rjsf.pls,https://youtu.be/FflwF8jzZuU
+Asia,Hong Kong,Hong Kong,Hong Kong International - Chek Lap Kok,VHHH,HKG,Approach/Departure/Dir/Zone,https://www.liveatc.net/play/vhhh5.pls
+Asia,Russia,Novosibirsk,Tolmachevo Airport,UNNT,OVB,Ground/Tower/Approach/Radar/Misc,https://www.liveatc.net/play/unnt.pls
+Asia,Taiwan,Taipei,Taipei Songshan Airport,RCSS,TSA,Tower/Approach/Departure,https://www.liveatc.net/play/rcss2.pls
+Asia,Philipines,Manila,Ninoy Aquino International Airport,RPLL,MNL,Tower,https://www.liveatc.net/play/rpll.pls
+Asia,Singapore,Singapore,Changi International Airport,WSSS,SIN,Del/Ground/Approach/Radar,https://www.liveatc.net/play/wsss3.pls
+Asia,Malaysia,Panang,Butterworth Airport,WMKB,BWH,Tower,https://www.liveatc.net/play/wmkb.pls
+Europe,Netherlands,Amsterdam,Schiphol International Airport,EHAM,AMS,Approach/Departure,https://www.liveatc.net/play/eham_app_119055.pls
+Europe,Netherlands,Eindhoven,Eindhoven Airport,EHEH,EIN,Tower #1,https://www.liveatc.net/play/eheh3_twr.pls
+Europe,Netherlands,Eindhoven,Eindhoven Airport,EHEH,EIN,Approach #1,https://www.liveatc.net/play/eheh3_app.pls
+Europe,Netherlands,Rotterdam,Rotterdam The Hague Airport,EHRD,RTM,Tower,https://www.liveatc.net/play/ehrd1_twr.pls
+Europe,Netherlands,Rotterdam,Rotterdam The Hague Airport,EHRD,RTM,Ground/Clearance,https://www.liveatc.net/play/ehrd1_gnd.pls
+Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,WAW,Approach #1,https://www.liveatc.net/play/epwa_app.pls
+Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,WAW,Approach #2,https://www.liveatc.net/play/epwa_app2.pls
+Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,WAW,Tower,https://www.liveatc.net/play/epwa_twr2.pls
+Europe,Poland,Warsaw,Frediric Chopin Warsaw Airport,EPWA,WAW,Ground,https://www.liveatc.net/play/epwa_gnd.pls
+Europe,Poland,Krakow,John Paul II Balice International Airport,EPKK,KRK,Tower/Approach,https://www.liveatc.net/play/epkk_app.pls
+Europe,Ireland,Dublin,Dublin International Airport,EIDW,DUB,Ground/Tower/Approach/Center,https://www.liveatc.net/play/eidw8.pls
+Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,BUD,Approach,https://www.liveatc.net/play/lhbp_app2.pls
+Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,BUD,Ground,https://www.liveatc.net/play/lhbp_gnd.pls
+Europe,Hungary,Budapest,Budapest Ferihegy International Airport,LHBP,BUD,Tower,https://www.liveatc.net/play/lhbp_twr3.pls
+Europe,Lithuania,Vilnius,Vilnius International Airport,EYVI,VNO,Tower/Approach/Misc,https://www.liveatc.net/play/eyvi.pls
+Europe,Norway,Langnes,Tromso Airport,ENTC,TOS,Tower/Approach,https://www.liveatc.net/play/entc.pls
+Europe,Norway,Trondheim,Vaernes Airport,ENVA,TRD,Ground/Tower/Approach,https://www.liveatc.net/play/enva.pls
+Europe,Norway,Oslo,Oslo Gardermoen Airport,ENGM,OSL,Approach/Polaris ACC,https://www.liveatc.net/play/eneg2.pls
+Europe,Norway,Oslo,Oslo Gardermoen Airport,ENGM,OSL,Tower,https://www.liveatc.net/play/engm4.pls
+Europe,Sweden,Lulea,Lulea Airport,ESPA,LLA,Tower/Control,https://www.liveatc.net/play/espa.pls
+Europe,Finland,Helsinki,Helsinki-Vantaa Airport,EFHK,HEL,Tower (22L/04R 15/33),https://www.liveatc.net/play/efhk2_twr1.pls
+Europe,Portugal,Lisbon,Lisboa Airport,LPPT,LIS,Approach,https://www.liveatc.net/play/lppt_app_1191_2.pls
+Europe,Switzerland,Zurich,Zurich International Airport,LSZH,ZRH,Tower,https://www.liveatc.net/play/lszh1_twr.pls
+Europe,Turkey,Istanbul,Istanbul Sabiha Gokcen International Airport,LTFJ,SAW,Del/Ground/Tower,https://www.liveatc.net/play/ltfj2.pls
+Europe,Russia,Sochi,Sochi International Airport,URSS,AER,Ground/Tower/Approach,https://www.liveatc.net/play/urss.pls
+Europe,Bulgaria,Sofia,Sofia International Airport,LBSF,SOF,Tower/Approach #2,https://www.liveatc.net/play/lbsf1.pls
+Europe,Estonia,Tallinn,Tallinn Airport,EETN,TLL,Tower/Approach,https://www.liveatc.net/play/eetn2_twr.pls
+Europe,Slovakia,Bratislava,Milan Rastislav Stefanik Airport,LZIB,BTS,Ground/Tower/Approach,https://www.liveatc.net/play/lzib2.pls
+North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,YUL,Approach/Departure,https://www.liveatc.net/play/cyul_app.pls
+North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,YUL,Tower,https://www.liveatc.net/play/cyul_twr.pls
+North America,Canada,Montreal,Pierre Elliott Trudeau International Airport,CYUL,YUL,Ground,https://www.liveatc.net/play/cyul_gnd.pls
+North America,Canada,Ottawa,Ottawa Macdonald-Cartier International Airport,CYOW,YOW,Ground/Tower/Approach,https://www.liveatc.net/play/cyow3.pls
+North America,Canada,Toronto,Lester B. Pearson International Airport,CYYZ,YYZ,Tower,https://www.liveatc.net/play/cyyz7.pls
+North America,Canada,Vancouver,Vancouver International Airport,CYVR,YVR,Approach/Departure,https://www.liveatc.net/play/cyvr1_app.pls
+North America,Canada,Vancouver,Vancouver International Airport,CYVR,YVR,Del/Ground/Tower #1,https://www.liveatc.net/play/cyvr1_gnd_twr.pls
+North America,Canada,Vancouver,Vancouver International Airport,CYVR,YVR,Area Control Center,https://www.liveatc.net/play/cyvr1_ctr.pls
+North America,United States,Chicago,Chicago O'Hare International Airport,KORD,ORD,Approach/Departure,https://www.liveatc.net/play/kord_app_dep.pls
+North America,United States,Boston,Boston General Edward Lawrence Logan International Airport,KBOS,BOS,Tower,https://www.liveatc.net/play/kbos_twr.pls
+North America,United States,New York,John F Kennedy International Airport,KJFK,JFK,Ground/Tower,https://www.liveatc.net/play/kjfk9_s.pls
+North America,United States,New York,John F Kennedy International Airport,KJFK,JFK,Departure,https://www.liveatc.net/play/kjfk_dep.pls
+North America,United States,San Diego,San Diego International Airport,KSAN,SAN,Tower,https://www.liveatc.net/play/ksan1_twr.pls
+North America,United States,San Diego,San Diego International Airport,KSAN,SAN,Ramp/Del/Ground/Tower,https://www.liveatc.net/play/ksan1_all.pls
+North America,United States,Newark,Newark Liberty International Airport,KEWR,EWR,Tower #1,https://www.liveatc.net/play/kewr_twr.pls
+North America,United States,Newark,Newark Liberty International Airport,KEWR,EWR,Tower #2,https://www.liveatc.net/play/kewr_twr_sf1.pls
+North America,United States,Atlanta,Hartsfield-Jackson Atlanta International Airport,KATL,ATL,Tower,https://www.liveatc.net/play/katl_twr.pls
+North America,United States,Long Beach,Long Beach Airport,KLGB,LGB,Tower,https://www.liveatc.net/play/klgb_twr.pls
+North America,United States,Hawaii,Honolulu International Airport,PHNL,HNL,Del/Ground/Ramp,https://www.liveatc.net/play/phnl1_dgr.pls
+North America,United States,Hawaii,Honolulu International Airport,PHNL,HNL,Ground,https://www.liveatc.net/play/phnl1_gnd.pls
+North America,United States,Hawaii,Honolulu International Airport,PHNL,HNL,Tower (Primary),https://www.liveatc.net/play/phnl1_twr_pri.pls
+North America,United States,Chicago,Chicago Midway International Airport,KMDW,MDW,Tower #1,https://www.liveatc.net/play/kmdw_1.pls,https://youtu.be/XF6YDqccSsg
+North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,MSP,Tower (Rwys 12R/30L|4/22),https://www.liveatc.net/play/kmsp3_twr_12r.pls
+North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,MSP,Tower (Rwy 12L/30R),https://www.liveatc.net/play/kmsp3_twr_12l.pls
+North America,United States,Minneapolis,Minneapolis-St Paul International/Wold-Chamberlain Airport,KMSP,MSP,Tower (Rwy 17/35),https://www.liveatc.net/play/kmsp3_twr_1735.pls
+North America,United States,Denver,Centennial Airport,KAPA,APA,Tower (Primary),https://www.liveatc.net/play/kapa2_twr1.pls
+North America,United States,Anchorange,Ted Stevens Anchorage International Airport,PANC,ANC,Tower,https://www.liveatc.net/play/panc_twr.pls
+North America,United States,Anchorange,Ted Stevens Anchorage International Airport,PANC,ANC,Del/Ground/Tower/Approach,https://www.liveatc.net/play/panc.pls
+North America,United States,Anchorange,Ted Stevens Anchorage International Airport,PANC,ANC,ZAN Center/Misc,https://www.liveatc.net/play/zan_anc.pls
+North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Approach/Departure,https://www.liveatc.net/play/kaus3_app_dep.pls
+North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Tower,https://www.liveatc.net/play/kaus3_twr.pls
+North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Ground,https://www.liveatc.net/play/kaus3_gnd.pls
+North America,Mexico,Guadalajara,Don Miguel Hidalgo y Costilla International,MMGL,GDL,Tower/Approach,https://www.liveatc.net/play/mmgl.pls
+North America,Panama,Panama City,Panama Pacifico International Airport,MPPA,BLK,Tower,https://www.liveatc.net/play/mppa2_twr.pls
+North America,Panama,Panama City,Panama Pacifico International Airport,MPPA,BLK,Approach/Departure,https://www.liveatc.net/play/mppa2_app_dep.pls
+North America,Panama,Panama City,Panama Pacifico International Airport,MPPA,BLK,Center,https://www.liveatc.net/play/mppa2_ctr.pls
+South America,Brazil,Fortaleza,Pinto Martins International Airport,SBFZ,FOR,Gnd/Twr/App,https://www.liveatc.net/play/sbfz6.pls
+South America,Brazil,Fortaleza,Pinto Martins International Airport,SBFZ,FOR,Gnd/Twr/App,https://www.liveatc.net/play/sbfz4.pls
+South America,Brazil,Teresina,Teresina-Senador Petronio Portella Airport,SBTE,THE,Tower/Approach,https://www.liveatc.net/play/sbte2.pls
+South America,Curacao,Willemstad,Aeropuerto Hato,TNCC,CUR,Tower,https://www.liveatc.net/play/tncc3_twr.pls
+South America,Curacao,Willemstad,Aeropuerto Hato,TNCC,CUR,Control,https://www.liveatc.net/play/tncc.pls
+South America,El Salvador,San Salvador,Ilopango International Airport,MSSS,ILS,Ground/Tower/Approach,https://www.liveatc.net/play/msss4.pls
+South America,Costa Rica,San Jose,Juan Santamaria International Airport,MROC,SJO,Del/Ground/Tower/Approach/Center/Misc,https://www.liveatc.net/play/mroc.pls
+South America,Peru,Lima,Jorge Chavez International Airport,SPJC,LIM,Approach,https://www.liveatc.net/play/spjc1_app.pls
+South America,Peru,Lima,Jorge Chavez International Airport,SPJC,LIM,Ground,https://www.liveatc.net/play/spjc1_gnd.pls
+South America,Peru,Lima,Jorge Chavez International Airport,SPJC,LIM,Tower,https://www.liveatc.net/play/spjc1_twr.pls
+South America,Chile,Santiago,Arturo Merino Benitez International Airport,SCEL,SCL,Ground/Tower/Radar,https://www.liveatc.net/play/scel.pls
+Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,BNE,Brisbane Center (128.6),https://www.liveatc.net/play/yssy1_ctr_128600.pls
+Oceania,Australia,Brisbane,Brisbane International Airport,YBBN,BNE,Brisbane Center (129.000),https://www.liveatc.net/play/ybbn9_ctr.pls
+Oceania,Australia,Melbourne,Melbourne International Airport,YMML,MEL,Tower/Approach/Center,https://www.liveatc.net/play/ymml3.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Tower (Both),https://www.liveatc.net/play/yssy1_twr.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Center (124.625),https://www.liveatc.net/play/yssy1_ctr_124625.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Center (124.95),https://www.liveatc.net/play/yssy1_ctr_124950.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Center (125.0),https://www.liveatc.net/play/yssy1_ctr_125000.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Center (128.6),https://www.liveatc.net/play/yssy1_ctr_128600.pls
+Oceania,Australia,Sydney,Sydney International Airport,YSSY,SYD,Center (South/West),https://www.liveatc.net/play/yssy1_ctr_s.pls
+Oceania,Australia,Adelaide,Adelaide International Airport,YPAD,ADL,Del/Ground/Tower/Approach/Misc,https://www.liveatc.net/play/ypad_misc.pls
+Oceania,Australia,Perth,Perth International Airport,YPPH,PER,Tower,https://www.liveatc.net/play/ypph2_twr.pls
+Oceania,Australia,Perth,Perth International Airport,YPPH,PER,Approach,https://www.liveatc.net/play/ypph2_app.pls
+Oceania,Australia,Perth,Perth International Airport,YPPH,PER,Departure,https://www.liveatc.net/play/ypph_dep.pls
+Africa,Reunion,Sainte-Marie,Rolland Garros Airport,FMEE,RUN,Approach/Departure,https://www.liveatc.net/play/fmee3.pls
+Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,MRU,Tower/Approach/Control #1,https://www.liveatc.net/play/fimp.pls
+Africa,Mauritius,Plaine Magnien,Sir Seewoosagur Ramgoolam International Airport,FIMP,MRU,Tower/Approach/Control #2,https://www.liveatc.net/play/fimp2.pls
+
