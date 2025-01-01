@@ -17,6 +17,9 @@ Select a random ATC stream from the list of sources.
 .PARAMETER PlayLofiGirlVideo
 Play the Lofi Girl video instead of just the audio.
 
+.PARAMETER UseFZF
+Use fzf for searching and filtering channels.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -36,7 +39,8 @@ param (
     [switch]$IncludeWebcamIfAvailable,
     [switch]$NoLofiMusic,
     [switch]$RandomATC,
-    [switch]$PlayLofiGirlVideo
+    [switch]$PlayLofiGirlVideo,
+    [switch]$UseFZF
 )
 
 # Function to check if VLC is available
@@ -92,7 +96,23 @@ Function Select-Item {
     exit
 }
 
-#Function to select an ATC stream
+# Function to select an item using fzf
+Function Select-ItemFZF {
+    param (
+        [string]$prompt,
+        [array]$items
+    )
+
+    $selectedItem = $items | fzf --prompt "$prompt> " --ignore-case --exact
+    if ($selectedItem) {
+        return $selectedItem.Trim()
+    } else {
+        Write-Host "No selection made. Exiting script." -ForegroundColor Yellow
+        exit
+    }
+}
+
+# Function to select an ATC stream
 Function Select-ATCStream {
     param (
         [array]$atcSources,
@@ -112,23 +132,55 @@ Function Select-ATCStream {
         exit
     }
 
+    # Dynamic prompt for airport selection
     Write-Host "Select an airport from ${country}:" -ForegroundColor Yellow
-    # Get unique city and airport name combinations
-    $airports = $choices | Select-Object @{Name = "CityAirport"; Expression = { "[{0}] {1}" -f $_.City, $_.'Airport Name' }} | Sort-Object -Property CityAirport -Unique
-    $selectedAirport = Select-Item -prompt "Select an airport:" -items $airports.CityAirport
+
+    # Group by city and airport name, and check if any channel for that airport has a webcam
+    $airports = $choices | Group-Object -Property City, 'Airport Name' | ForEach-Object {
+        # Extract city and airport name
+        $city = $_.Group[0].City
+        $airportName = $_.Group[0].'Airport Name'
+
+        # Check if any channel under this airport has a webcam
+        $hasWebcam = $_.Group | Where-Object { -not [string]::IsNullOrWhiteSpace($_.'Webcam URL') } | Measure-Object
+        $webcamIndicator = if ($hasWebcam.Count -gt 0) { "[Webcam available]" } else { "" }
+
+        # Return formatted airport entry
+        "[{0}] {1} {2}" -f $city, $airportName, $webcamIndicator
+    } | Sort-Object
+
+    # Let the user select an airport
+    $selectedAirport = Select-Item -prompt "Select an airport from ${country}:" -items $airports
 
     # Filter choices by selected airport
     $airportChoices = $choices | Where-Object {
-        "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq $selectedAirport
+        "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq ($selectedAirport -replace '\s\[Webcam available\]', '') # Remove the [Webcam available] text for matching
     }
 
     if ($airportChoices.Count -gt 1) {
-        Write-Host "Select a channel for ${selectedAirport}:" -ForegroundColor Yellow
-        # Get unique channel descriptions for the selected airport
-        $channels = $airportChoices | Select-Object -ExpandProperty 'Channel Description' | Sort-Object -Unique
-        $selectedChannel = Select-Item -prompt "Select a channel:" -items $channels
+        # Extract airport name for dynamic channel selection prompt
+        $airportNameForPrompt = ($selectedAirport -replace '\s\[Webcam available\]', '')
+
+        # Dynamic prompt for channel selection
+        Write-Host "Select a channel for ${airportNameForPrompt}:" -ForegroundColor Yellow
+
+        # Get unique channel descriptions for the selected airport, with webcam indicators
+        $channels = $airportChoices | ForEach-Object {
+            $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+                " [Webcam available]"
+            } else {
+                ""
+            }
+            "{0}{1}" -f $_.'Channel Description', $webcamIndicator
+        } | Sort-Object -Unique
+
+        # Let the user select a channel
+        $selectedChannel = Select-Item -prompt "Select a channel for ${airportNameForPrompt}:" -items $channels
+        # Remove the [Webcam available] indicator from the selected channel for matching
+        $selectedChannelClean = $selectedChannel -replace '\s\[Webcam available\]', ''
+
         # Filter choices by selected channel
-        $selectedStream = $airportChoices | Where-Object { $_.'Channel Description' -eq $selectedChannel }
+        $selectedStream = $airportChoices | Where-Object { $_.'Channel Description' -eq $selectedChannelClean }
     } else {
         $selectedStream = $airportChoices[0]
     }
@@ -139,6 +191,49 @@ Function Select-ATCStream {
         AirportInfo = $selectedStream
     }
 }
+
+
+# Function to select an ATC stream directly using fzf with ICAO, IATA, Webcam, and Channel Description indicators
+Function Select-ATCStreamFZF {
+    param (
+        [array]$atcSources
+    )
+
+    Clear-Host
+    # Combine relevant information for fzf selection
+    $choices = $atcSources | ForEach-Object {
+        # Determine if the Webcam URL is non-empty
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            "[Webcam available]"
+        } else {
+            ""
+        }
+
+        # Format the entry for fzf
+        "[{0}, {1}] {2} ({4}/{5}) | {3} {6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+    }
+
+    # Use fzf for user selection
+    $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
+
+    # Match the selected choice back to the original ATC sources
+    $selectedStream = $atcSources | Where-Object {
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            "[Webcam available]"
+        } else {
+            ""
+        }
+        # Match based on the formatted fzf entry
+        "[{0}, {1}] {2} ({4}/{5}) | {3} {6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo -eq $selectedChoice
+    }
+
+    return @{
+        StreamUrl = $selectedStream.'Stream URL'
+        WebcamUrl = $selectedStream.'Webcam URL'
+        AirportInfo = $selectedStream
+    }
+}
+
 
 
 # Function to get a random ATC stream
@@ -281,6 +376,41 @@ Function Get-AiportDateTime {
     }
 }
 
+Function Get-AirportSunriseSunset {
+    param (
+        [string]$ICAO
+    )
+    $url = "https://metar-taf.com/$ICAO"
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $htmlContent = $response.Content
+
+        # Extract Sunrise
+        $sunrise = "Sunrise not found"
+        if ($htmlContent -match '<small><b>Sunrise<\/b><br>\s*(\d{2}:\d{2})') {
+            $sunrise = $matches[1]
+        }
+
+        # Extract Sunset
+        $sunset = "Sunset not found"
+        if ($htmlContent -match '<small><b>Sunset<\/b><br>\s*(\d{2}:\d{2})') {
+            $sunset = $matches[1]
+        }
+
+        # Return result
+        return @{
+            Sunrise = $sunrise
+            Sunset = $sunset
+        }
+    } catch {
+        Write-Error "Failed to fetch data for $ICAO. Exception: $_"
+        return @{
+            Sunrise = "Data unavailable"
+            Sunset = "Data unavailable"
+        }
+    }
+}
+
 # Function to display welcome message
 Function Write-Welcome {
     param (
@@ -296,22 +426,47 @@ Function Write-Welcome {
     # Fetch current airport date/time
     $airportDateTime = Get-AiportDateTime -ICAO $airportInfo.ICAO
 
+    # Fetch sunrise and sunset times
+    $sunTimes = Get-AirportSunriseSunset -ICAO $airportInfo.ICAO
+
     # Display welcome message
-    Write-Output "`nWelcome to $($airportInfo.'Airport Name')!"
-    Write-Output "City: $($airportInfo.City), Country: $($airportInfo.Country)"
-    Write-Output "ICAO: $($airportInfo.'ICAO') | IATA: $($airportInfo.'IATA')`n"
+    Write-Output "`n✈️ Welcome to $($airportInfo.'Airport Name'):"
+    Write-Output "    📍 City:        $($airportInfo.City)"
+    Write-Output "    🌍 Country:     $($airportInfo.Country)"
+    Write-Output "    🛫 ICAO/IATA:   $($airportInfo.'ICAO')/$($airportInfo.'IATA')`n"
 
-    # Display raw and decoded METAR
-    Write-Output "Weather Info:"
-    Write-Output "Wind: $($decodedMetar.Wind)"
-    Write-Output "Visibility: $($decodedMetar.Visibility)"
-    Write-Output "Ceiling: $($decodedMetar.Ceiling)"
-    Write-Output "Temperature: $($decodedMetar.Temperature) | Dew Point: $($decodedMetar.DewPoint)"
-    Write-Output "Pressure: $($decodedMetar.Pressure)"
-    Write-Output "Raw: $metar`n"
+    Write-Output "🕒 Current Date/Time:"
+    Write-Output "    $airportDateTime`n"
 
-    Write-Output "Channel: $($airportInfo.'Channel Description')"
-    Write-Output "Current Date/Time: $airportDateTime"
+    Write-Output "🌦️ Weather Information:"
+    Write-Output "    🌬️ Wind:        $($decodedMetar.Wind)"
+    Write-Output "    👁️ Visibility:  $($decodedMetar.Visibility)"
+    Write-Output "    ☁️ Ceiling:     $($decodedMetar.Ceiling)"
+    Write-Output "    🌡️ Temperature: $($decodedMetar.Temperature)"
+    Write-Output "    💧 Dew Point:   $($decodedMetar.DewPoint)"
+    Write-Output "    📏 Pressure:    $($decodedMetar.Pressure)"
+    Write-Output "    📝 Raw METAR:   $metar`n"
+
+    # Display sunrise and sunset information if available
+    if ($sunTimes) {
+        Write-Output "🌅 Sunrise/Sunset Times:"
+        Write-Output "    🌅 Sunrise: $($sunTimes.Sunrise)"
+        Write-Output "    🌄 Sunset:  $($sunTimes.Sunset)`n"
+    }
+
+    Write-Output "📡 Air Traffic Control:"
+    Write-Output "    🗣️ Channel:     $($airportInfo.'Channel Description')"
+    Write-Output "    🎧 Stream:      $($airportInfo.'Stream URL')`n"
+
+
+    # Include webcam information if available
+    if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
+        Write-Output "🎥 Webcam:"
+        Write-Output "    $($airportInfo.'Webcam URL')`n"
+    }
+
+    # Display METAR source
+    Write-Output "🔗 Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.'ICAO')`n"
 }
 
 # Function to start VLC with a given URL
@@ -344,19 +499,21 @@ if ($RandomATC) {
     $selectedATC = Get-RandomATCStream -atcSources $atcSources
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
-    Write-Host "Selected random ATC stream: $selectedATCUrl" -ForegroundColor Green
     Write-Welcome -airportInfo $selectedATC.AirportInfo
 } else {
-    $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
-    Write-Host "Selected continent: $selectedContinent" -ForegroundColor Green
+    if ($UseFZF) {
+        $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
+    } else {
+        $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
+        Write-Host "Selected continent: $selectedContinent" -ForegroundColor Green
 
-    $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items (@($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique))
-    Write-Host "Selected country: $selectedCountry" -ForegroundColor Green
+        $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items (@($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique))
+        Write-Host "Selected country: $selectedCountry" -ForegroundColor Green
 
-    $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+        $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+    }
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
-    Write-Host "Selected ATC stream: $selectedATCUrl" -ForegroundColor Green
     Write-Welcome -airportInfo $selectedATC.AirportInfo
 }
 
