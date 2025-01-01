@@ -33,6 +33,10 @@ This command runs the script, includes webcam video if available, and does not p
 .\lofiatc.ps1 -RandomATC -PlayLofiGirlVideo
 This command runs the script, selects a random ATC stream, and plays the Lofi Girl video.
 
+.EXAMPLE
+.\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF
+This command runs the script, includes webcam video if available, and uses fzf for selecting ATC streams.
+
 #>
 
 param (
@@ -65,7 +69,7 @@ Function Import-ATCSources {
     return Import-Csv -Path $csvPath
 }
 
-#Function to select an item from a list
+# Function to select an item from a list
 Function Select-Item {
     param (
         [string]$prompt,
@@ -239,8 +243,6 @@ Function Select-ATCStreamFZF {
     }
 }
 
-
-
 # Function to get a random ATC stream
 Function Get-RandomATCStream {
     param (
@@ -257,6 +259,7 @@ Function Get-RandomATCStream {
     }
 }
 
+# Function to fetch METAR/TAF data
 Function Get-METAR-TAF {
     param (
         [string]$ICAO
@@ -364,7 +367,8 @@ Function ConvertFrom-METAR {
     return [PSCustomObject]$decoded
 }
 
-Function Get-AiportDateTime {
+# Function to fetch airport date/time
+Function Get-AirportDateTime {
     param (
         [string]$ICAO
     )
@@ -381,6 +385,7 @@ Function Get-AiportDateTime {
     }
 }
 
+# Function to fetch airport sunrise/sunset times
 Function Get-AirportSunriseSunset {
     param (
         [string]$ICAO
@@ -416,6 +421,30 @@ Function Get-AirportSunriseSunset {
     }
 }
 
+# Function to fetch METAR last updated time
+Function Get-METAR-LastUpdatedTime {
+    param (
+        [string]$ICAO
+    )
+    $url = "https://metar-taf.com/$ICAO"
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $htmlContent = $response.Content
+
+        # Extract the "Last Updated" time from the correct div and span structure
+        $lastUpdated = "Last updated time not found"
+        if ($htmlContent -match '<div[^>]*class="rounded-right d-flex align-items-center py-1 py-lg-2 px-3 bg-darkblue border-left text-white">\s*<span[^>]*></span>\s*(?<lastUpdatedTime>[^<]+)') {
+            $lastUpdated = $matches['lastUpdatedTime'].Trim()
+        }
+
+        return $lastUpdated
+    } catch {
+        Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"
+        return "Last updated time unavailable."
+    }
+}
+
+
 # Function to display welcome message
 Function Write-Welcome {
     param (
@@ -429,10 +458,13 @@ Function Write-Welcome {
     $decodedMetar = ConvertFrom-METAR -metar $metar
 
     # Fetch current airport date/time
-    $airportDateTime = Get-AiportDateTime -ICAO $airportInfo.ICAO
+    $airportDateTime = Get-AirportDateTime -ICAO $airportInfo.ICAO
 
     # Fetch sunrise and sunset times
     $sunTimes = Get-AirportSunriseSunset -ICAO $airportInfo.ICAO
+
+    # Fetch METAR last updated time
+    $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
 
     # Display welcome message
     Write-Output "`n✈️ Welcome to $($airportInfo.'Airport Name'):"
@@ -460,9 +492,8 @@ Function Write-Welcome {
     }
 
     Write-Output "📡 Air Traffic Control:"
-    Write-Output "    🗣️ Channel:     $($airportInfo.'Channel Description')"
-    Write-Output "    🎧 Stream:      $($airportInfo.'Stream URL')`n"
-
+    Write-Output "    🗣️ Channel: $($airportInfo.'Channel Description')"
+    Write-Output "    🎧 Stream:  $($airportInfo.'Stream URL')`n"
 
     # Include webcam information if available
     if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
@@ -470,8 +501,9 @@ Function Write-Welcome {
         Write-Output "    $($airportInfo.'Webcam URL')`n"
     }
 
-    # Display METAR source
-    Write-Output "🔗 Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.'ICAO')`n"
+    # Display METAR source and last updated time
+    Write-Output "🔗 Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.'ICAO')"
+    Write-Output "    ⏰ Last Updated: $lastUpdatedTime ago`n"
 }
 
 # Function to start VLC with a given URL
