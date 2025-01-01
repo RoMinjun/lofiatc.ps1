@@ -192,45 +192,50 @@ Function Select-ATCStream {
     }
 }
 
-
-# Function to select an ATC stream directly using fzf with ICAO, IATA, Webcam, and Channel Description indicators
+# Function to select an ATC stream using fzf
 Function Select-ATCStreamFZF {
     param (
         [array]$atcSources
     )
 
     Clear-Host
+
     # Combine relevant information for fzf selection
     $choices = $atcSources | ForEach-Object {
-        # Determine if the Webcam URL is non-empty
+        # Add webcam availability only if Webcam URL is present
         $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            "[Webcam available]"
+            " [Webcam available]"
         } else {
             ""
         }
 
-        # Format the entry for fzf
-        "[{0}, {1}] {2} ({4}/{5}) | {3} {6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
     # Use fzf for user selection
     $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
 
-    # Match the selected choice back to the original ATC sources
     $selectedStream = $atcSources | Where-Object {
         $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            "[Webcam available]"
+            " [Webcam available]" 
         } else {
-            ""
+            "" 
         }
+
         # Match based on the formatted fzf entry
-        "[{0}, {1}] {2} ({4}/{5}) | {3} {6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo -eq $selectedChoice
+        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        $formattedEntry -eq $selectedChoice
     }
 
-    return @{
-        StreamUrl = $selectedStream.'Stream URL'
-        WebcamUrl = $selectedStream.'Webcam URL'
-        AirportInfo = $selectedStream
+    if ($selectedStream) {
+        return @{
+            StreamUrl = $selectedStream.'Stream URL'
+            WebcamUrl = $selectedStream.'Webcam URL'
+            AirportInfo = $selectedStream
+        }
+    } else {
+        Write-Error "No matching ATC stream found."
+        exit
     }
 }
 
