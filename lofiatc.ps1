@@ -20,6 +20,9 @@ Play the Lofi Girl video instead of just the audio.
 .PARAMETER UseFZF
 Use fzf for searching and filtering channels.
 
+.PARAMETER Player
+Specify the media player to use (VLC or MPV). Default is VLC.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -37,6 +40,13 @@ This command runs the script, selects a random ATC stream, and plays the Lofi Gi
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF
 This command runs the script, includes webcam video if available, and uses fzf for selecting ATC streams.
 
+.EXAMPLE
+.\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player MPV
+This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses MPV as the media player.
+.EXAMPLE
+.\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player VLC
+This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses VLC as the media player.
+
 #>
 
 param (
@@ -44,13 +54,24 @@ param (
     [switch]$NoLofiMusic,
     [switch]$RandomATC,
     [switch]$PlayLofiGirlVideo,
-    [switch]$UseFZF
+    [switch]$UseFZF,
+    [ValidateSet("VLC", "MPV")]
+    [string]$Player = "VLC"  # Default to VLC
 )
 
-# Function to check if VLC is available
-Function Test-VLC {
-    if (-Not (Get-Command "vlc.exe" -ErrorAction SilentlyContinue)) {
-        Write-Error "VLC is not installed or not available in PATH. Please install VLC Media Player to proceed."
+# Function to check if the selected player is available
+Function Test-Player {
+    param (
+        [string]$player
+    )
+
+    $command = switch ($player) {
+        "VLC" { "vlc.exe" }
+        "MPV" { "mpv.com" }
+    }
+
+    if (-Not (Get-Command $command -ErrorAction SilentlyContinue)) {
+        Write-Error "$player is not installed or not available in PATH. Please install $player to proceed."
         exit
     }
 }
@@ -507,26 +528,52 @@ Function Write-Welcome {
 }
 
 # Function to start VLC with a given URL
-Function Start-VLC {
+# Function Start-VLC {
+#     param (
+#         [string]$url,
+#         [switch]$noVideo,
+#         [switch]$noAudio
+#     )
+
+#     $vlcArgs = "`"$url`""
+#     if ($noVideo) {
+#         $vlcArgs += " --no-video"
+#     }
+#     if ($noAudio) {
+#         $vlcArgs += " --no-audio"
+#     }
+
+#     Start-Process vlc -ArgumentList $vlcArgs -NoNewWindow
+# }
+# Function to start the media player with a given URL
+Function Start-Player {
     param (
         [string]$url,
+        [string]$player,
         [switch]$noVideo,
         [switch]$noAudio
     )
 
-    $vlcArgs = "`"$url`""
-    if ($noVideo) {
-        $vlcArgs += " --no-video"
-    }
-    if ($noAudio) {
-        $vlcArgs += " --no-audio"
+    $args = switch ($player) {
+        "VLC" {
+            $vlcArgs = "`"$url`""
+            if ($noVideo) { $vlcArgs += " --no-video" }
+            if ($noAudio) { $vlcArgs += " --no-audio" }
+            $vlcArgs
+        }
+        "MPV" {
+            $mpvArgs = "`"$url`""
+            if ($noVideo) { $mpvArgs += " --video=no" }
+            if ($noAudio) { $mpvArgs += " --audio=no" }
+            $mpvArgs
+        }
     }
 
-    Start-Process vlc -ArgumentList $vlcArgs -NoNewWindow
+    Start-Process -FilePath $player.ToLower() -ArgumentList $args -NoNewWindow
 }
 
-# check if vlc is installed in PATH
-Test-VLC
+# Check if the selected player is installed
+Test-Player -player $Player
 
 $lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 $csvPath = "atc_sources.csv"
@@ -555,18 +602,18 @@ if ($RandomATC) {
 }
 
 # Starting the ATC audio stream
-Start-VLC -url $selectedATCUrl -noVideo
+Start-Player -url $selectedATCUrl -player $Player -noVideo
 
-# starting the lofi music if not disabled
+# Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
     if ($PlayLofiGirlVideo) {
-        Start-VLC -url $lofiMusicUrl
+        Start-Player -url $lofiMusicUrl -player $Player
     } else {
-        Start-VLC -url $lofiMusicUrl -noVideo
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo
     }
 }
 
 # Starting the webcam stream if available
 if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
-    Start-VLC -url $selectedWebcamUrl -noAudio
+    Start-Player -url $selectedWebcamUrl -player $Player -noAudio
 }
