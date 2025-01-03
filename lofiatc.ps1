@@ -55,7 +55,7 @@ param (
     [switch]$RandomATC,
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
-    [ValidateSet("VLC", "MPV")]
+    [ValidateSet("VLC", "MPV", "Potplayer")]
     [string]$Player = "VLC"  # Default to VLC
 )
 
@@ -68,12 +68,16 @@ Function Test-Player {
     $command = switch ($player) {
         "VLC" { "vlc.exe" }
         "MPV" { "mpv.com" }
+        "Potplayer" { "PotPlayerMini64.exe" }
     }
 
-    if (-Not (Get-Command $command -ErrorAction SilentlyContinue)) {
+    $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
+    if (-Not $fullPath) {
         Write-Error "$player is not installed or not available in PATH. Please install $player to proceed."
         exit
     }
+
+    return $fullPath
 }
 
 # Function to load ATC sources from CSV
@@ -527,24 +531,6 @@ Function Write-Welcome {
     Write-Output "    ⏰ Last Updated: $lastUpdatedTime ago`n"
 }
 
-# Function to start VLC with a given URL
-# Function Start-VLC {
-#     param (
-#         [string]$url,
-#         [switch]$noVideo,
-#         [switch]$noAudio
-#     )
-
-#     $vlcArgs = "`"$url`""
-#     if ($noVideo) {
-#         $vlcArgs += " --no-video"
-#     }
-#     if ($noAudio) {
-#         $vlcArgs += " --no-audio"
-#     }
-
-#     Start-Process vlc -ArgumentList $vlcArgs -NoNewWindow
-# }
 # Function to start the media player with a given URL
 Function Start-Player {
     param (
@@ -554,7 +540,7 @@ Function Start-Player {
         [switch]$noAudio
     )
 
-    $args = switch ($player) {
+    $playerArgs = switch ($player) {
         "VLC" {
             $vlcArgs = "`"$url`""
             if ($noVideo) { $vlcArgs += " --no-video" }
@@ -567,9 +553,16 @@ Function Start-Player {
             if ($noAudio) { $mpvArgs += " --audio=no" }
             $mpvArgs
         }
+        "Potplayer" {
+            $potplayerArgs = "`"$url`""
+            if ($noVideo) { $potplayerArgs += "" } # Not possible with potplayer
+            if ($noAudio) { $potplayerArgs += " /volume=0" }
+            $potplayerArgs
+        }
     }
 
-    Start-Process -FilePath $player.ToLower() -ArgumentList $args -NoNewWindow
+    $playerPath = Test-Player -player $player
+    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
 }
 
 # Check if the selected player is installed
@@ -607,9 +600,10 @@ Start-Player -url $selectedATCUrl -player $Player -noVideo
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player
+        Start-Player -url $lofiMusicUrl -player $Player 
     } else {
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo
+        # Play Lofi music audio only (only works for vlc so far)
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo 
     }
 }
 
