@@ -6,11 +6,30 @@ a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC, allow
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
 </div>
 
+<br>
+
+
+# Demo
+
+## Using fuzzy finder
+![](./assets/demo.gif)
+
+
+
+## Using default input/output
+![](./assets/defaultoutput_demo.gif)
+
+## Airport Info
+![Info after airport selection](./assets/airportinfo.png)
+
+<br>
+
 # Gettings Started
 
 ## Requirements
 - VLC Media Player (Can be installed using winget: `winget install -e --id VideoLAN.VLC`)  
 - PowerShell 5.1 or later
+- fzf (optional) but required if you wanna use fzf (Can also be installed via winget: `winget install --id=junegunn.fzf  -e`)
 
 ## Clone repo locally
 ```powershell

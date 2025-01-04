@@ -41,8 +41,8 @@ This command runs the script, selects a random ATC stream, and plays the Lofi Gi
 This command runs the script, includes webcam video if available, and uses fzf for selecting ATC streams.
 
 .EXAMPLE
-.\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player MPV
-This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses MPV as the media player.
+.\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player Potplayer
+This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses Potplayer as the media player.
 .EXAMPLE
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player VLC
 This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses VLC as the media player.
