@@ -1,7 +1,7 @@
 <div align="center">
 
 # lofiatc.ps1
-a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC, allowing you to listen to Lofi Girl and Air Traffic Control from around the world simultaneously
+a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC/Potplayer, allowing you to listen to Lofi Girl and Air Traffic Control from around the world simultaneously
 
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
 </div>
