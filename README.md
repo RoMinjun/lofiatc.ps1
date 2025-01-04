@@ -27,13 +27,14 @@ a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC/Potpla
 # Gettings Started
 
 ## Requirements
-- A media player, currently only the following players are supported:
-  - VLC Media Player: `winget install -e --id VideoLAN.VLC`)
+- PowerShell 5.1 or later
+- A media player, you only have to install one of the following players (whichever you like):
+  - VLC Media Player: `winget install -e --id VideoLAN.VLC`
   - Potplayer: `winget install potplayer --id Daum.PotPlayer -s winget`
   - MPC-HC: `winget install MPC-HC --id clsid2.mpc-hc`
   - MPV: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
-- PowerShell 5.1 or later
-- fzf (optional) but required if you wanna use fzf (Can also be installed via winget: `winget install --id=junegunn.fzf  -e`)
+- fzf (optional but highly recommended)
+  - winget: `winget install --id=junegunn.fzf  -e`
 
 ## Clone repo locally
 ```powershell
