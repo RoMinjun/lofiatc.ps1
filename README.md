@@ -27,7 +27,9 @@ a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC, allow
 # Gettings Started
 
 ## Requirements
-- VLC Media Player (Can be installed using winget: `winget install -e --id VideoLAN.VLC`)  
+- A media player, currently only the following players are supported:
+  - VLC Media Player: `winget install -e --id VideoLAN.VLC`)
+  - Potplayer: `winget install potplayer --id Daum.PotPlayer -s winget`
 - PowerShell 5.1 or later
 - fzf (optional) but required if you wanna use fzf (Can also be installed via winget: `winget install --id=junegunn.fzf  -e`)
 
