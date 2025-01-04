@@ -89,9 +89,9 @@ North America,United States,Anchorange,Ted Stevens Anchorage International Airpo
 North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Approach/Departure,https://www.liveatc.net/play/kaus3_app_dep.pls
 North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Tower,https://www.liveatc.net/play/kaus3_twr.pls
 North America,United States,Austin,Austin-Bergstrom International Airport,KAUS,AUS,Ground,https://www.liveatc.net/play/kaus3_gnd.pls
-North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Tower,https://www.liveatc.net/play/kmke_twr.pls,https://wmso-us-ea1.wetmet.net/live/291-04-01/playlist.m3u8?wmsAuthSign=c2VydmVyX3RpbWU9MS8xLzIwMjUgODoyNjo1NSBQTSZoYXNoX3ZhbHVlPWJKdWVpVG5JNnlvUk5IT1pZQ2lQdkE9PSZ2YWxpZG1pbnV0ZXM9MzA=
-North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Approach/Departure,https://www.liveatc.net/play/kmke3_app_dep.pls,https://wmso-us-ea1.wetmet.net/live/291-04-01/playlist.m3u8?wmsAuthSign=c2VydmVyX3RpbWU9MS8xLzIwMjUgODoyNjo1NSBQTSZoYXNoX3ZhbHVlPWJKdWVpVG5JNnlvUk5IT1pZQ2lQdkE9PSZ2YWxpZG1pbnV0ZXM9MzA=
-North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Ground,https://www.liveatc.net/play/kmke3_gnd.pls,https://wmso-us-ea1.wetmet.net/live/291-04-01/playlist.m3u8?wmsAuthSign=c2VydmVyX3RpbWU9MS8xLzIwMjUgODoyNjo1NSBQTSZoYXNoX3ZhbHVlPWJKdWVpVG5JNnlvUk5IT1pZQ2lQdkE9PSZ2YWxpZG1pbnV0ZXM9MzA=
+North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Tower,https://www.liveatc.net/play/kmke_twr.pls
+North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Approach/Departure,https://www.liveatc.net/play/kmke3_app_dep.pls
+North America,United States,Milwaukee,General Mitchell International Airport,KMKE,MKE,Ground,https://www.liveatc.net/play/kmke3_gnd.pls
 North America,Mexico,Guadalajara,Don Miguel Hidalgo y Costilla International,MMGL,GDL,Tower/Approach,https://www.liveatc.net/play/mmgl.pls
 North America,Panama,Panama City,Panama Pacifico International Airport,MPPA,BLK,Tower,https://www.liveatc.net/play/mppa2_twr.pls
 North America,Panama,Panama City,Panama Pacifico International Airport,MPPA,BLK,Approach/Departure,https://www.liveatc.net/play/mppa2_app_dep.pls

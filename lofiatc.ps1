@@ -627,10 +627,10 @@ Function Start-Player {
         }
         "MPC-HC" {
             $mpchcArgs = "`"$url`"" 
-            if ($noVideo) { $mpchcArgs += " " }
+            if ($noVideo) { $mpchcArgs += "" } # Not possible with MPC-HC
             if ($noAudio) { $mpchcArgs += " /mute" }
             if ($basicArgs) { $mpchcArgs += " /new" }
-            $mpchcArgs += " /volume=$volume"
+            $mpchcArgs += " /volume $volume"
             $mpchcArgs
         }
     }
@@ -670,15 +670,15 @@ if ($RandomATC) {
 }
 
 # Starting the ATC audio stream
-Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 75
+Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 65
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 45
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 50 
     } else {
         # Play Lofi music audio only (only works for VLC so far)
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 45
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 50
     }
 }
 
