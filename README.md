@@ -1,18 +1,35 @@
 <div align="center">
 
 # lofiatc.ps1
-a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC, allowing you to listen to Lofi Girl and Air Traffic Control from around the world simultaneously
+a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC/Potplayer, allowing you to listen to Lofi Girl and Air Traffic Control from around the world simultaneously
 
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
 </div>
 
-# Screenshots 
+<br>
 
+
+# Demo
+
+## Using fuzzy finder
+![](./assets/demo.gif)
+
+
+
+## Using default input/output
+![](./assets/defaultoutput_demo.gif)
+
+## Airport Info
+![Info after airport selection](./assets/airportinfo.png)
+
+<br>
 
 # Gettings Started
 
 ## Requirements
-- VLC Media Player (Can be installed using winget: `winget install -e --id VideoLAN.VLC`)  
+- A media player, currently only the following players are supported:
+  - VLC Media Player: `winget install -e --id VideoLAN.VLC`)
+  - Potplayer: `winget install potplayer --id Daum.PotPlayer -s winget`
 - PowerShell 5.1 or later
 - fzf (optional) but required if you wanna use fzf (Can also be installed via winget: `winget install --id=junegunn.fzf  -e`)
 
