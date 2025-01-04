@@ -21,7 +21,10 @@ Play the Lofi Girl video instead of just the audio.
 Use fzf for searching and filtering channels.
 
 .PARAMETER Player
-Specify the media player to use (VLC or MPV). Default is VLC.
+Specify the media player to use (VLC, Potplayer,MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
+
+.PARAMETER NoCache
+Disable caching for MPV player.
 
 .NOTES
 File Name      : lofiatc.ps1
@@ -55,9 +58,64 @@ param (
     [switch]$RandomATC,
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
-    [ValidateSet("VLC", "MPV", "Potplayer")]
-    [string]$Player = "VLC"  # Default to VLC
+    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
+    [string]$Player,
+    [switch]$NoCache
 )
+
+# MP4 == Default app for all files
+# Function to check the default application for .mp4
+Function Get-DefaultAppForMP4 {
+    try {
+        # Query the UserChoice Registry Key for .mp4
+        $keyPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.mp4\UserChoice"
+        if (Test-Path $keyPath) {
+            $key = Get-ItemProperty -Path $keyPath -ErrorAction Stop
+            $progID = $key.ProgID
+        } else {
+            # Fallback to system default if UserChoice doesn't exist
+            $keyPath = "HKCR:\.mp4"
+            if (Test-Path $keyPath) {
+                $progID = (Get-ItemProperty -Path $keyPath -ErrorAction Stop).'(default)'
+            } else {
+                return $null
+            }
+        }
+
+        # Extract executable name if ProgID follows Applications format
+        if ($progID -like "Applications\*") {
+            return $progID -replace "Applications\\", ""
+        } else {
+            return $progID
+        }
+    } catch {
+        return $null
+    }
+}
+
+# Function to determine the appropriate player
+Function Resolve-Player {
+    param (
+        [string]$explicitPlayer
+    )
+
+    if ($explicitPlayer) {
+        # If the user specifies a player, use it
+        return $explicitPlayer
+    } else {
+        # If no player is specified, check the system default for .mp4
+        $defaultApp = Get-DefaultAppForMP4
+
+        # Match default app to known players
+        switch ($defaultApp) {
+            "vlc.exe"       { return "VLC" }
+            "mpv.exe"       { return "MPV" }
+            "PotPlayerMini64.exe" { return "Potplayer" }
+            "mpc-hc64.exe"  { return "MPC-HC" }
+            default         { return "VLC" }  # Fallback to VLC if no match is found
+        }
+    }
+}
 
 # Function to check if the selected player is available
 Function Test-Player {
@@ -69,6 +127,7 @@ Function Test-Player {
         "VLC" { "vlc.exe" }
         "MPV" { "mpv.com" }
         "Potplayer" { "PotPlayerMini64.exe" }
+        "MPC-HC" { "mpc-hc64.exe" }
     }
 
     $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
@@ -537,27 +596,42 @@ Function Start-Player {
         [string]$url,
         [string]$player,
         [switch]$noVideo,
-        [switch]$noAudio
+        [switch]$noAudio,
+        [switch]$basicArgs,
+        [int]$volume = 100
     )
 
     $playerArgs = switch ($player) {
         "VLC" {
-            $vlcArgs = "`"$url`""
+            $vlcArgs = "`"$url`"" 
             if ($noVideo) { $vlcArgs += " --no-video" }
             if ($noAudio) { $vlcArgs += " --no-audio" }
+            $vlcArgs += " --volume=$volume"
             $vlcArgs
         }
         "MPV" {
-            $mpvArgs = "`"$url`""
-            if ($noVideo) { $mpvArgs += " --video=no" }
-            if ($noAudio) { $mpvArgs += " --audio=no" }
+            $mpvArgs = "`"$url`"" 
+            if ($noVideo) { $mpvArgs += " --no-video" }
+            if ($noAudio) { $mpvArgs += " --no-audio" }
+            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
+            $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
         "Potplayer" {
-            $potplayerArgs = "`"$url`""
+            $potplayerArgs = "`"$url`"" 
             if ($noVideo) { $potplayerArgs += "" } # Not possible with potplayer
             if ($noAudio) { $potplayerArgs += " /volume=0" }
+            if ($basicArgs) { $potplayerArgs += " /new" }
+            $potplayerArgs += " /volume=$volume"
             $potplayerArgs
+        }
+        "MPC-HC" {
+            $mpchcArgs = "`"$url`"" 
+            if ($noVideo) { $mpchcArgs += " " }
+            if ($noAudio) { $mpchcArgs += " /mute" }
+            if ($basicArgs) { $mpchcArgs += " /new" }
+            $mpchcArgs += " /volume=$volume"
+            $mpchcArgs
         }
     }
 
@@ -565,8 +639,11 @@ Function Start-Player {
     Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
 }
 
+# Determine the player to use
+$Player = Resolve-Player -explicitPlayer $Player
+
 # Check if the selected player is installed
-Test-Player -player $Player
+Test-Player -player $Player | Out-Null
 
 $lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 $csvPath = "atc_sources.csv"
@@ -574,7 +651,7 @@ $atcSources = Import-ATCSources -csvPath $csvPath
 
 if ($RandomATC) {
     $selectedATC = Get-RandomATCStream -atcSources $atcSources
-    $selectedATCUrl = $selectedATC.StreamUrl
+    $selectedATCUrl = $selectedATC.StreamUrl    
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
 } else {
@@ -582,10 +659,8 @@ if ($RandomATC) {
         $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
     } else {
         $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
-        Write-Host "Selected continent: $selectedContinent" -ForegroundColor Green
 
         $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items (@($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique))
-        Write-Host "Selected country: $selectedCountry" -ForegroundColor Green
 
         $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
     }
@@ -595,19 +670,19 @@ if ($RandomATC) {
 }
 
 # Starting the ATC audio stream
-Start-Player -url $selectedATCUrl -player $Player -noVideo
+Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 75
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player 
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 45
     } else {
-        # Play Lofi music audio only (only works for vlc so far)
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo 
+        # Play Lofi music audio only (only works for VLC so far)
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 45
     }
 }
 
 # Starting the webcam stream if available
 if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
-    Start-Player -url $selectedWebcamUrl -player $Player -noAudio
+    Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs
 }
