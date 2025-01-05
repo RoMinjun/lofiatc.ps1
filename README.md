@@ -1,51 +1,70 @@
 <div align="center">
 
 # lofiatc.ps1
-a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC/Potplayer, allowing you to listen to Lofi Girl and Air Traffic Control from around the world simultaneously
+An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell. This script integrates multimedia players like VLC, Potplayer, MPC-HC, or mpv, enabling you to simultaneously enjoy Lofi Girl and live Air Traffic Control streams from around the world.
 
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
+
 </div>
 
 <br>
 
-## Choose your player
+<div align="center">
+
+  
+## Choose Your Player
 ![Made with VHS](https://vhs.charm.sh/vhs-154FXdHgipfjST4QcpFhQ5.gif)
 
-## Using fuzzy finder
+## Search Your Favorite Airport Using Fuzzy Finder!
 ![](./assets/demo.gif)
 
-## Using default input/output
+## OR Without Fuzzy Finder...
 ![](./assets/defaultoutput_demo.gif)
 
-## Airport Info
-![Info after airport selection](./assets/airportinfo.png)
+## Airport Info at Your Fingertips! 
+![Info After Airport Selection](./assets/airportinfo.png)
+
+---
+
+![Made with VHS](https://vhs.charm.sh/vhs-1LOxW9YtwAj6V4n7FfNSAh.gif)
+
+</div>
 
 <br>
 
-# Gettings Started
+# **Getting Started**
 
-## Requirements
-- PowerShell 5.1 or later
-- A media player, you only have to install one of the following players (whichever you like):
-  - VLC Media Player: `winget install -e --id VideoLAN.VLC`
-  - Potplayer: `winget install potplayer --id Daum.PotPlayer -s winget`
-  - MPC-HC: `winget install MPC-HC --id clsid2.mpc-hc`
-  - MPV: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
-- fzf (optional but highly recommended)
-  - winget: `winget install --id=junegunn.fzf  -e`
+## **Requirements**
+Ensure you have the following installed before running the script:
+- **PowerShell 5.1 or later**
+- **A Multimedia Player** (choose one of the following):
+  - **VLC Media Player**:  
+    Install with: `winget install -e --id VideoLAN.VLC`
+  - **Potplayer**:  
+    Install with: `winget install potplayer --id Daum.PotPlayer -s winget`
+  - **MPC-HC**:  
+    Install with: `winget install MPC-HC --id clsid2.mpc-hc`
+  - **MPV**:  
+    Install with: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
+- **fzf** *(Optional, but recommended)*:  
+  Install with: `winget install --id=junegunn.fzf -e`
 
-## Clone repo locally
+---
+
+## **Clone the Repository**
+Clone the repository locally to get started:
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
 ```
 
-## Run script
+## **Run the Script**
+Execute the script using PowerShell:
 ```powershell
 .\lofiatc.ps1
 ```
 
-> [!TIP]
-Check the possibilities of the script using `Get-Help` 
+## **Explore Script Options**
+Learn about all the features and parameters with the PowerShell `Get-Help` command:
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
