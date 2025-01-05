@@ -21,10 +21,7 @@ Play the Lofi Girl video instead of just the audio.
 Use fzf for searching and filtering channels.
 
 .PARAMETER Player
-Specify the media player to use (VLC, Potplayer,MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
-
-.PARAMETER NoCache
-Disable caching for MPV player.
+Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
 .NOTES
 File Name      : lofiatc.ps1
@@ -59,8 +56,7 @@ param (
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
-    [string]$Player,
-    [switch]$NoCache
+    [string]$Player
 )
 
 # MP4 == Default app for all files
@@ -627,10 +623,10 @@ Function Start-Player {
         }
         "MPC-HC" {
             $mpchcArgs = "`"$url`"" 
-            if ($noVideo) { $mpchcArgs += " " }
+            if ($noVideo) { $mpchcArgs += "" } # Not possible with MPC-HC
             if ($noAudio) { $mpchcArgs += " /mute" }
             if ($basicArgs) { $mpchcArgs += " /new" }
-            $mpchcArgs += " /volume=$volume"
+            $mpchcArgs += " /volume $volume"
             $mpchcArgs
         }
     }
@@ -670,15 +666,15 @@ if ($RandomATC) {
 }
 
 # Starting the ATC audio stream
-Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 75
+Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 65
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 45
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 50 
     } else {
         # Play Lofi music audio only (only works for VLC so far)
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 45
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 50
     }
 }
 
