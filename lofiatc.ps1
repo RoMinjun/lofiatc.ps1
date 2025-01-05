@@ -21,10 +21,7 @@ Play the Lofi Girl video instead of just the audio.
 Use fzf for searching and filtering channels.
 
 .PARAMETER Player
-Specify the media player to use (VLC, Potplayer,MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
-
-.PARAMETER NoCache
-Disable caching for MPV player.
+Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
 .NOTES
 File Name      : lofiatc.ps1
@@ -59,8 +56,7 @@ param (
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
-    [string]$Player,
-    [switch]$NoCache
+    [string]$Player
 )
 
 # MP4 == Default app for all files

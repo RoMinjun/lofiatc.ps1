@@ -8,13 +8,11 @@ a [lofiatc](https://www.lofiatc.com) alternative using PowerShell and VLC/Potpla
 
 <br>
 
-
-# Demo
+## Choose your player
+![Made with VHS](https://vhs.charm.sh/vhs-154FXdHgipfjST4QcpFhQ5.gif)
 
 ## Using fuzzy finder
 ![](./assets/demo.gif)
-
-
 
 ## Using default input/output
 ![](./assets/defaultoutput_demo.gif)
