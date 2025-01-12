@@ -49,6 +49,7 @@ This command runs the script, includes webcam video if available, uses fzf for s
 
 #>
 
+[CmdletBinding()]
 param (
     [switch]$IncludeWebcamIfAvailable,
     [switch]$NoLofiMusic,
@@ -346,7 +347,7 @@ Function Get-METAR-TAF {
     )
     $url = "https://metar-taf.com/$ICAO"
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
         $metarDescription = if ($response.Content -match '<meta name="description" content="([^"]+)">') {
             $matches[1]
         }
@@ -376,9 +377,9 @@ Function ConvertFrom-METAR {
     # Match wind information, including gusts
     if ($metar -match "(?<windDir>\d{3})(?<windSpeed>\d{2})(G(?<gustSpeed>\d{2}))?KT") {
         $decoded["Wind"] = if ($matches.gustSpeed) {
-            "$([int]$matches.windDir)° at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots"
+            "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots"
         } else {
-            "$([int]$matches.windDir)° at $([int]$matches.windSpeed) knots"
+            "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots"
         }
     }
 
@@ -412,18 +413,18 @@ Function ConvertFrom-METAR {
     if ($metar -match "(?<temp>-?\d{1,2})/(?<dew>-?\d{1,2}|M\d{1,2})") {
         # Remove leading zeros for temperature
         $temperature = if ($matches.temp -eq "-00") { 
-            "0°C" 
+            "0$([char]176)C" 
         } else { 
-            "$([int]$matches.temp)°C" 
+            "$([int]$matches.temp)$([char]176)C" 
         }
 
         # Remove leading zeros for dew point
         $dewPoint = if ($matches.dew -eq "-00") { 
-            "0°C" 
+            "0$([char]176)C" 
         } elseif ($matches.dew -like "M*") {
-            "-$([int]($matches.dew.Trim('M')))°C"
+            "-$([int]($matches.dew.Trim('M')))$([char]176)C"
         } else {
-            "$([int]$matches.dew)°C"
+            "$([int]$matches.dew)$([char]176)C"
         }
 
         $decoded["Temperature"] = $temperature
@@ -454,7 +455,7 @@ Function Get-AirportDateTime {
     )
     $url = "https://metar-taf.com/$ICAO"
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
         $dateAndTime = if ($response.Content -match '<div class="d-flex align-items-center m-auto text-nowrap px-3">\s*<span class="[^"]+">([^<]+)</span>\s*([^<]+)\s*</div>') {
             ($matches[1].Trim() + " " + $matches[2].Trim())
         }
@@ -472,7 +473,7 @@ Function Get-AirportSunriseSunset {
     )
     $url = "https://metar-taf.com/$ICAO"
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
         $htmlContent = $response.Content
 
         # Extract Sunrise
@@ -508,7 +509,7 @@ Function Get-METAR-LastUpdatedTime {
     )
     $url = "https://metar-taf.com/$ICAO"
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
         $htmlContent = $response.Content
 
         # Extract the "Last Updated" time from the correct div and span structure
@@ -524,12 +525,36 @@ Function Get-METAR-LastUpdatedTime {
     }
 }
 
-
-# Function to display welcome message
 Function Write-Welcome {
     param (
         [object]$airportInfo
     )
+
+    # Check PowerShell version
+    $isPowerShell7 = $PSVersionTable.PSVersion.Major -ge 7
+
+    # Unicode Symbols (Use blank strings for PowerShell 5.1)
+    $airplane       = if ($isPowerShell7) { "`u{2708}`u{FE0F}" } else { "" }
+    $location       = if ($isPowerShell7) { "`u{1F4CD}" } else { "" }
+    $earth          = if ($isPowerShell7) { "`u{1F30D}" } else { "" }
+    $departure      = if ($isPowerShell7) { "`u{1F6EB}" } else { "" }
+    $clock          = if ($isPowerShell7) { "`u{23F0}" } else { "" }
+    $weather        = if ($isPowerShell7) { "`u{1F326}`u{FE0F}" } else { "" }
+    $wind           = if ($isPowerShell7) { "`u{1F32C}`u{FE0F}" } else { "" }
+    $eye            = if ($isPowerShell7) { "`u{1F441}`u{FE0F}" } else { "" }
+    $cloud          = if ($isPowerShell7) { "`u{2601}`u{FE0F}" } else { "" }
+    $thermometer    = if ($isPowerShell7) { "`u{1F321}`u{FE0F}" } else { "" }
+    $droplet        = if ($isPowerShell7) { "`u{1F4A7}" } else { "" }
+    $barometer      = if ($isPowerShell7) { "`u{1F4CF}" } else { "" }
+    $note           = if ($isPowerShell7) { "`u{1F4DD}" } else { "" }
+    $sunrise        = if ($isPowerShell7) { "`u{1F305}" } else { "" }
+    $sunset         = if ($isPowerShell7) { "`u{1F304}" } else { "" }
+    $antenna        = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
+    $mic            = if ($isPowerShell7) { "`u{1F5E3}`u{FE0F}" } else { "" }
+    $headphones     = if ($isPowerShell7) { "`u{1F3A7}" } else { "" }
+    $camera         = if ($isPowerShell7) { "`u{1F3A5}" } else { "" }
+    $link           = if ($isPowerShell7) { "`u{1F517}" } else { "" }
+    $hourglass      = if ($isPowerShell7) { "`u{23F3}" } else { "" }
 
     # Fetch raw METAR
     $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
@@ -547,43 +572,43 @@ Function Write-Welcome {
     $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
 
     # Display welcome message
-    Write-Output "`n✈️ Welcome to $($airportInfo.'Airport Name'):"
-    Write-Output "    📍 City:        $($airportInfo.City)"
-    Write-Output "    🌍 Country:     $($airportInfo.Country)"
-    Write-Output "    🛫 ICAO/IATA:   $($airportInfo.'ICAO')/$($airportInfo.'IATA')`n"
+    Write-Output "`n$airplane Welcome to $($airportInfo.'Airport Name'):"
+    Write-Output "    $location City:        $($airportInfo.City)"
+    Write-Output "    $earth Country:     $($airportInfo.Country)"
+    Write-Output "    $departure ICAO/IATA:   $($airportInfo.ICAO)/$($airportInfo.IATA)`n"
 
-    Write-Output "🕒 Current Date/Time:"
+    Write-Output "$clock Current Date/Time:"
     Write-Output "    $airportDateTime`n"
 
-    Write-Output "🌦️ Weather Information:"
-    Write-Output "    🌬️ Wind:        $($decodedMetar.Wind)"
-    Write-Output "    👁️ Visibility:  $($decodedMetar.Visibility)"
-    Write-Output "    ☁️ Ceiling:     $($decodedMetar.Ceiling)"
-    Write-Output "    🌡️ Temperature: $($decodedMetar.Temperature)"
-    Write-Output "    💧 Dew Point:   $($decodedMetar.DewPoint)"
-    Write-Output "    📏 Pressure:    $($decodedMetar.Pressure)"
-    Write-Output "    📝 Raw METAR:   $metar`n"
+    Write-Output "$weather Weather Information:"
+    Write-Output "    $wind Wind:        $($decodedMetar.Wind)"
+    Write-Output "    $eye Visibility:  $($decodedMetar.Visibility)"
+    Write-Output "    $cloud Ceiling:     $($decodedMetar.Ceiling)"
+    Write-Output "    $thermometer Temperature: $($decodedMetar.Temperature)"
+    Write-Output "    $droplet Dew Point:   $($decodedMetar.DewPoint)"
+    Write-Output "    $barometer Pressure:    $($decodedMetar.Pressure)"
+    Write-Output "    $note Raw METAR:   $metar`n"
 
     # Display sunrise and sunset information if available
     if ($sunTimes) {
-        Write-Output "🌅 Sunrise/Sunset Times:"
-        Write-Output "    🌅 Sunrise: $($sunTimes.Sunrise)"
-        Write-Output "    🌄 Sunset:  $($sunTimes.Sunset)`n"
+        Write-Output "$sunrise Sunrise/Sunset Times:"
+        Write-Output "    $sunrise Sunrise: $($sunTimes.Sunrise)"
+        Write-Output "    $sunset Sunset:  $($sunTimes.Sunset)`n"
     }
 
-    Write-Output "📡 Air Traffic Control:"
-    Write-Output "    🗣️ Channel: $($airportInfo.'Channel Description')"
-    Write-Output "    🎧 Stream:  $($airportInfo.'Stream URL')`n"
+    Write-Output "$antenna Air Traffic Control:"
+    Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
+    Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')`n"
 
     # Include webcam information if available
     if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
-        Write-Output "🎥 Webcam:"
+        Write-Output "$camera Webcam:"
         Write-Output "    $($airportInfo.'Webcam URL')`n"
     }
 
     # Display METAR source and last updated time
-    Write-Output "🔗 Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.'ICAO')"
-    Write-Output "    ⏰ Last Updated: $lastUpdatedTime ago`n"
+    Write-Output "$link Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.ICAO)"
+    Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
 # Function to start the media player with a given URL
@@ -650,6 +675,20 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl    
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
+
+    # Output player info after the welcome message
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
+        Write-Verbose "Player selected by user: $Player"
+    } else {
+        Write-Verbose "Default player selected: $Player"
+    }
+
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+        Write-Verbose "Opening ATC stream: $selectedATCUrl"
+        if ($selectedWebcamUrl) {
+            Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+        }
+    }
 } else {
     if ($UseFZF) {
         $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
@@ -663,6 +702,20 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
+
+    # Output player info after the welcome message
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
+        Write-Verbose "Player selected by user: $Player"
+    } else {
+        Write-Verbose "Default player selected: $Player"
+    }
+
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+        Write-Verbose "Opening ATC stream: $selectedATCUrl"
+        if ($selectedWebcamUrl) {
+            Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+        }
+    }
 }
 
 # Starting the ATC audio stream
@@ -670,10 +723,12 @@ Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 65
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+        Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
+    }
     if ($PlayLofiGirlVideo) {
         Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 50 
     } else {
-        # Play Lofi music audio only (only works for VLC so far)
         Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 50
     }
 }
