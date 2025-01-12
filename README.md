@@ -22,7 +22,7 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell. This
 ![Made with VHS](https://vhs.charm.sh/vhs-2sTPLAkHZ0nzVtAdCifMT3.gif)
 
 ## Airport Info at Your Fingertips! 
-![Info After Airport Selection](./assets/airportinfo.png)
+![Made with VHS](https://vhs.charm.sh/vhs-27zfUBvX3O7fPkWiFHe3T1.gif)
 
 ---
 
