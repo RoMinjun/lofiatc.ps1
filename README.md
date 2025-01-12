@@ -28,11 +28,15 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell. This
 
 ![Made with VHS](https://vhs.charm.sh/vhs-1LOxW9YtwAj6V4n7FfNSAh.gif)
 
-</div>
+
 
 <br>
 
 # **Getting Started**
+
+</div>
+
+<br>
 
 ## **Requirements**
 Ensure you have the following installed before running the script:
