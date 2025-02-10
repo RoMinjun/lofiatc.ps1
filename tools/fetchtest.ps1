@@ -142,6 +142,7 @@ Function Save-CombinedDataToCSV {
                     IATA                  = $airportDetail.IATA
                     'Channel Description' = $atcSource.Channel
                     'Stream URL'          = $atcSource.URL
+                    'Webcam URL'          = ""
                 }
             }
             else {
@@ -155,6 +156,7 @@ Function Save-CombinedDataToCSV {
                     IATA                  = ""
                     'Channel Description' = $atcSource.Channel
                     'Stream URL'          = $atcSource.URL
+                    'Webcam URL'          = ""
                 }
             }
         }
