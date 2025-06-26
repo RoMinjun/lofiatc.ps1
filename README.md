@@ -50,8 +50,9 @@ Ensure you have the following installed before running the script:
     Install with: `winget install MPC-HC --id clsid2.mpc-hc`
   - **MPV**:  
     Install with: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
-- **fzf** *(Optional, but recommended)*:  
+- **fzf** *(Optional, but recommended)*:
   Install with: `winget install --id=junegunn.fzf -e`
+- **Internet access to fetch METAR data** from the [NOAA Aviation Weather Center](https://tgftp.nws.noaa.gov/data/observations/metar/stations)
 
 ---
 
@@ -72,3 +73,5 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+The script retrieves METAR reports from the [NOAA Aviation Weather Center](https://tgftp.nws.noaa.gov/data/observations/metar/stations).

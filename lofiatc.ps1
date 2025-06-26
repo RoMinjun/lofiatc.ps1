@@ -345,23 +345,18 @@ Function Get-METAR-TAF {
     param (
         [string]$ICAO
     )
-    $url = "https://metar-taf.com/$ICAO"
+    $url = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/$ICAO.TXT"
     try {
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $metarDescription = if ($response.Content -match '<meta name="description" content="([^"]+)">') {
-            $matches[1]
-        }
-
-        # Extract the METAR string before the first period
-        if ($metarDescription) {
-            $rawMETAR = $metarDescription -split "\.", 2
-            return $rawMETAR[0].Trim()
+        $lines = $response.Content -split "`n"
+        if ($lines.Length -ge 2) {
+            return $lines[1].Trim()
         } else {
-            return "METAR/TAF data unavailable."
+            return "METAR data unavailable."
         }
     } catch {
-        Write-Error "Failed to fetch METAR/TAF data for $ICAO."
-        return "METAR/TAF data unavailable."
+        Write-Error "Failed to fetch METAR data for $ICAO."
+        return "METAR data unavailable."
     }
 }
 
@@ -448,77 +443,27 @@ Function ConvertFrom-METAR {
     return [PSCustomObject]$decoded
 }
 
-# Function to fetch airport date/time
-Function Get-AirportDateTime {
-    param (
-        [string]$ICAO
-    )
-    $url = "https://metar-taf.com/$ICAO"
-    try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $dateAndTime = if ($response.Content -match '<div class="d-flex align-items-center m-auto text-nowrap px-3">\s*<span class="[^"]+">([^<]+)</span>\s*([^<]+)\s*</div>') {
-            ($matches[1].Trim() + " " + $matches[2].Trim())
-        }
-        return $dateAndTime
-    } catch {
-        Write-Error "Date and time not found for $ICAO."
-        return "Date/time data unavailable"
-    }
-}
-
-# Function to fetch airport sunrise/sunset times
-Function Get-AirportSunriseSunset {
-    param (
-        [string]$ICAO
-    )
-    $url = "https://metar-taf.com/$ICAO"
-    try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $htmlContent = $response.Content
-
-        # Extract Sunrise
-        $sunrise = "Sunrise not found"
-        if ($htmlContent -match '<small><b>Sunrise<\/b><br>\s*(\d{2}:\d{2})') {
-            $sunrise = $matches[1]
-        }
-
-        # Extract Sunset
-        $sunset = "Sunset not found"
-        if ($htmlContent -match '<small><b>Sunset<\/b><br>\s*(\d{2}:\d{2})') {
-            $sunset = $matches[1]
-        }
-
-        # Return result
-        return @{
-            Sunrise = $sunrise
-            Sunset = $sunset
-        }
-    } catch {
-        Write-Error "Failed to fetch data for $ICAO. Exception: $_"
-        return @{
-            Sunrise = "Data unavailable"
-            Sunset = "Data unavailable"
-        }
-    }
-}
-
 # Function to fetch METAR last updated time
 Function Get-METAR-LastUpdatedTime {
     param (
         [string]$ICAO
     )
-    $url = "https://metar-taf.com/$ICAO"
+    $url = "https://tgftp.nws.noaa.gov/data/observations/metar/stations/$ICAO.TXT"
     try {
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $htmlContent = $response.Content
-
-        # Extract the "Last Updated" time from the correct div and span structure
-        $lastUpdated = "Last updated time not found"
-        if ($htmlContent -match '<div[^>]*class="rounded-right d-flex align-items-center py-1 py-lg-2 px-3 bg-darkblue border-left text-white">\s*<span[^>]*></span>\s*(?<lastUpdatedTime>[^<]+)') {
-            $lastUpdated = $matches['lastUpdatedTime'].Trim()
+        $lines = $response.Content -split "`n"
+        if ($lines.Length -ge 1) {
+            $timestamp = $lines[0].Trim()
+            $metarTime = [datetime]::ParseExact($timestamp, 'yyyy/MM/dd HH:mm', $null)
+            $diff = (Get-Date).ToUniversalTime() - $metarTime
+            if ($diff.TotalHours -ge 1) {
+                return "{0}h {1}m" -f ([int]$diff.TotalHours), $diff.Minutes
+            } else {
+                return "{0}m" -f ([int][math]::Round($diff.TotalMinutes))
+            }
+        } else {
+            return "Unknown"
         }
-
-        return $lastUpdated
     } catch {
         Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"
         return "Last updated time unavailable."
@@ -562,12 +507,6 @@ Function Write-Welcome {
     # Decode METAR into structured data
     $decodedMetar = ConvertFrom-METAR -metar $metar
 
-    # Fetch current airport date/time
-    $airportDateTime = Get-AirportDateTime -ICAO $airportInfo.ICAO
-
-    # Fetch sunrise and sunset times
-    $sunTimes = Get-AirportSunriseSunset -ICAO $airportInfo.ICAO
-
     # Fetch METAR last updated time
     $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
 
@@ -576,9 +515,6 @@ Function Write-Welcome {
     Write-Output "    $location City:        $($airportInfo.City)"
     Write-Output "    $earth Country:     $($airportInfo.Country)"
     Write-Output "    $departure ICAO/IATA:   $($airportInfo.ICAO)/$($airportInfo.IATA)`n"
-
-    Write-Output "$clock Current Date/Time:"
-    Write-Output "    $airportDateTime`n"
 
     Write-Output "$weather Weather Information:"
     Write-Output "    $wind Wind:        $($decodedMetar.Wind)"
@@ -589,12 +525,6 @@ Function Write-Welcome {
     Write-Output "    $barometer Pressure:    $($decodedMetar.Pressure)"
     Write-Output "    $note Raw METAR:   $metar`n"
 
-    # Display sunrise and sunset information if available
-    if ($sunTimes) {
-        Write-Output "$sunrise Sunrise/Sunset Times:"
-        Write-Output "    $sunrise Sunrise: $($sunTimes.Sunrise)"
-        Write-Output "    $sunset Sunset:  $($sunTimes.Sunset)`n"
-    }
 
     Write-Output "$antenna Air Traffic Control:"
     Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
@@ -607,7 +537,7 @@ Function Write-Welcome {
     }
 
     # Display METAR source and last updated time
-    Write-Output "$link Data Source: METAR and TAF data retrieved from https://metar-taf.com/$($airportInfo.ICAO)"
+    Write-Output "$link Data Source: METAR data retrieved from https://tgftp.nws.noaa.gov/"
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
