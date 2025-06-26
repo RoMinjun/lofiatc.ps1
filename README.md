@@ -72,3 +72,9 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+## **Keeping ATC Sources Up to Date**
+The script will automatically refresh `atc_sources.csv` with the latest streams from [liveatc.net](https://www.liveatc.net) each time it runs. You can also update the list manually with:
+```powershell
+./tools/UpdateATCSources.ps1
+```
