@@ -72,3 +72,9 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+## **Run the Tests**
+Pester tests are located in the `tests` folder. Execute them with:
+```powershell
+Invoke-Pester
+```
