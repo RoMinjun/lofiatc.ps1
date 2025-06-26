@@ -475,7 +475,8 @@ Function Get-AirportDateTime {
     try {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
         if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
-        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$($airportInfo.tz)" -Method Get
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$($airportInfo.tz)" -Method Get -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
         $dt = [datetime]$timeInfo.datetime
         return $dt.ToString("yyyy-MM-dd HH:mm")
     } catch {
@@ -495,8 +496,10 @@ Function Get-AirportSunriseSunset {
         $lon = $airportInfo.lon
         $tz = $airportInfo.tz
         if (-not ($lat -and $lon -and $tz)) { throw "Missing data" }
-        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$tz" -Method Get
-        $offset = [System.TimeSpan]::Parse($timeInfo.utc_offset)
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$tz" -Method Get -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+        $offsetText = $timeInfo.utc_offset -replace '^\+', ''
+        $offset = [System.TimeSpan]::Parse($offsetText)
         $sunInfo = Invoke-RestMethod -Uri "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0" -Method Get
         $sunrise = ([datetime]$sunInfo.results.sunrise + $offset).ToString("HH:mm")
         $sunset = ([datetime]$sunInfo.results.sunset + $offset).ToString("HH:mm")
