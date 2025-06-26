@@ -447,6 +447,71 @@ Function ConvertFrom-METAR {
 # Cache for airport database
 $global:AirportData = $null
 
+# Mapping of common IANA time zones to Windows IDs for PowerShell 5.1
+$global:IanaToWindowsMap = @{
+    "Etc/UTC"             = "UTC"
+    "Europe/London"       = "GMT Standard Time"
+    "Europe/Dublin"       = "GMT Standard Time"
+    "Europe/Amsterdam"    = "W. Europe Standard Time"
+    "Europe/Paris"        = "Romance Standard Time"
+    "Europe/Berlin"       = "W. Europe Standard Time"
+    "Europe/Madrid"       = "Romance Standard Time"
+    "Europe/Brussels"     = "Romance Standard Time"
+    "Europe/Rome"         = "W. Europe Standard Time"
+    "Europe/Vienna"       = "W. Europe Standard Time"
+    "Europe/Prague"       = "Central Europe Standard Time"
+    "Europe/Moscow"       = "Russian Standard Time"
+    "Europe/Athens"       = "GTB Standard Time"
+    "Europe/Bucharest"    = "GTB Standard Time"
+    "Africa/Cairo"        = "Egypt Standard Time"
+    "Africa/Johannesburg" = "South Africa Standard Time"
+    "Asia/Jerusalem"      = "Israel Standard Time"
+    "Asia/Dubai"          = "Arabian Standard Time"
+    "Asia/Tehran"         = "Iran Standard Time"
+    "Asia/Riyadh"         = "Arab Standard Time"
+    "Asia/Karachi"        = "Pakistan Standard Time"
+    "Asia/Kolkata"        = "India Standard Time"
+    "Asia/Dhaka"          = "Bangladesh Standard Time"
+    "Asia/Bangkok"        = "SE Asia Standard Time"
+    "Asia/Singapore"      = "Singapore Standard Time"
+    "Asia/Hong_Kong"      = "China Standard Time"
+    "Asia/Shanghai"       = "China Standard Time"
+    "Asia/Taipei"         = "Taipei Standard Time"
+    "Asia/Tokyo"          = "Tokyo Standard Time"
+    "Asia/Seoul"          = "Korea Standard Time"
+    "Australia/Perth"     = "W. Australia Standard Time"
+    "Australia/Adelaide"  = "Cen. Australia Standard Time"
+    "Australia/Sydney"    = "AUS Eastern Standard Time"
+    "Pacific/Auckland"    = "New Zealand Standard Time"
+    "America/Halifax"     = "Atlantic Standard Time"
+    "America/St_Johns"    = "Newfoundland Standard Time"
+    "America/Argentina/Buenos_Aires" = "Argentina Standard Time"
+    "America/Sao_Paulo"   = "E. South America Standard Time"
+    "America/New_York"    = "Eastern Standard Time"
+    "America/Chicago"     = "Central Standard Time"
+    "America/Denver"      = "Mountain Standard Time"
+    "America/Phoenix"     = "US Mountain Standard Time"
+    "America/Los_Angeles" = "Pacific Standard Time"
+    "America/Anchorage"   = "Alaskan Standard Time"
+    "Pacific/Honolulu"    = "Hawaiian Standard Time"
+}
+
+# Helper to convert IANA timezone to a TimeZoneInfo object
+Function ConvertTo-TimeZoneInfo {
+    param(
+        [string]$IanaId
+    )
+    try {
+        return [System.TimeZoneInfo]::FindSystemTimeZoneById($IanaId)
+    } catch {
+        if ($global:IanaToWindowsMap.ContainsKey($IanaId)) {
+            return [System.TimeZoneInfo]::FindSystemTimeZoneById($global:IanaToWindowsMap[$IanaId])
+        } else {
+            throw "Timezone ID '$IanaId' not recognized"
+        }
+    }
+}
+
 # Retrieve airport information from a public dataset
 Function Get-AirportInfo {
     param(
@@ -475,10 +540,9 @@ Function Get-AirportDateTime {
     try {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
         if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$($airportInfo.tz)" -Method Get -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        $dto = [datetimeoffset]$timeInfo.datetime
-        return $dto.ToString("yyyy-MM-dd HH:mm")
+        $tzInfo = ConvertTo-TimeZoneInfo -IanaId $airportInfo.tz
+        $local = [System.TimeZoneInfo]::ConvertTimeFromUtc([datetime]::UtcNow, $tzInfo)
+        return $local.ToString("yyyy-MM-dd HH:mm")
     } catch {
         Write-Error "Date and time not found for $ICAO. Exception: $_"
         return "Date/time data unavailable"
@@ -497,12 +561,12 @@ Function Get-AirportSunriseSunset {
         $tz = $airportInfo.tz
         if (-not ($lat -and $lon -and $tz)) { throw "Missing data" }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$tz" -Method Get -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        $offsetText = $timeInfo.utc_offset -replace '^\+', ''
-        $offset = [System.TimeSpan]::Parse($offsetText)
+        $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
         $sunInfo = Invoke-RestMethod -Uri "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0" -Method Get
-        $sunrise = ([datetime]$sunInfo.results.sunrise + $offset).ToString("HH:mm")
-        $sunset = ([datetime]$sunInfo.results.sunset + $offset).ToString("HH:mm")
+        $sunriseUtc = [datetime]$sunInfo.results.sunrise
+        $sunsetUtc  = [datetime]$sunInfo.results.sunset
+        $sunrise = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunriseUtc, $tzInfo).ToString("HH:mm")
+        $sunset  = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunsetUtc,  $tzInfo).ToString("HH:mm")
         return @{
             Sunrise = $sunrise
             Sunset  = $sunset
