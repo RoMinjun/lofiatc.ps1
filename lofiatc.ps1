@@ -558,25 +558,24 @@ Function Get-AirportSunriseSunset {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
         $lat = $airportInfo.lat
         $lon = $airportInfo.lon
-        $tz = $airportInfo.tz
+        $tz  = $airportInfo.tz
         if (-not ($lat -and $lon -and $tz)) { throw "Missing data" }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
-        $sunInfo = Invoke-RestMethod -Uri "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0" -Method Get
+
+        # Request data already adjusted to the airport's timezone
+        $uri = "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0&tzid=$tz"
+        $sunInfo = Invoke-RestMethod -Uri $uri -Method Get
         $sunriseRaw = $sunInfo.results.sunrise
         $sunsetRaw  = $sunInfo.results.sunset
-        try {
-            $sunriseUtc = [datetimeoffset]::Parse($sunriseRaw, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
-        } catch {
-            $sunriseUtc = [datetimeoffset]::ParseExact($sunriseRaw, 'MM/dd/yyyy HH:mm:ss', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
-        }
-        try {
-            $sunsetUtc  = [datetimeoffset]::Parse($sunsetRaw, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
-        } catch {
-            $sunsetUtc  = [datetimeoffset]::ParseExact($sunsetRaw, 'MM/dd/yyyy HH:mm:ss', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
-        }
-        $sunrise = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunriseUtc, $tzInfo).ToString("HH:mm")
-        $sunset  = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunsetUtc,  $tzInfo).ToString("HH:mm")
+
+        # Parse the returned timestamps
+        $sunriseOffset = [datetimeoffset]::Parse($sunriseRaw, [cultureinfo]::InvariantCulture)
+        $sunsetOffset  = [datetimeoffset]::Parse($sunsetRaw,  [cultureinfo]::InvariantCulture)
+
+        # Convert explicitly to the airport timezone in case the API omits it
+        $sunrise = [System.TimeZoneInfo]::ConvertTime($sunriseOffset, $tzInfo).ToString('HH:mm')
+        $sunset  = [System.TimeZoneInfo]::ConvertTime($sunsetOffset,  $tzInfo).ToString('HH:mm')
         return @{
             Sunrise = $sunrise
             Sunset  = $sunset
