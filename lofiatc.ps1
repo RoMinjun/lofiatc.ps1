@@ -563,8 +563,18 @@ Function Get-AirportSunriseSunset {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
         $sunInfo = Invoke-RestMethod -Uri "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0" -Method Get
-        $sunriseUtc = [datetimeoffset]::Parse($sunInfo.results.sunrise).UtcDateTime
-        $sunsetUtc  = [datetimeoffset]::Parse($sunInfo.results.sunset).UtcDateTime
+        $sunriseRaw = $sunInfo.results.sunrise
+        $sunsetRaw  = $sunInfo.results.sunset
+        try {
+            $sunriseUtc = [datetimeoffset]::Parse($sunriseRaw, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
+        } catch {
+            $sunriseUtc = [datetimeoffset]::ParseExact($sunriseRaw, 'MM/dd/yyyy HH:mm:ss', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
+        }
+        try {
+            $sunsetUtc  = [datetimeoffset]::Parse($sunsetRaw, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
+        } catch {
+            $sunsetUtc  = [datetimeoffset]::ParseExact($sunsetRaw, 'MM/dd/yyyy HH:mm:ss', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal).UtcDateTime
+        }
         $sunrise = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunriseUtc, $tzInfo).ToString("HH:mm")
         $sunset  = [System.TimeZoneInfo]::ConvertTimeFromUtc($sunsetUtc,  $tzInfo).ToString("HH:mm")
         return @{
