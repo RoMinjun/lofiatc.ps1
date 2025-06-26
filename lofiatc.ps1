@@ -477,8 +477,8 @@ Function Get-AirportDateTime {
         if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $timeInfo = Invoke-RestMethod -Uri "https://worldtimeapi.org/api/timezone/$($airportInfo.tz)" -Method Get -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        $dt = [datetime]$timeInfo.datetime
-        return $dt.ToString("yyyy-MM-dd HH:mm")
+        $dto = [datetimeoffset]$timeInfo.datetime
+        return $dto.ToString("yyyy-MM-dd HH:mm")
     } catch {
         Write-Error "Date and time not found for $ICAO. Exception: $_"
         return "Date/time data unavailable"
