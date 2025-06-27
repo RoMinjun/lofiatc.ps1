@@ -136,6 +136,19 @@ Function Test-Player {
     return $fullPath
 }
 
+# Retrieve all airports currently available on liveatc.net
+Function Get-AllLiveATCAirports {
+    try {
+        $url = 'https://www.liveatc.net/cache/airports.js'
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+        $content = $response.Content -replace '^var\s+airports\s*=\s*', '' -replace ';\s*$',''
+        $airports = $content | ConvertFrom-Json
+        return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+    } catch {
+        return @()
+    }
+}
+
 # Fetch ATC stream list for an ICAO from liveatc.net
 Function Get-LiveATCSources {
     param([string]$ICAO)
@@ -197,7 +210,10 @@ Function Get-AirportDetails {
 
 # Update the local CSV with latest data from liveatc.net
 Function Update-LiveATCSources {
-    param([string]$Path)
+    param(
+        [string]$Path,
+        [string[]]$ICAOs
+    )
     $existing = @()
     if (Test-Path $Path) { $existing = Import-Csv $Path }
     $map = @{}
@@ -205,8 +221,11 @@ Function Update-LiveATCSources {
         $key = "$($row.ICAO)|$($row.'Channel Description')"
         $map[$key] = $row
     }
-    $icaos = $existing | Select-Object -ExpandProperty ICAO -Unique
-    foreach ($icao in $icaos) {
+    if (-not $ICAOs) {
+        $ICAOs = $existing | Select-Object -ExpandProperty ICAO -Unique
+    }
+    foreach ($icao in $ICAOs) {
+        Write-Host "Updating $icao..." -ForegroundColor Cyan
         $sources = Get-LiveATCSources -ICAO $icao
         $details = Get-AirportDetails -ICAO $icao
         foreach ($s in $sources) {
@@ -240,7 +259,8 @@ Function Import-ATCSources {
     )
 
     if (-Not (Test-Path $csvPath)) { New-Item -Path $csvPath -ItemType File -Force | Out-Null }
-    Update-LiveATCSources -Path $csvPath
+    $icaos = Get-AllLiveATCAirports
+    Update-LiveATCSources -Path $csvPath -ICAOs $icaos
     return Import-Csv -Path $csvPath
 }
 

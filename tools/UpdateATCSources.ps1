@@ -1,7 +1,22 @@
-# Updates ATC source list from liveatc.net
+# Fetches the latest list of airports from liveatc.net and refreshes
+# atc_sources.csv with any new or updated streams.
 param(
-    [string]$CsvPath = "..\atc_sources.csv"
+    [string]$CsvPath = (Join-Path $PSScriptRoot '..' 'atc_sources.csv')
 )
+
+Function Get-AllLiveATCAirports {
+    try {
+        $url = 'https://www.liveatc.net/cache/airports.js'
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+        $content = $response.Content -replace '^var\s+airports\s*=\s*', '' -replace ';\s*$',''
+        $airports = $content | ConvertFrom-Json
+        return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+    }
+    catch {
+        Write-Error "Failed to fetch airport list: $_"
+        return @()
+    }
+}
 
 Function Get-LiveATCSources {
     param([string]$ICAO)
@@ -63,7 +78,10 @@ Function Get-AirportDetails {
 }
 
 Function Update-LiveATCSources {
-    param([string]$Path)
+    param(
+        [string]$Path,
+        [string[]]$ICAOs
+    )
     $existing = @()
     if (Test-Path $Path) {
         $existing = Import-Csv $Path
@@ -73,8 +91,11 @@ Function Update-LiveATCSources {
         $key = "$($row.ICAO)|$($row.'Channel Description')"
         $map[$key] = $row
     }
-    $icaos = $existing | Select-Object -ExpandProperty ICAO -Unique
-    foreach ($icao in $icaos) {
+    if (-not $ICAOs) {
+        $ICAOs = $existing | Select-Object -ExpandProperty ICAO -Unique
+    }
+    foreach ($icao in $ICAOs) {
+        Write-Host "Updating $icao..." -ForegroundColor Cyan
         $sources = Get-LiveATCSources -ICAO $icao
         $details = Get-AirportDetails -ICAO $icao
         foreach ($s in $sources) {
@@ -101,4 +122,9 @@ Function Update-LiveATCSources {
     $map.Values | Sort-Object ICAO,'Channel Description' | Export-Csv -Path $Path -NoTypeInformation
 }
 
-Update-LiveATCSources -Path $CsvPath
+$icaoList = Get-AllLiveATCAirports
+if ($icaoList.Count -eq 0) {
+    Write-Warning 'No ICAO codes retrieved; using existing CSV entries.'
+}
+Update-LiveATCSources -Path $CsvPath -ICAOs $icaoList
+
