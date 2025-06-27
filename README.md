@@ -74,7 +74,7 @@ Get-Help .\lofiatc.ps1 -Full
 ```
 
 ## **Keeping ATC Sources Up to Date**
-The script refreshes `atc_sources.csv` with the latest streams from [liveatc.net](https://www.liveatc.net) each time it runs.  A scheduled GitHub workflow also updates the list automatically.  To rebuild or refresh the list manually (including any new airports that have appeared on LiveATC), run:
+The script refreshes `atc_sources.csv` with the latest streams from [liveatc.net](https://www.liveatc.net) each time it runs. A scheduled GitHub workflow also updates the list automatically. The update logic tries several fallback URLs when downloading the airport list. To rebuild or refresh the list manually (including any new airports that have appeared on LiveATC), run:
 ```powershell
 ./tools/UpdateATCSources.ps1
 ```

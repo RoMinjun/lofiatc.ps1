@@ -5,17 +5,25 @@ param(
 )
 
 Function Get-AllLiveATCAirports {
-    try {
-        $url = 'https://www.liveatc.net/cache/airports.js'
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        $content = $response.Content -replace '^var\s+airports\s*=\s*', '' -replace ';\s*$',''
-        $airports = $content | ConvertFrom-Json
-        return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+    $urls = @(
+        'https://www.liveatc.net/cache/airports.js',
+        'https://www.liveatc.net/search/airports.js',
+        'https://www.liveatc.net/assets/js/airports.js'
+    )
+    foreach ($url in $urls) {
+        try {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+            $content = $response.Content -replace '^var\s+airports\s*=\s*', '' -replace ';\s*$',''
+            $airports = $content | ConvertFrom-Json
+            if ($airports) {
+                return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            }
+        } catch {
+            continue
+        }
     }
-    catch {
-        Write-Error "Failed to fetch airport list: $_"
-        return @()
-    }
+    Write-Error "Failed to fetch airport list"
+    return @()
 }
 
 Function Get-LiveATCSources {
