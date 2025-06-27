@@ -12,6 +12,30 @@ Function Get-AllLiveATCAirports {
         'Accept-Language' = 'en-US,en;q=0.5'
     }
 
+    Function Extract-AirportsArray {
+        param([object]$Data)
+
+        if ($Data -is [System.Collections.IEnumerable] -and -not ($Data -is [string])) {
+            foreach ($item in $Data) {
+                $arr = Extract-AirportsArray $item
+                if ($arr) { return $arr }
+            }
+        }
+
+        if ($Data -is [System.Collections.IDictionary]) {
+            if ($Data.Contains('airports')) {
+                $value = $Data['airports']
+                if ($value -is [System.Collections.IEnumerable]) { return $value }
+            }
+            foreach ($val in $Data.Values) {
+                $arr = Extract-AirportsArray $val
+                if ($arr) { return $arr }
+            }
+        }
+
+        return $null
+    }
+
     Function Parse-AirportsJson {
         param([string]$Content)
 
@@ -46,6 +70,20 @@ Function Get-AllLiveATCAirports {
                 $json = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($m.Groups['b64'].Value))
                 $data = $json | ConvertFrom-Json
                 return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            } catch {}
+        }
+
+        $patternNext = @'
+(?s)<script[^>]+id=["']__NEXT_DATA__["'][^>]*>(?<json>{.*?})</script>
+'@
+        $m = [regex]::Match($Content, $patternNext)
+        if ($m.Success) {
+            try {
+                $obj = $m.Groups['json'].Value | ConvertFrom-Json
+                $arr = Extract-AirportsArray $obj
+                if ($arr) {
+                    return $arr | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+                }
             } catch {}
         }
 
