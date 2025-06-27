@@ -72,3 +72,9 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+### Volume Options
+Two parameters control the audio level of each stream:
+
+- `-ATCVolume` sets the ATC stream volume (default `65`).
+- `-LofiVolume` sets the Lofi Girl volume (default `50`).

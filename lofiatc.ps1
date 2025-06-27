@@ -23,6 +23,12 @@ Use fzf for searching and filtering channels.
 .PARAMETER Player
 Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
+.PARAMETER ATCVolume
+Volume level for the ATC stream. Default is 65.
+
+.PARAMETER LofiVolume
+Volume level for the Lofi Girl stream. Default is 50.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -57,7 +63,9 @@ param (
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
-    [string]$Player
+    [string]$Player,
+    [int]$ATCVolume = 65,
+    [int]$LofiVolume = 50
 )
 
 # MP4 == Default app for all files
@@ -819,7 +827,7 @@ if ($RandomATC) {
 }
 
 # Starting the ATC audio stream
-Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume 65
+Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
@@ -827,9 +835,9 @@ if (-not $NoLofiMusic) {
         Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
     }
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume 50 
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
     } else {
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume 50
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
     }
 }
 
