@@ -5,33 +5,41 @@ param(
 )
 
 Function Get-AllLiveATCAirports {
+    $headers = @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+
     Function Parse-AirportsJson {
         param([string]$Content)
-        try {
-            $match = [regex]::Match($Content, '(?s)airports[^=]*=\s*(?<json>\[[^;]+\])')
-            if ($match.Success) {
-                $data = $match.Groups['json'].Value | ConvertFrom-Json
-                return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+        $patterns = @(
+            '(?s)airports[^=]*=\s*(?<json>\[[^;]+\])',
+            '(?s)"airports"\s*:\s*(?<json>\[[^\]]+\])'
+        )
+        foreach ($re in $patterns) {
+            $m = [regex]::Match($Content, $re)
+            if ($m.Success) {
+                try {
+                    $data = $m.Groups['json'].Value | ConvertFrom-Json
+                    return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+                } catch {}
             }
-        } catch {}
+        }
         return $null
     }
 
     try {
-        $page = Invoke-WebRequest -Uri 'https://www.liveatc.net/search/' -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+        $page = Invoke-WebRequest -Uri 'https://www.liveatc.net/search/' -UseBasicParsing -Headers $headers
 
-        $pattern = @'
-<script[^>]+src=["'](?<p>[^"']*airports[^"']*\.js[^"']*)
-'@
-        $scriptUrls = [regex]::Matches($page.Content, $pattern) | ForEach-Object {
+        $scriptPattern = '<script[^>]+src=["''](?<p>[^"'']*\.js[^"'']*)'
+        $scriptUrls = [regex]::Matches($page.Content, $scriptPattern) | ForEach-Object {
             $u = $_.Groups['p'].Value
             if ($u -notmatch '^https?://') { "https://www.liveatc.net$u" } else { $u }
-        }
+        } | Sort-Object -Unique
 
         foreach ($url in $scriptUrls) {
-            $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/search/' }
-            $codes = Parse-AirportsJson -Content $resp.Content
-            if ($codes) { return $codes }
+            try {
+                $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers
+                $codes = Parse-AirportsJson -Content $resp.Content
+                if ($codes) { return $codes }
+            } catch {}
         }
 
         $inlineCodes = Parse-AirportsJson -Content $page.Content
@@ -47,7 +55,7 @@ Function Get-AllLiveATCAirports {
     )
     foreach ($url in $fallbackUrls) {
         try {
-            $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+            $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers
             $codes = Parse-AirportsJson -Content $resp.Content
             if ($codes) { return $codes }
         } catch {}
