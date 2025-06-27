@@ -5,43 +5,46 @@ param(
 )
 
 Function Get-AllLiveATCAirports {
-    $urls = @(
+    $staticUrls = @(
         'https://www.liveatc.net/cache/airports.js',
         'https://www.liveatc.net/search/airports.js',
         'https://www.liveatc.net/assets/js/airports.js'
     )
 
-    foreach ($url in $urls) {
+    Function Invoke-AirportJs {
+        param([string]$Url)
         try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
-            $content = $response.Content -replace '^var\s+airports\s*=\s*', '' -replace ';\s*$',''
-            $airports = $content | ConvertFrom-Json
-            if ($airports) {
-                return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            $resp = Invoke-WebRequest -Uri $Url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+            $content = $resp.Content -replace '^(var|let|const)\s+airports\s*=\s*', '' -replace ';\s*$',''
+            $data = $content | ConvertFrom-Json
+            if ($data) {
+                return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
             }
         } catch {
-            continue
+            return $null
         }
     }
 
-    # Attempt to locate the JS dynamically from the search page
+    foreach ($url in $staticUrls) {
+        $codes = Invoke-AirportJs -Url $url
+        if ($codes) { return $codes }
+    }
+
     try {
-        $page = Invoke-WebRequest -Uri 'https://www.liveatc.net/search/' -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-        if ($page.Content -match '<script[^>]+src="(?<path>[^"]*airports\.js)"') {
-            $jsPath = $matches['path']
+        $page = Invoke-WebRequest -Uri 'https://www.liveatc.net/search/' -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+        $pattern = '(?<path>[^"''>]+airports\.js[^"''>]*)'
+        $matches = [regex]::Matches($page.Content, $pattern)
+        foreach ($m in $matches) {
+            $jsPath = $m.Groups['path'].Value
             if ($jsPath -notmatch '^https?://') { $jsPath = "https://www.liveatc.net$jsPath" }
-            $js = Invoke-WebRequest -Uri $jsPath -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
-            $content = $js.Content -replace '^var\s+airports\s*=\s*','' -replace ';\s*$',''
-            $airports = $content | ConvertFrom-Json
-            if ($airports) {
-                return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
-            }
+            $codes = Invoke-AirportJs -Url $jsPath
+            if ($codes) { return $codes }
         }
     } catch {
         # ignore
     }
 
-    Write-Error "Failed to fetch airport list"
+    Write-Error 'Failed to fetch airport list'
     return @()
 }
 
