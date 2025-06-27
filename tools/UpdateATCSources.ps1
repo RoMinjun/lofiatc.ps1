@@ -10,6 +10,7 @@ Function Get-AllLiveATCAirports {
         'https://www.liveatc.net/search/airports.js',
         'https://www.liveatc.net/assets/js/airports.js'
     )
+
     foreach ($url in $urls) {
         try {
             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
@@ -22,6 +23,24 @@ Function Get-AllLiveATCAirports {
             continue
         }
     }
+
+    # Attempt to locate the JS dynamically from the search page
+    try {
+        $page = Invoke-WebRequest -Uri 'https://www.liveatc.net/search/' -UseBasicParsing -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+        if ($page.Content -match '<script[^>]+src="(?<path>[^"]*airports\.js)"') {
+            $jsPath = $matches['path']
+            if ($jsPath -notmatch '^https?://') { $jsPath = "https://www.liveatc.net$jsPath" }
+            $js = Invoke-WebRequest -Uri $jsPath -UseBasicParsing -ErrorAction Stop -Headers @{ 'User-Agent' = 'Mozilla/5.0' }
+            $content = $js.Content -replace '^var\s+airports\s*=\s*','' -replace ';\s*$',''
+            $airports = $content | ConvertFrom-Json
+            if ($airports) {
+                return $airports | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            }
+        }
+    } catch {
+        # ignore
+    }
+
     Write-Error "Failed to fetch airport list"
     return @()
 }
