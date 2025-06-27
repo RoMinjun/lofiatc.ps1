@@ -74,7 +74,7 @@ Get-Help .\lofiatc.ps1 -Full
 ```
 
 ## **Keeping ATC Sources Up to Date**
-The script will automatically refresh `atc_sources.csv` with the latest streams from [liveatc.net](https://www.liveatc.net) each time it runs. You can also update the list manually with:
+The script automatically refreshes `atc_sources.csv` with the latest streams from [liveatc.net](https://www.liveatc.net) each time it runs. The list is also kept fresh on GitHub with a scheduled workflow. If you want to update it locally, run:
 ```powershell
 ./tools/UpdateATCSources.ps1
 ```

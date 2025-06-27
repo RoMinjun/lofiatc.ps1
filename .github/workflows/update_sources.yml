@@ -1,0 +1,25 @@
+name: Update ATC Sources
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 0'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Update source list
+        shell: pwsh
+        run: ./tools/UpdateATCSources.ps1
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          if ! git diff --quiet atc_sources.csv; then
+            git add atc_sources.csv
+            git commit -m "chore: update ATC sources"
+            git push
+          fi
+
