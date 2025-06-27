@@ -40,6 +40,16 @@ Function Get-AllLiveATCAirports {
             $codes = Invoke-AirportJs -Url $jsPath
             if ($codes) { return $codes }
         }
+
+        $jsonMatch = [regex]::Match($page.Content, '(?s)(?:var|let|const)\s+airports\s*=\s*(?<json>\[[^;]+\])')
+        if ($jsonMatch.Success) {
+            try {
+                $data = $jsonMatch.Groups['json'].Value | ConvertFrom-Json
+                if ($data) {
+                    return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+                }
+            } catch {}
+        }
     } catch {
         # ignore
     }

@@ -74,7 +74,7 @@ Get-Help .\lofiatc.ps1 -Full
 ```
 
 ## **Keeping ATC Sources Up to Date**
-`atc_sources.csv` is maintained separately from the main script. A scheduled GitHub workflow runs `tools/UpdateATCSources.ps1` every week to refresh the list with any new streams from [liveatc.net](https://www.liveatc.net). The player script simply reads the existing CSV file. To rebuild or refresh the list manually, run:
+`atc_sources.csv` is maintained separately from the main script. A scheduled GitHub workflow runs `tools/UpdateATCSources.ps1` every week to refresh the list with any new streams from [liveatc.net](https://www.liveatc.net). The helper script automatically discovers the latest `airports.js` data or falls back to inline JavaScript on the search page. The player script simply reads the existing CSV file. To rebuild or refresh the list manually, run:
 ```powershell
 ./tools/UpdateATCSources.ps1
 ```
