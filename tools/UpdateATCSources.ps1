@@ -5,10 +5,16 @@ param(
 )
 
 Function Get-AllLiveATCAirports {
-    $headers = @{ 'User-Agent' = 'Mozilla/5.0'; 'Referer'='https://www.liveatc.net/' }
+    $headers = @{
+        'User-Agent'      = 'Mozilla/5.0'
+        'Referer'         = 'https://www.liveatc.net/'
+        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'Accept-Language' = 'en-US,en;q=0.5'
+    }
 
     Function Parse-AirportsJson {
         param([string]$Content)
+
         $patterns = @(
             '(?s)airports[^=]*=\s*(?<json>\[[^;]+\])',
             '(?s)"airports"\s*:\s*(?<json>\[[^\]]+\])'
@@ -22,6 +28,27 @@ Function Get-AllLiveATCAirports {
                 } catch {}
             }
         }
+
+        $patternDecode = '(?s)JSON.parse\(decodeURIComponent\((?:''|")(?<enc>[^''"]+)(?:''|")\)\)'
+        $m = [regex]::Match($Content, $patternDecode)
+        if ($m.Success) {
+            try {
+                $json = [System.Uri]::UnescapeDataString($m.Groups['enc'].Value)
+                $data = $json | ConvertFrom-Json
+                return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            } catch {}
+        }
+
+        $patternBase64 = '(?s)JSON.parse\(atob\((?:''|")(?<b64>[^''"]+)(?:''|")\)\)'
+        $m = [regex]::Match($Content, $patternBase64)
+        if ($m.Success) {
+            try {
+                $json = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($m.Groups['b64'].Value))
+                $data = $json | ConvertFrom-Json
+                return $data | Select-Object -ExpandProperty icao -Unique | Where-Object { $_ }
+            } catch {}
+        }
+
         return $null
     }
 
@@ -34,8 +61,11 @@ Function Get-AllLiveATCAirports {
             if ($u -notmatch '^https?://') { "https://www.liveatc.net$u" } else { $u }
         } | Sort-Object -Unique
 
+        Write-Verbose "Discovered script URLs: $($scriptUrls -join ', ')"
+
         foreach ($url in $scriptUrls) {
             try {
+                Write-Verbose "Checking $url for airport list"
                 $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers
                 $codes = Parse-AirportsJson -Content $resp.Content
                 if ($codes) { return $codes }
@@ -55,6 +85,7 @@ Function Get-AllLiveATCAirports {
     )
     foreach ($url in $fallbackUrls) {
         try {
+            Write-Verbose "Trying fallback $url"
             $resp = Invoke-WebRequest -Uri $url -UseBasicParsing -Headers $headers
             $codes = Parse-AirportsJson -Content $resp.Content
             if ($codes) { return $codes }
