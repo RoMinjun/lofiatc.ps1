@@ -72,3 +72,10 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+## **Update ATC Source List**
+Fetch the latest ATC stream information from LiveATC and merge it with the existing list:
+```powershell
+./tools/UpdateATCSources.ps1
+```
+This command updates `atc_sources.csv` in the repository root.
