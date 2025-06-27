@@ -1,6 +1,7 @@
 # Updates atc_sources.csv by fetching data from LiveATC
 param(
-    [string[]]$ICAO
+    [string[]]$ICAO,
+    [switch]$SortOnly
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -81,23 +82,27 @@ function Combine-Data {
 # Import existing data if available
 $existing = if(Test-Path $csvPath){ Import-Csv $csvPath } else { @() }
 
-if(-not $ICAO){ $ICAO = $existing.ICAO | Sort-Object -Unique }
+if(-not $SortOnly){
+    if(-not $ICAO){ $ICAO = $existing.ICAO | Sort-Object -Unique }
 
-$newData = @()
-foreach($code in $ICAO){
-    $url = "https://www.liveatc.net/search/?icao=$code"
-    try{
-        $feeds   = Get-LiveATCSources -Url $url
-        $details = Get-AirportDetails -Url $url
-        $newData += Combine-Data -Feeds $feeds -Details $details
-    }catch{
-        Write-Warning "Failed to fetch data for $code"
+    $newData = @()
+    foreach($code in $ICAO){
+        $url = "https://www.liveatc.net/search/?icao=$code"
+        try{
+            $feeds   = Get-LiveATCSources -Url $url
+            $details = Get-AirportDetails -Url $url
+            $newData += Combine-Data -Feeds $feeds -Details $details
+        }catch{
+            Write-Warning "Failed to fetch data for $code"
+        }
     }
+    $existing += $newData
 }
 
-# Merge and deduplicate by Stream URL
-$merged = @($existing + $newData) | Sort-Object 'Stream URL' -Unique
+# Deduplicate by Stream URL then sort for readability
+$deduped = $existing | Sort-Object 'Stream URL' -Unique
+$sorted  = $deduped | Sort-Object Continent,Country,City,'State/Province','Airport Name',ICAO,'Channel Description'
 
 $header = 'Continent','Country','City','State/Province','Airport Name','ICAO','IATA','Channel Description','Stream URL','Webcam URL'
-$merged | Select-Object $header | Export-Csv -Path $csvPath -NoTypeInformation
-Write-Host "Updated $csvPath with" $merged.Count "entries." -ForegroundColor Green
+$sorted | Select-Object $header | Export-Csv -Path $csvPath -NoTypeInformation
+Write-Host "Updated $csvPath with" $sorted.Count "entries." -ForegroundColor Green
