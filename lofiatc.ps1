@@ -158,35 +158,70 @@ Function Import-ATCSources {
     return Import-Csv -Path $csvPath
 }
 
+# Function to fetch current listener count for a LiveATC stream
+Function Get-LiveATCListenerCount {
+    param(
+        [string]$streamUrl
+    )
+
+    try {
+        # Extract the mount point from the .pls playlist
+        $pls = Invoke-WebRequest -Uri $streamUrl -UseBasicParsing -ErrorAction Stop
+        $mountLine = ($pls.Content -split "`n" | Where-Object { $_ -match '^File1=' })[0]
+        if ($mountLine -match '^File1=(?<url>.+)$') {
+            $mountUrl = $matches.url
+            if ($mountUrl -match 'https?://[^/]+/(?<m>[^?]+)') {
+                $mount = $matches.m -replace '\\..*',''
+            } else { return $null }
+        } else { return $null }
+
+        # Query the icecast status endpoint for listener statistics
+        $status = Invoke-RestMethod -Uri "https://d.liveatc.net/status-json.xsl?mount=/$mount" -UseBasicParsing -ErrorAction Stop
+        $source = $status.icestats.source
+        if ($source -is [array]) {
+            foreach ($s in $source) {
+                if ($s.listenurl -match "/$mount") { return [int]$s.listeners }
+            }
+            return $null
+        } else {
+            return [int]$source.listeners
+        }
+    } catch {
+        return $null
+    }
+}
+
 # Function to select an item from a list
 Function Select-Item {
     param (
         [string]$prompt,
-        [array]$items
+        [array]$items,
+        [switch]$AllowBack
     )
 
-    Clear-Host
-    Write-Host $prompt -ForegroundColor Yellow
-    $i = 1
-    foreach ($item in $items) {
-        Write-Host "$i. $item"
-        $i++ 
-    }
-
-    $userChoice = Read-Host "Enter the number of your choice"
-    if ($userChoice -match "^\d+$") {
-        $index = [int]$userChoice - 1
-        if ($index -ge 0 -and $index -lt $items.Count) {
-            return $items[$index].Trim()
-        } else {
-            Write-Host "Error: Selected number is out of range." -ForegroundColor Red
+    while ($true) {
+        Clear-Host
+        Write-Host $prompt -ForegroundColor Yellow
+        $i = 1
+        foreach ($item in $items) {
+            Write-Host "$i. $item"
+            $i++
         }
-    } else {
-        Write-Host "Error: Invalid input. Please enter a number." -ForegroundColor Red
-    }
+        if ($AllowBack) { Write-Host "0. Go Back" }
 
-    Write-Error "Invalid selection. Please restart the script and try again."
-    exit
+        $userChoice = Read-Host "Enter the number of your choice"
+        if ($AllowBack -and $userChoice -eq '0') { return $null }
+
+        if ($userChoice -match '^\d+$') {
+            $index = [int]$userChoice - 1
+            if ($index -ge 0 -and $index -lt $items.Count) {
+                return $items[$index].Trim()
+            }
+        }
+
+        Write-Host "Error: Invalid selection." -ForegroundColor Red
+        Start-Sleep -Seconds 1
+    }
 }
 
 # Function to select an item using fzf
@@ -213,75 +248,58 @@ Function Select-ATCStream {
         [string]$country
     )
 
-    Clear-Host
-    # Filter ATC sources by selected continent and country
-    $choices = $atcSources | Where-Object {
-        $_.Continent.Trim().ToLower() -eq $continent.Trim().ToLower() -and
-        $_.Country.Trim().ToLower() -eq $country.Trim().ToLower()
-    }
+    while ($true) {
+        Clear-Host
+        # Filter ATC sources by selected continent and country
+        $choices = $atcSources | Where-Object {
+            $_.Continent.Trim().ToLower() -eq $continent.Trim().ToLower() -and
+            $_.Country.Trim().ToLower() -eq $country.Trim().ToLower()
+        }
 
-    if ($choices.Count -eq 0) {
-        Write-Error "No ATC streams available for the selected country."
-        exit
-    }
+        if ($choices.Count -eq 0) {
+            Write-Error "No ATC streams available for the selected country."
+            return $null
+        }
 
-    # Dynamic prompt for airport selection
-    Write-Host "Select an airport from ${country}:" -ForegroundColor Yellow
+        # Group by city and airport name, and check if any channel for that airport has a webcam
+        $airports = $choices | Group-Object -Property City, 'Airport Name' | ForEach-Object {
+            $city = $_.Group[0].City
+            $airportName = $_.Group[0].'Airport Name'
+            $hasWebcam = $_.Group | Where-Object { -not [string]::IsNullOrWhiteSpace($_.'Webcam URL') } | Measure-Object
+            $webcamIndicator = if ($hasWebcam.Count -gt 0) { "[Webcam available]" } else { "" }
+            "[{0}] {1} {2}" -f $city, $airportName, $webcamIndicator
+        } | Sort-Object
 
-    # Group by city and airport name, and check if any channel for that airport has a webcam
-    $airports = $choices | Group-Object -Property City, 'Airport Name' | ForEach-Object {
-        # Extract city and airport name
-        $city = $_.Group[0].City
-        $airportName = $_.Group[0].'Airport Name'
+        $airportSel = Select-Item -prompt "Select an airport from ${country}:" -items $airports -AllowBack
+        if ($null -eq $airportSel) { return $null }
 
-        # Check if any channel under this airport has a webcam
-        $hasWebcam = $_.Group | Where-Object { -not [string]::IsNullOrWhiteSpace($_.'Webcam URL') } | Measure-Object
-        $webcamIndicator = if ($hasWebcam.Count -gt 0) { "[Webcam available]" } else { "" }
+        $airportChoices = $choices | Where-Object {
+            "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq ($airportSel -replace '\s\[Webcam available\]', '')
+        }
 
-        # Return formatted airport entry
-        "[{0}] {1} {2}" -f $city, $airportName, $webcamIndicator
-    } | Sort-Object
-
-    # Let the user select an airport
-    $selectedAirport = Select-Item -prompt "Select an airport from ${country}:" -items $airports
-
-    # Filter choices by selected airport
-    $airportChoices = $choices | Where-Object {
-        "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq ($selectedAirport -replace '\s\[Webcam available\]', '') # Remove the [Webcam available] text for matching
-    }
-
-    if ($airportChoices.Count -gt 1) {
-        # Extract airport name for dynamic channel selection prompt
-        $airportNameForPrompt = ($selectedAirport -replace '\s\[Webcam available\]', '')
-
-        # Dynamic prompt for channel selection
-        Write-Host "Select a channel for ${airportNameForPrompt}:" -ForegroundColor Yellow
-
-        # Get unique channel descriptions for the selected airport, with webcam indicators
-        $channels = $airportChoices | ForEach-Object {
-            $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-                " [Webcam available]"
+        while ($true) {
+            if ($airportChoices.Count -gt 1) {
+                $airportNameForPrompt = ($airportSel -replace '\s\[Webcam available\]', '')
+                $channels = $airportChoices | ForEach-Object {
+                    $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
+                    "{0}{1}" -f $_.'Channel Description', $webcamIndicator
+                } | Sort-Object -Unique
+                $chanSel = Select-Item -prompt "Select a channel for ${airportNameForPrompt}:" -items $channels -AllowBack
+                if ($null -eq $chanSel) { break }
+                $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
+                $selected = $airportChoices | Where-Object { $_.'Channel Description' -eq $chanClean }
             } else {
-                ""
+                $selected = $airportChoices[0]
             }
-            "{0}{1}" -f $_.'Channel Description', $webcamIndicator
-        } | Sort-Object -Unique
 
-        # Let the user select a channel
-        $selectedChannel = Select-Item -prompt "Select a channel for ${airportNameForPrompt}:" -items $channels
-        # Remove the [Webcam available] indicator from the selected channel for matching
-        $selectedChannelClean = $selectedChannel -replace '\s\[Webcam available\]', ''
-
-        # Filter choices by selected channel
-        $selectedStream = $airportChoices | Where-Object { $_.'Channel Description' -eq $selectedChannelClean }
-    } else {
-        $selectedStream = $airportChoices[0]
-    }
-
-    return @{
-        StreamUrl = $selectedStream.'Stream URL'
-        WebcamUrl = $selectedStream.'Webcam URL'
-        AirportInfo = $selectedStream
+            if ($selected) {
+                return @{
+                    StreamUrl = $selected.'Stream URL'
+                    WebcamUrl = $selected.'Webcam URL'
+                    AirportInfo = $selected
+                }
+            }
+        }
     }
 }
 
@@ -293,32 +311,22 @@ Function Select-ATCStreamFZF {
 
     Clear-Host
 
-    # Combine relevant information for fzf selection
-    $choices = $atcSources | ForEach-Object {
-        # Add webcam availability only if Webcam URL is present
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            " [Webcam available]"
-        } else {
-            ""
+    $choiceObjects = foreach ($src in $atcSources) {
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($src.'Webcam URL')) { " [Webcam available]" } else { "" }
+        $listeners  = Get-LiveATCListenerCount $src.'Stream URL'
+        $listenerText = if ($listeners -ne $null) { " ({0} listeners)" -f $listeners } else { "" }
+        [PSCustomObject]@{
+            Text      = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}{7}" -f $src.City, $src.'Country', $src.'Airport Name', $src.'Channel Description', $src.'ICAO', $src.'IATA', $webcamInfo, $listenerText
+            Source    = $src
+            Listeners = if ($listeners -ne $null) { [int]$listeners } else { [int]::MaxValue }
         }
-
-        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
-    # Use fzf for user selection
+    $choices = $choiceObjects | Sort-Object Listeners | Select-Object -ExpandProperty Text
+
     $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
 
-    $selectedStream = $atcSources | Where-Object {
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            " [Webcam available]" 
-        } else {
-            "" 
-        }
-
-        # Match based on the formatted fzf entry
-        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
-        $formattedEntry -eq $selectedChoice
-    }
+    $selectedStream = ($choiceObjects | Where-Object { $_.Text -eq $selectedChoice }).Source
 
     if ($selectedStream) {
         return @{
@@ -802,11 +810,15 @@ if ($RandomATC) {
     if ($UseFZF) {
         $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
     } else {
-        $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
-
-        $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items (@($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique))
-
-        $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+        while (-not $selectedATC) {
+            $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
+            do {
+                $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
+                $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
+                if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
+                $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+            } while (-not $selectedATC)
+        }
     }
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
