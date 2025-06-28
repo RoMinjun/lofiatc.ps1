@@ -550,7 +550,8 @@ Function Get-AirportDateTime {
         if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $airportInfo.tz
         $local = [System.TimeZoneInfo]::ConvertTimeFromUtc([datetime]::UtcNow, $tzInfo)
-        return $local.ToString("yyyy-MM-dd HH:mm")
+        $formatted = $local.ToString('dd MMMM yyyy HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)
+        return "$formatted LT"
     } catch {
         Write-Error "Date and time not found for $ICAO. Exception: $_"
         return "Date/time data unavailable"
