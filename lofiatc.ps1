@@ -165,42 +165,20 @@ Function Get-LiveATCListenerCount {
     )
 
     try {
-        # Extract the mount point from the .pls playlist
+        # Extract mount from playlist
         $pls = Invoke-WebRequest -Uri $streamUrl -UseBasicParsing -ErrorAction Stop
         $mountLine = ($pls.Content -split "`n" | Where-Object { $_ -match '^File1=' })[0]
-        if ($mountLine -match '^File1=(?<url>.+)$') {
-            $mountUrl = $matches.url
-            if ($mountUrl -match 'https?://[^/]+/(?<m>[^?]+)') {
-                $mount = $matches.m -replace '\..*',''
-            } else { return $null }
-        } else { return $null }
+        if ($mountLine -notmatch '^File1=(?<url>.+)$') { return $null }
 
-        # First attempt: query the JSON status endpoint for listener statistics
-        try {
-            $status = Invoke-RestMethod -Uri "https://d.liveatc.net/status-json.xsl?mount=/$mount" -UseBasicParsing -ErrorAction Stop
-            $source = $status.icestats.source
-            if ($source -is [array]) {
-                foreach ($s in $source) {
-                    if ($s.listenurl -match "/$mount") { return [int]$s.listeners }
-                }
-            } else {
-                return [int]$source.listeners
-            }
-        } catch {
-            # Ignore and fall back to HTML parsing
-        }
+        $mountUrl = $matches.url
+        if ($mountUrl -notmatch '/(?<m>[^/?]+)') { return $null }
+        $mount = $matches.m -replace '\..*',''
 
-        # Fallback: parse the airport search page for listener count
+        # Only option: parse the search page for listener count
         $icao = $mount.Substring(0,4).ToUpper()
-        $content = (Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop).Content
-
-        # Split by channel table so we only look within the correct block
-        foreach ($tbl in ($content -split '<table class="body"')) {
-            if ($tbl -match "myHTML5Popup\('$mount','") {
-                if ($tbl -match '<strong>Listeners:</strong>\s*(\d+)') {
-                    return [int]$matches[1]
-                }
-            }
+        $html = (Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop).Content
+        if ($html -match "(?s)myHTML5Popup\('$mount','.*?<strong>Listeners:</strong>\s*(\d+)") {
+            return [int]$matches[1]
         }
 
         return $null
