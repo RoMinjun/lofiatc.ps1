@@ -550,7 +550,8 @@ Function Get-AirportDateTime {
         if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $airportInfo.tz
         $local = [System.TimeZoneInfo]::ConvertTimeFromUtc([datetime]::UtcNow, $tzInfo)
-        return $local.ToString("yyyy-MM-dd HH:mm")
+        $formatted = $local.ToString('dd MMMM yyyy HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)
+        return "$formatted LT"
     } catch {
         Write-Error "Date and time not found for $ICAO. Exception: $_"
         return "Date/time data unavailable"
@@ -679,8 +680,13 @@ Function Write-Welcome {
     # Fetch METAR last updated time
     $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
 
-    # Display welcome message
-    Write-Output "`n$airplane Welcome to $($airportInfo.'Airport Name'):"
+    # Display welcome message with a simple border
+    $header = "$airplane Welcome to $($airportInfo.'Airport Name')"
+    $border = '═' * $header.Length
+    Write-Host "`n$border" -ForegroundColor Cyan
+    Write-Host $header -ForegroundColor Cyan
+    Write-Host $border -ForegroundColor Cyan
+    Write-Host ""        
     Write-Output "    $location City:        $($airportInfo.City)"
     Write-Output "    $earth Country:     $($airportInfo.Country)"
     Write-Output "    $departure ICAO/IATA:   $($airportInfo.ICAO)/$($airportInfo.IATA)`n"
