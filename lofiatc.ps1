@@ -681,12 +681,7 @@ Function Write-Welcome {
     $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
 
     # Display welcome message with a simple border
-    $header = "$airplane Welcome to $($airportInfo.'Airport Name')"
-    $border = '═' * $header.Length
-    Write-Host "`n$border" -ForegroundColor Yellow
-    Write-Host $header -ForegroundColor Yellow
-    Write-Host $border -ForegroundColor Yellow
-    Write-Host ""        
+    Write-Output "$airplane Welcome to $($airportInfo.'Airport Name')"
     Write-Output "    $location City:        $($airportInfo.City)"
     Write-Output "    $earth Country:     $($airportInfo.Country)"
     Write-Output "    $departure ICAO/IATA:   $($airportInfo.ICAO)/$($airportInfo.IATA)`n"
