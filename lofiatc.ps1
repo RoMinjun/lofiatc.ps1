@@ -311,22 +311,32 @@ Function Select-ATCStreamFZF {
 
     Clear-Host
 
-    $choiceObjects = foreach ($src in $atcSources) {
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($src.'Webcam URL')) { " [Webcam available]" } else { "" }
-        $listeners  = Get-LiveATCListenerCount $src.'Stream URL'
-        $listenerText = if ($listeners -ne $null) { " ({0} listeners)" -f $listeners } else { "" }
-        [PSCustomObject]@{
-            Text      = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}{7}" -f $src.City, $src.'Country', $src.'Airport Name', $src.'Channel Description', $src.'ICAO', $src.'IATA', $webcamInfo, $listenerText
-            Source    = $src
-            Listeners = if ($listeners -ne $null) { [int]$listeners } else { [int]::MaxValue }
+    # Combine relevant information for fzf selection
+    $choices = $atcSources | ForEach-Object {
+        # Add webcam availability only if Webcam URL is present
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            " [Webcam available]"
+        } else {
+            ""
         }
+
+        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
-    $choices = $choiceObjects | Sort-Object Listeners | Select-Object -ExpandProperty Text
-
+    # Use fzf for user selection
     $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
 
-    $selectedStream = ($choiceObjects | Where-Object { $_.Text -eq $selectedChoice }).Source
+    $selectedStream = $atcSources | Where-Object {
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            " [Webcam available]"
+        } else {
+            ""
+        }
+
+        # Match based on the formatted fzf entry
+        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        $formattedEntry -eq $selectedChoice
+    }
 
     if ($selectedStream) {
         return @{
@@ -669,6 +679,7 @@ Function Write-Welcome {
     $antenna        = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
     $mic            = if ($isPowerShell7) { "`u{1F5E3}`u{FE0F}" } else { "" }
     $headphones     = if ($isPowerShell7) { "`u{1F3A7}" } else { "" }
+    $ear            = if ($isPowerShell7) { "`u{1F442}" } else { "" }
     $camera         = if ($isPowerShell7) { "`u{1F3A5}" } else { "" }
     $link           = if ($isPowerShell7) { "`u{1F517}" } else { "" }
     $hourglass      = if ($isPowerShell7) { "`u{23F3}" } else { "" }
@@ -715,7 +726,13 @@ Function Write-Welcome {
 
     Write-Output "$antenna Air Traffic Control:"
     Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
-    Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')`n"
+    Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')"
+
+    $listenerCount = Get-LiveATCListenerCount $airportInfo.'Stream URL'
+    if ($listenerCount -ne $null) {
+        Write-Output "    $ear Listeners: $listenerCount"
+    }
+    Write-Output ""
 
     # Include webcam information if available
     if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
