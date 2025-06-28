@@ -190,19 +190,18 @@ Function Get-LiveATCListenerCount {
             # Ignore and fall back to HTML parsing
         }
 
-        # Fallback: parse the search page for listener count
+        # Fallback: parse the airport search page for listener count
         $icao = $mount.Substring(0,4).ToUpper()
         $page = Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop
         $content = $page.Content
 
-        # Look for a 'Listeners:' value near the mount name
-        if ($content -match "Listeners:\s*(\d+).*?$mount") {
+        # Regex that looks for the mount in the onclick attribute and captures the
+        # listeners number within the same channel table. (?s) enables single-line
+        if ($content -match "(?s)myHTML5Popup\('$mount','[^']*'\).*?Listeners:\s*(\d+)") {
             return [int]$matches[1]
-        } elseif ($content -match "$mount.*?Listeners:\s*(\d+)") {
-            return [int]$matches[1]
-        } else {
-            return $null
         }
+
+        return $null
     } catch {
         return $null
     }
