@@ -192,13 +192,15 @@ Function Get-LiveATCListenerCount {
 
         # Fallback: parse the airport search page for listener count
         $icao = $mount.Substring(0,4).ToUpper()
-        $page = Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop
-        $content = $page.Content
+        $content = (Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop).Content
 
-        # Regex that looks for the mount in the onclick attribute and captures the
-        # listeners number within the same channel table. (?s) enables single-line
-        if ($content -match "(?s)myHTML5Popup\('$mount','[^']*'\).*?Listeners:\s*(\d+)") {
-            return [int]$matches[1]
+        # Split by channel table so we only look within the correct block
+        foreach ($tbl in ($content -split '<table class="body"')) {
+            if ($tbl -match "myHTML5Popup\('$mount','") {
+                if ($tbl -match '<strong>Listeners:</strong>\s*(\d+)') {
+                    return [int]$matches[1]
+                }
+            }
         }
 
         return $null
@@ -327,32 +329,18 @@ Function Select-ATCStreamFZF {
 
     Clear-Host
 
-    # Combine relevant information for fzf selection
-    $choices = $atcSources | ForEach-Object {
-        # Add webcam availability only if Webcam URL is present
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            " [Webcam available]"
-        } else {
-            ""
-        }
-
-        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+    # Build list with listener counts and sort so highest is last
+    $choiceObjects = foreach ($s in $atcSources) {
+        $count = Get-LiveATCListenerCount $s.'Stream URL'
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($s.'Webcam URL')) { " [Webcam available]" } else { "" }
+        $display = "[{0}, {1}] {2} ({4}/{5}) | {3}{6} | {7}" -f $s.City, $s.Country, $s.'Airport Name', $s.'Channel Description', $s.ICAO, $s.IATA, $webcamInfo, ($count -ne $null ? "$count listeners" : "n/a")
+        [PSCustomObject]@{Display=$display; Data=$s; Count=if($count -ne $null){[int]$count}else{-1}}
     }
 
-    # Use fzf for user selection
-    $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
+    $sorted = $choiceObjects | Sort-Object Count
+    $selectedChoice = $sorted.Display | fzf --prompt "Select an ATC stream> " --no-sort
 
-    $selectedStream = $atcSources | Where-Object {
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
-            " [Webcam available]"
-        } else {
-            ""
-        }
-
-        # Match based on the formatted fzf entry
-        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
-        $formattedEntry -eq $selectedChoice
-    }
+    $selectedStream = ($sorted | Where-Object { $_.Display -eq $selectedChoice }).Data
 
     if ($selectedStream) {
         return @{
