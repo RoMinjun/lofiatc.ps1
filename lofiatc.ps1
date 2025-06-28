@@ -165,7 +165,7 @@ Function Get-LiveATCListenerCount {
     )
 
     try {
-        # Extract mount from playlist
+        # Extract mount name from the playlist
         $pls = Invoke-WebRequest -Uri $streamUrl -UseBasicParsing -ErrorAction Stop
         $mountLine = ($pls.Content -split "`n" | Where-Object { $_ -match '^File1=' })[0]
         if ($mountLine -notmatch '^File1=(?<url>.+)$') { return $null }
@@ -174,11 +174,17 @@ Function Get-LiveATCListenerCount {
         if ($mountUrl -notmatch '/(?<m>[^/?]+)') { return $null }
         $mount = $matches.m -replace '\..*',''
 
-        # Only option: parse the search page for listener count
+        # Fetch the airport search page
         $icao = $mount.Substring(0,4).ToUpper()
         $html = (Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop).Content
-        if ($html -match "(?s)myHTML5Popup\('$mount','.*?<strong>Listeners:</strong>\s*(\d+)") {
-            return [int]$matches[1]
+
+        # Find the table for the desired mount regardless of row order
+        $tableMatch = [regex]::Match($html, "(?s)<table[^>]*>[^<]*<tr>.*?myHTML5Popup\('$mount','[^']*'\).*?</table>")
+        if ($tableMatch.Success) {
+            $tableHtml = $tableMatch.Value
+            if ($tableHtml -match '<strong>Listeners:</strong>\s*(\d+)') {
+                return [int]$matches[1]
+            }
         }
 
         return $null
