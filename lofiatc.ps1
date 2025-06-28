@@ -158,40 +158,6 @@ Function Import-ATCSources {
     return Import-Csv -Path $csvPath
 }
 
-# Function to fetch current listener count for a LiveATC stream
-Function Get-LiveATCListenerCount {
-    param(
-        [string]$streamUrl
-    )
-
-    try {
-        # Extract mount name from the playlist
-        $pls = Invoke-WebRequest -Uri $streamUrl -UseBasicParsing -ErrorAction Stop
-        $mountLine = ($pls.Content -split "`n" | Where-Object { $_ -match '^File1=' })[0]
-        if ($mountLine -notmatch '^File1=(?<url>.+)$') { return $null }
-
-        $mountUrl = $matches.url
-        if ($mountUrl -notmatch '/(?<m>[^/?]+)') { return $null }
-        $mount = $matches.m -replace '\..*',''
-
-        # Fetch the airport search page
-        $icao = $mount.Substring(0,4).ToUpper()
-        $html = (Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop).Content
-
-        # Find the table for the desired mount regardless of row order
-        $tableMatch = [regex]::Match($html, "(?s)<table[^>]*>[^<]*<tr>.*?myHTML5Popup\('$mount','[^']*'\).*?</table>")
-        if ($tableMatch.Success) {
-            $tableHtml = $tableMatch.Value
-            if ($tableHtml -match '<strong>Listeners:</strong>\s*(\d+)') {
-                return [int]$matches[1]
-            }
-        }
-
-        return $null
-    } catch {
-        return $null
-    }
-}
 
 # Function to select an item from a list
 Function Select-Item {
@@ -313,18 +279,29 @@ Function Select-ATCStreamFZF {
 
     Clear-Host
 
-    # Build list with listener counts and sort so highest is last
-    $choiceObjects = foreach ($s in $atcSources) {
-        $count = Get-LiveATCListenerCount $s.'Stream URL'
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($s.'Webcam URL')) { " [Webcam available]" } else { "" }
-        $display = "[{0}, {1}] {2} ({4}/{5}) | {3}{6} | {7}" -f $s.City, $s.Country, $s.'Airport Name', $s.'Channel Description', $s.ICAO, $s.IATA, $webcamInfo, ($count -ne $null ? "$count listeners" : "n/a")
-        [PSCustomObject]@{Display=$display; Data=$s; Count=if($count -ne $null){[int]$count}else{-1}}
+    # Combine relevant information for fzf selection
+    $choices = $atcSources | ForEach-Object {
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            " [Webcam available]"
+        } else {
+            ""
+        }
+
+        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
-    $sorted = $choiceObjects | Sort-Object Count
-    $selectedChoice = $sorted.Display | fzf --prompt "Select an ATC stream> " --no-sort
+    $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
 
-    $selectedStream = ($sorted | Where-Object { $_.Display -eq $selectedChoice }).Data
+    $selectedStream = $atcSources | Where-Object {
+        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
+            " [Webcam available]"
+        } else {
+            ""
+        }
+
+        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        $formattedEntry -eq $selectedChoice
+    }
 
     if ($selectedStream) {
         return @{
@@ -667,7 +644,6 @@ Function Write-Welcome {
     $antenna        = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
     $mic            = if ($isPowerShell7) { "`u{1F5E3}`u{FE0F}" } else { "" }
     $headphones     = if ($isPowerShell7) { "`u{1F3A7}" } else { "" }
-    $ear            = if ($isPowerShell7) { "`u{1F442}" } else { "" }
     $camera         = if ($isPowerShell7) { "`u{1F3A5}" } else { "" }
     $link           = if ($isPowerShell7) { "`u{1F517}" } else { "" }
     $hourglass      = if ($isPowerShell7) { "`u{23F3}" } else { "" }
@@ -716,10 +692,6 @@ Function Write-Welcome {
     Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
     Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')"
 
-    $listenerCount = Get-LiveATCListenerCount $airportInfo.'Stream URL'
-    if ($listenerCount -ne $null) {
-        Write-Output "    $ear Listeners: $listenerCount"
-    }
     Write-Output ""
 
     # Include webcam information if available
