@@ -683,9 +683,9 @@ Function Write-Welcome {
     # Display welcome message with a simple border
     $header = "$airplane Welcome to $($airportInfo.'Airport Name')"
     $border = '═' * $header.Length
-    Write-Host "`n$border" -ForegroundColor Cyan
-    Write-Host $header -ForegroundColor Cyan
-    Write-Host $border -ForegroundColor Cyan
+    Write-Host "`n$border" -ForegroundColor Yellow
+    Write-Host $header -ForegroundColor Yellow
+    Write-Host $border -ForegroundColor Yellow
     Write-Host ""        
     Write-Output "    $location City:        $($airportInfo.City)"
     Write-Output "    $earth Country:     $($airportInfo.Country)"
