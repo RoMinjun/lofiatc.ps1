@@ -171,20 +171,37 @@ Function Get-LiveATCListenerCount {
         if ($mountLine -match '^File1=(?<url>.+)$') {
             $mountUrl = $matches.url
             if ($mountUrl -match 'https?://[^/]+/(?<m>[^?]+)') {
-                $mount = $matches.m -replace '\\..*',''
+                $mount = $matches.m -replace '\..*',''
             } else { return $null }
         } else { return $null }
 
-        # Query the icecast status endpoint for listener statistics
-        $status = Invoke-RestMethod -Uri "https://d.liveatc.net/status-json.xsl?mount=/$mount" -UseBasicParsing -ErrorAction Stop
-        $source = $status.icestats.source
-        if ($source -is [array]) {
-            foreach ($s in $source) {
-                if ($s.listenurl -match "/$mount") { return [int]$s.listeners }
+        # First attempt: query the JSON status endpoint for listener statistics
+        try {
+            $status = Invoke-RestMethod -Uri "https://d.liveatc.net/status-json.xsl?mount=/$mount" -UseBasicParsing -ErrorAction Stop
+            $source = $status.icestats.source
+            if ($source -is [array]) {
+                foreach ($s in $source) {
+                    if ($s.listenurl -match "/$mount") { return [int]$s.listeners }
+                }
+            } else {
+                return [int]$source.listeners
             }
-            return $null
+        } catch {
+            # Ignore and fall back to HTML parsing
+        }
+
+        # Fallback: parse the search page for listener count
+        $icao = $mount.Substring(0,4).ToUpper()
+        $page = Invoke-WebRequest -Uri "https://www.liveatc.net/search/?icao=$icao" -UseBasicParsing -ErrorAction Stop
+        $content = $page.Content
+
+        # Look for a 'Listeners:' value near the mount name
+        if ($content -match "Listeners:\s*(\d+).*?$mount") {
+            return [int]$matches[1]
+        } elseif ($content -match "$mount.*?Listeners:\s*(\d+)") {
+            return [int]$matches[1]
         } else {
-            return [int]$source.listeners
+            return $null
         }
     } catch {
         return $null
