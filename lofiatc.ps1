@@ -20,6 +20,9 @@ Play the Lofi Girl video instead of just the audio.
 .PARAMETER UseFZF
 Use fzf for searching and filtering channels.
 
+.PARAMETER UseBaseCSV
+Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
+
 .PARAMETER Player
 Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
@@ -62,6 +65,7 @@ param (
     [switch]$RandomATC,
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
+    [switch]$UseBaseCSV,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
@@ -760,8 +764,20 @@ $Player = Resolve-Player -explicitPlayer $Player
 # Check if the selected player is installed
 Test-Player -player $Player | Out-Null
 
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$baseCsv = Join-Path $scriptDir 'atc_sources.csv'
+$liveCsv = Join-Path $scriptDir 'liveatc_sources.csv'
+
+if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
+    Write-Host "Using live sources CSV: $liveCsv"
+    $csvPath = $liveCsv
+} else {
+    Write-Host "Using base sources CSV: $baseCsv"
+    $csvPath = $baseCsv
+}
+
+
 $lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
-$csvPath = "atc_sources.csv"
 $atcSources = Import-ATCSources -csvPath $csvPath
 
 if ($RandomATC) {

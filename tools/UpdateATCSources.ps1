@@ -1,108 +1,97 @@
-# Updates atc_sources.csv by fetching data from LiveATC
-param(
-    [string[]]$ICAO,
-    [switch]$SortOnly
-)
+# Function to fetch ATC sources from liveatc.net
+Function Get-LiveATCSources {
+    param (
+        [string]$Url = "https://www.liveatc.net/search/?icao=EHAM"
+    )
+    try {
+        # Extract ICAO from the URL
+        $icaoFromUrl = $Url -replace ".*icao=([^&]+).*", '$1'
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$csvPath   = Join-Path $scriptDir '..\atc_sources.csv'
+        # Fetch HTML
+        $response    = Invoke-WebRequest -Uri $Url -UseBasicParsing
+        $htmlContent = $response.Content
 
-# Helper function: fetch ATC streams
-function Get-LiveATCSources {
-    param([string]$Url)
-    $icao = $Url -replace ".*icao=([A-Za-z0-9]+).*", '$1'
-    $content = (Invoke-WebRequest -Uri $Url -UseBasicParsing).Content
-    $feeds = @()
-    $current = ''
-    $content -split '<tr>' | ForEach-Object {
-        $row = $_.Trim()
-        if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<f>[^<]+)</strong>') {
-            $current = $matches['f'].Trim()
-        }
-        elseif ($row -match '<td[^>]*>\s*<a href="(?<u>[^"]+\.pls)"') {
-            $feeds += [PSCustomObject]@{
-                Airport = $icao
-                Channel = $current
-                URL     = 'https://www.liveatc.net' + $matches['u']
+        # Parse for .pls links
+        $atcSources      = @()
+        $currentFeedName = ""
+        $htmlContent -split '<tr>' | ForEach-Object {
+            $row = $_.Trim()
+            if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<feedName>[^<]+)</strong>') {
+                $currentFeedName = $matches['feedName'].Trim()
+            }
+            elseif ($row -match '<a href="(?<url>[^"]+\.pls)"') {
+                $atcSources += [PSCustomObject]@{
+                    ICAO    = $icaoFromUrl
+                    Channel = $currentFeedName
+                    URL     = "https://www.liveatc.net" + $matches['url'].Trim()
+                }
             }
         }
+
+        return $atcSources
     }
-    return $feeds
+    catch {
+        Write-Error "Error fetching $($Url): $_"
+        return @()
+    }
 }
 
-# Helper function: fetch airport details
-function Get-AirportDetails {
-    param([string]$Url)
-    $content = (Invoke-WebRequest -Uri $Url -UseBasicParsing).Content
-    $result = [PSCustomObject]@{
-        ICAO='';IATA='';Airport='';City='';Province='';Country='';Continent=''
+# Figure out where the input CSV actually lives
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$inputCsv  = Join-Path $scriptDir '..\atc_sources.csv' | Resolve-Path -ErrorAction Stop
+$csvDir    = Split-Path -Parent $inputCsv
+
+# **Changed output filename here:**
+$outputCsv = Join-Path $csvDir 'liveatc_sources.csv'
+
+# Load input
+$origRows = Import-Csv $inputCsv
+
+# Build a lookup of Webcam URLs by ICAO+Channel
+$webcamLookup = @{}
+foreach ($row in $origRows) {
+    $key = "{0}||{1}" -f $row.ICAO, $row.'Channel Description'
+    if (-not $webcamLookup.ContainsKey($key) -and $row.'Webcam URL') {
+        $webcamLookup[$key] = $row.'Webcam URL'
     }
-    $content -split '<tr>' | ForEach-Object {
-        $row = $_.Trim()
-        if ($row -match '<td[^>]*>\s*<strong>ICAO:\s*</strong>(?<icao>[^<]+)\s*<strong>&nbsp;&nbsp;IATA:\s*</strong>(?<iata>[^<]+)\s*&nbsp;&nbsp;<strong>Airport:</strong>\s*(?<airport>[^<]+)') {
-            $result.ICAO = $matches['icao'].Trim()
-            $result.IATA = $matches['iata'].Trim()
-            $result.Airport = $matches['airport'].Trim()
-        }
-        elseif ($row -match '<td[^>]*>\s*<strong>City:\s*</strong>\s*(?<city>[^<]+)(?:\s*<strong>&nbsp;&nbsp;State/Province:</strong>\s*(?<prov>[^<]+))?') {
-            $result.City = $matches['city'].Trim()
-            if ($matches['prov']) { $result.Province = $matches['prov'].Trim() }
-        }
-        elseif ($row -match '<td[^>]*>\s*<strong>Country:\s*</strong>\s*(?<country>[^<]+)\s*<strong>&nbsp;&nbsp;Continent:</strong>\s*(?<continent>[^<]+)') {
-            $result.Country = $matches['country'].Trim()
-            $result.Continent = $matches['continent'].Trim()
-        }
-    }
-    return @($result)
 }
 
-# Combine ATC feeds with airport details in repo CSV format
-function Combine-Data {
-    param($Feeds,$Details)
-    $combined = @()
-    foreach($f in $Feeds){
-        $d = $Details | Where-Object { $_.ICAO -eq $f.Airport }
-        if($d){ $d = $d[0] }
-        $combined += [PSCustomObject][ordered]@{
-            Continent = $d.Continent
-            Country   = $d.Country
-            City      = $d.City
-            'State/Province' = $d.Province
-            'Airport Name'   = $d.Airport
-            ICAO     = $d.ICAO
-            IATA     = $d.IATA
-            'Channel Description' = $f.Channel
-            'Stream URL'  = $f.URL
-            'Webcam URL'  = ''
+# Fetch once per distinct ICAO
+$icaoCache = @{}
+$origRows |
+  Select-Object -Expand ICAO -Unique |
+  ForEach-Object {
+    Write-Host "Fetching channels for $_…"
+    $icaoCache[$_] = Get-LiveATCSources -Url "https://www.liveatc.net/search/?icao=$_"
+  }
+
+# Build output: one row per fetched source
+$allResults = foreach ($icao in $icaoCache.Keys) {
+    $meta = $origRows | Where-Object ICAO -eq $icao | Select-Object -First 1
+
+    foreach ($src in $icaoCache[$icao]) {
+        $key    = "{0}||{1}" -f $icao, $src.Channel
+        $webcam = if ($webcamLookup.ContainsKey($key)) { $webcamLookup[$key] } else { "" }
+
+        [PSCustomObject][ordered]@{
+            Continent             = $meta.'Continent'
+            Country               = $meta.'Country'
+            City                  = $meta.'City'
+            'State/Province'      = $meta.'State/Province'
+            'Airport Name'        = $meta.'Airport Name'
+            ICAO                  = $icao
+            IATA                  = $meta.'IATA'
+            'Channel Description' = $src.Channel
+            'Stream URL'          = $src.URL
+            'Webcam URL'          = $webcam
         }
     }
-    return $combined
 }
 
-# Import existing data if available
-$existing = if(Test-Path $csvPath){ Import-Csv $csvPath } else { @() }
+# Sort by Continent then ICAO, then export next to the atc_sources.csv
+$allResults |
+  Sort-Object Continent, ICAO |
+  Export-Csv -Path $outputCsv -NoTypeInformation
 
-if(-not $SortOnly){
-    if(-not $ICAO){ $ICAO = $existing.ICAO | Sort-Object -Unique }
+Write-Host "`n New sources written to csv: $outputCsv"
 
-    $newData = @()
-    foreach($code in $ICAO){
-        $url = "https://www.liveatc.net/search/?icao=$code"
-        try{
-            $feeds   = Get-LiveATCSources -Url $url
-            $details = Get-AirportDetails -Url $url
-            $newData += Combine-Data -Feeds $feeds -Details $details
-        }catch{
-            Write-Warning "Failed to fetch data for $code"
-        }
-    }
-    $existing += $newData
-}
-
-# Deduplicate by Stream URL then sort for readability
-$deduped = $existing | Sort-Object 'Stream URL' -Unique
-$sorted  = $deduped | Sort-Object Continent,Country,City,'State/Province','Airport Name',ICAO,'Channel Description'
-
-$header = 'Continent','Country','City','State/Province','Airport Name','ICAO','IATA','Channel Description','Stream URL','Webcam URL'
-$sorted | Select-Object $header | Export-Csv -Path $csvPath -NoTypeInformation
-Write-Host "Updated $csvPath with" $sorted.Count "entries." -ForegroundColor Green
