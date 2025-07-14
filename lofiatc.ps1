@@ -170,7 +170,7 @@ Function Import-ATCSources {
 }
 
 # Functions for managing favorites
-Function Load-Favorites {
+Function Get-Favorites {
     param(
         [string]$path
     )
@@ -208,7 +208,7 @@ Function Add-Favorite {
         [int]$maxEntries = 10
     )
 
-    $favorites = Load-Favorites -path $path
+    $favorites = Get-Favorites -path $path
     $existing = $favorites | Where-Object { $_.ICAO -eq $ICAO -and $_.Channel -eq $Channel }
     if ($existing) {
         $existing.Count++
@@ -880,7 +880,7 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 
 $lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 $atcSources = Import-ATCSources -csvPath $csvPath
-$favorites = Load-Favorites -path $favoritesJson
+$favorites = Get-Favorites -path $favoritesJson
 $selectedATC = $null
 
 if ($RandomATC) {
@@ -924,6 +924,7 @@ if ($RandomATC) {
     }
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
+    Clear-Host
     Write-Welcome -airportInfo $selectedATC.AirportInfo
     Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
 
