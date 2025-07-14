@@ -78,6 +78,17 @@ Two parameters control the audio level of each stream:
 
 - `-ATCVolume` sets the ATC stream volume (default `65`).
 - `-LofiVolume` sets the Lofi Girl volume (default `50`).
+- `-LofiSource` lets you specify a custom Lofi audio or video URL or file path.
+  When omitted, the script uses the default Lofi Girl YouTube stream.
+
+Examples:
+```powershell
+# Stream from a remote URL
+./lofiatc.ps1 -LofiSource "https://example.com/lofi.mp3"
+
+# Use a local audio file
+./lofiatc.ps1 -LofiSource "C:\Music\my_lofi_mix.mp3"
+```
 
 ## **Update ATC Source List**
 Fetch the latest ATC stream information from LiveATC and merge it with the existing list.  The script also sorts the CSV for easier browsing:

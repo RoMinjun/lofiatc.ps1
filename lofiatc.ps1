@@ -32,6 +32,10 @@ Volume level for the ATC stream. Default is 65.
 .PARAMETER LofiVolume
 Volume level for the Lofi Girl stream. Default is 50.
 
+.PARAMETER LofiSource
+URL or file path for the Lofi audio or video stream. Defaults to the official
+Lofi Girl YouTube feed.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -56,6 +60,10 @@ This command runs the script, includes webcam video if available, uses fzf for s
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player VLC
 This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses VLC as the media player.
 
+.EXAMPLE
+.\lofiatc.ps1 -LofiSource "C:\\Music\\my_lofi_mix.mp3"
+This command plays a local audio file instead of the default Lofi Girl stream.
+
 #>
 
 [CmdletBinding()]
@@ -69,7 +77,8 @@ param (
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
-    [int]$LofiVolume = 50
+    [int]$LofiVolume = 50,
+    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 )
 
 # MP4 == Default app for all files
@@ -777,7 +786,7 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 }
 
 
-$lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+$lofiMusicUrl = $LofiSource
 $atcSources = Import-ATCSources -csvPath $csvPath
 
 if ($RandomATC) {
