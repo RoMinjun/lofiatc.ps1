@@ -79,6 +79,9 @@ Two parameters control the audio level of each stream:
 - `-ATCVolume` sets the ATC stream volume (default `65`).
 - `-LofiVolume` sets the Lofi Girl volume (default `50`).
 
+### **Favorites**
+Every time you successfully select a stream, the airport's ICAO and channel are saved to `favorites.json` beside the script. The file keeps the ten most recent entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites).
+
 ## **Update ATC Source List**
 Fetch the latest ATC stream information from LiveATC and merge it with the existing list.  The script also sorts the CSV for easier browsing:
 ```powershell
