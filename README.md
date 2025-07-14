@@ -72,3 +72,17 @@ Learn about all the features and parameters with the PowerShell `Get-Help` comma
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
 ```
+
+## Update Air Traffic Control sources locally
+I've also added an option to get updated sources based on the base source file `atc_sources.csv`. If created, this file will be prioritized over the base csv file. Run the following script from the `<projectroot>/tools` to locally update sources:
+```powershell
+.\UpdateATCSources.ps1
+```
+> [!IMPORTANT]
+> The base csv file `atc_sources.csv` may never be deleted when using `lofiatc.ps1` since the `UpdateATCSources.ps1` and the `lofiatc.ps1` scripts both make use of that base sources file.
+
+> [!TIP]
+> If you wish to keep using the base `atc_sources.csv` after you've updated your sources locally, use the `-UseBaseCSV` param with the `lofiatc.ps1` script
+
+# Help liveatc.net's existence
+If you live near an airport and have a passion for air traffic control, and if it's legal in your country, consider [contacting LiveATC.net](https://www.liveatc.net/ct/contact.php). They can help you get set up with the necessary equipment.
