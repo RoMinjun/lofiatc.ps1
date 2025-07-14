@@ -23,6 +23,9 @@ Use fzf for searching and filtering channels.
 .PARAMETER UseBaseCSV
 Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
 
+.PARAMETER UseFavorite
+Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
+
 .PARAMETER Player
 Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
@@ -55,6 +58,9 @@ This command runs the script, includes webcam video if available, uses fzf for s
 .EXAMPLE
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player VLC
 This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses VLC as the media player.
+.EXAMPLE
+.\lofiatc.ps1 -UseFavorite
+This command lets you pick from the favorites list instead of browsing continents and countries.
 
 #>
 
@@ -66,6 +72,7 @@ param (
     [switch]$PlayLofiGirlVideo,
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
+    [switch]$UseFavorite,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
@@ -160,6 +167,98 @@ Function Import-ATCSources {
     }
 
     return Import-Csv -Path $csvPath
+}
+
+# Functions for managing favorites
+Function Get-Favorites {
+    param(
+        [string]$path
+    )
+
+    if (Test-Path $path) {
+        try {
+            $data = Get-Content -Path $path -Raw | ConvertFrom-Json
+            foreach ($f in $data) {
+                if (-not $f.PSObject.Properties['Count']) { $f | Add-Member -Name Count -Value 1 -MemberType NoteProperty }
+                if (-not $f.PSObject.Properties['LastUsed']) { $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty }
+            }
+            return $data
+        } catch {
+            return @()
+        }
+    } else {
+        return @()
+    }
+}
+
+Function Save-Favorites {
+    param(
+        [array]$favorites,
+        [string]$path
+    )
+
+    $favorites | ConvertTo-Json | Set-Content -Path $path
+}
+
+Function Add-Favorite {
+    param(
+        [string]$path,
+        [string]$ICAO,
+        [string]$Channel,
+        [int]$maxEntries = 10
+    )
+
+    $favorites = Get-Favorites -path $path
+    $existing = $favorites | Where-Object { $_.ICAO -eq $ICAO -and $_.Channel -eq $Channel }
+    if ($existing) {
+        $existing.Count++
+        $existing.LastUsed = Get-Date
+        $favorites = $favorites | Where-Object { !(($_.ICAO -eq $ICAO) -and ($_.Channel -eq $Channel)) }
+        $favorites = ,$existing + $favorites
+    } else {
+        $newEntry = [pscustomobject]@{
+            ICAO     = $ICAO
+            Channel  = $Channel
+            Count    = 1
+            LastUsed = Get-Date
+        }
+        $favorites = ,$newEntry + $favorites
+    }
+    $favorites = $favorites | Sort-Object -Property @{Expression='Count';Descending=$true}, @{Expression='LastUsed';Descending=$true}
+    if ($favorites.Count -gt $maxEntries) { $favorites = $favorites[0..($maxEntries-1)] }
+    Save-Favorites -favorites $favorites -path $path
+}
+
+Function Select-FavoriteATC {
+    param(
+        [array]$favorites,
+        [array]$atcSources,
+        [switch]$UseFZF
+    )
+
+    $favEntries = foreach ($fav in $favorites) {
+        $entry = $atcSources | Where-Object { $_.ICAO -eq $fav.ICAO -and $_.'Channel Description' -eq $fav.Channel } | Select-Object -First 1
+        if ($entry) {
+            [pscustomobject]@{
+                Display = "[{0}] {1} - {2} ({3})" -f $entry.ICAO, $entry.'Airport Name', $entry.'Channel Description', $fav.Count
+                Entry   = $entry
+            }
+        }
+    }
+
+    if (-not $favEntries -or $favEntries.Count -eq 0) { return $null }
+    $labels = $favEntries.Display
+    $sel = if ($UseFZF) { Select-ItemFZF -prompt 'Select a favorite' -items $labels } else { Select-Item -prompt 'Select a favorite:' -items $labels }
+    if ($sel) {
+        $fav = $favEntries | Where-Object { $_.Display -eq $sel }
+        return @{
+            StreamUrl  = $fav.Entry.'Stream URL'
+            WebcamUrl  = $fav.Entry.'Webcam URL'
+            AirportInfo = $fav.Entry
+        }
+    } else {
+        return $null
+    }
 }
 
 
@@ -767,6 +866,8 @@ Test-Player -player $Player | Out-Null
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $baseCsv = Join-Path $scriptDir 'atc_sources.csv'
 $liveCsv = Join-Path $scriptDir 'liveatc_sources.csv'
+$favoritesJson = Join-Path $scriptDir 'favorites.json'
+$maxFavorites = 10
 
 if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
     Write-Host "Using live sources CSV: $liveCsv"
@@ -779,12 +880,15 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 
 $lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
 $atcSources = Import-ATCSources -csvPath $csvPath
+$favorites = Get-Favorites -path $favoritesJson
+$selectedATC = $null
 
 if ($RandomATC) {
     $selectedATC = Get-RandomATCStream -atcSources $atcSources
-    $selectedATCUrl = $selectedATC.StreamUrl    
+    $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
+    Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
 
     # Output player info after the welcome message
     if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
@@ -800,22 +904,29 @@ if ($RandomATC) {
         }
     }
 } else {
-    if ($UseFZF) {
-        $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
-    } else {
-        while (-not $selectedATC) {
-            $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
-            do {
-                $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
-                $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
-                if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
-                $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
-            } while (-not $selectedATC)
+    if ($UseFavorite) {
+        $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
+    }
+    if (-not $selectedATC) {
+        if ($UseFZF) {
+            $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
+        } else {
+            while (-not $selectedATC) {
+                $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
+                do {
+                    $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
+                    $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
+                    if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
+                    $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+                } while (-not $selectedATC)
+            }
         }
     }
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
+    Clear-Host
     Write-Welcome -airportInfo $selectedATC.AirportInfo
+    Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
 
     # Output player info after the welcome message
     if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
