@@ -86,6 +86,7 @@ param (
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
+    [switch]$SkipCheck,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
@@ -243,6 +244,20 @@ Function Add-Favorite {
     Save-Favorites -favorites $favorites -path $path
 }
 
+# Function to test if a stream URL is reachable
+Function Test-StreamUrl {
+    param(
+        [string]$Url
+    )
+
+    try {
+        Invoke-WebRequest -Uri $Url -Method Head -TimeoutSec 10 -ErrorAction Stop | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 Function Select-FavoriteATC {
     param(
         [array]$favorites,
@@ -330,7 +345,8 @@ Function Select-ATCStream {
     param (
         [array]$atcSources,
         [string]$continent,
-        [string]$country
+        [string]$country,
+        [switch]$SkipCheck
     )
 
     while ($true) {
@@ -378,6 +394,16 @@ Function Select-ATCStream {
             }
 
             if ($selected) {
+                if (-not $SkipCheck -and -not (Test-StreamUrl -Url $selected.'Stream URL')) {
+                    Write-Host "Stream check failed. Choose another channel." -ForegroundColor Red
+                    $airportChoices = $airportChoices | Where-Object { $_.'Stream URL' -ne $selected.'Stream URL' }
+                    if ($airportChoices.Count -eq 0) {
+                        Write-Host "No other channels available for $($selected.ICAO)." -ForegroundColor Red
+                        return $null
+                    }
+                    Start-Sleep -Seconds 1
+                    continue
+                }
                 return @{
                     StreamUrl = $selected.'Stream URL'
                     WebcamUrl = $selected.'Webcam URL'
@@ -391,7 +417,8 @@ Function Select-ATCStream {
 # Function to select an ATC stream using fzf
 Function Select-ATCStreamFZF {
     param (
-        [array]$atcSources
+        [array]$atcSources,
+        [switch]$SkipCheck
     )
 
     Clear-Host
@@ -421,6 +448,16 @@ Function Select-ATCStreamFZF {
     }
 
     if ($selectedStream) {
+        if (-not $SkipCheck -and -not (Test-StreamUrl -Url $selectedStream.'Stream URL')) {
+            Write-Host "Stream check failed. Choose another channel." -ForegroundColor Red
+            $atcSources = $atcSources | Where-Object { $_.ICAO -eq $selectedStream.ICAO -and $_.'Stream URL' -ne $selectedStream.'Stream URL' }
+            if ($atcSources.Count -eq 0) {
+                Write-Host "No other channels available for $($selectedStream.ICAO)." -ForegroundColor Red
+                return $null
+            }
+            Start-Sleep -Seconds 1
+            return Select-ATCStreamFZF -atcSources $atcSources -SkipCheck:$SkipCheck
+        }
         return @{
             StreamUrl = $selectedStream.'Stream URL'
             WebcamUrl = $selectedStream.'Webcam URL'
@@ -920,10 +957,19 @@ if ($RandomATC) {
 } else {
     if ($UseFavorite) {
         $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
+        if (-not $SkipCheck -and $selectedATC -and -not (Test-StreamUrl -Url $selectedATC.StreamUrl)) {
+            Write-Host "Stream check failed. Listing other channels for $($selectedATC.AirportInfo.ICAO)." -ForegroundColor Red
+            $same = $atcSources | Where-Object { $_.ICAO -eq $selectedATC.AirportInfo.ICAO }
+            if ($UseFZF) {
+                $selectedATC = Select-ATCStreamFZF -atcSources $same -SkipCheck:$SkipCheck
+            } else {
+                $selectedATC = Select-ATCStream -atcSources $same -continent $same[0].Continent -country $same[0].Country -SkipCheck:$SkipCheck
+            }
+        }
     }
     if (-not $selectedATC) {
         if ($UseFZF) {
-            $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
+            $selectedATC = Select-ATCStreamFZF -atcSources $atcSources -SkipCheck:$SkipCheck
         } else {
             while (-not $selectedATC) {
                 $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
@@ -931,7 +977,7 @@ if ($RandomATC) {
                     $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
                     $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
                     if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
-                    $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+                    $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry -SkipCheck:$SkipCheck
                 } while (-not $selectedATC)
             }
         }
