@@ -38,6 +38,9 @@ Volume level for the Lofi Girl stream. Default is 50.
 .PARAMETER LofiSource
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
+.PARAMETER OpenRadar
+Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -75,6 +78,10 @@ This command plays a local audio file instead of the default stream
 .\lofiatc.ps1 -LofiSource "http://youtube.com/watch?v=jfKfPfyJRdk"
 This command plays a custom audio source from Youtube. Spotify streams wont work due to DRM restrictions.
 
+.EXAMPLE
+.\lofiatc.ps1 -OpenRadar
+This command launches the FlightAware radar page for the selected airport.
+
 #>
 
 [CmdletBinding()]
@@ -91,6 +98,7 @@ param (
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"  # Default
+    , [switch]$OpenRadar
 )
 
 # MP4 == Default app for all files
@@ -132,18 +140,23 @@ Function Resolve-Player {
     if ($explicitPlayer) {
         # If the user specifies a player, use it
         return $explicitPlayer
-    } else {
-        # If no player is specified, check the system default for .mp4
-        $defaultApp = Get-DefaultAppForMP4
+    }
 
-        # Match default app to known players
+    if ($IsWindows) {
+        # On Windows try to resolve from default app
+        $defaultApp = Get-DefaultAppForMP4
         switch ($defaultApp) {
             "vlc.exe"       { return "VLC" }
             "mpv.exe"       { return "MPV" }
             "PotPlayerMini64.exe" { return "Potplayer" }
             "mpc-hc64.exe"  { return "MPC-HC" }
-            default         { return "VLC" }  # Fallback to VLC if no match is found
+            default         { return "VLC" }
         }
+    } else {
+        # On non-Windows prefer mpv then vlc
+        if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
+        if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
+        return "MPV"
     }
 }
 
@@ -154,8 +167,8 @@ Function Test-Player {
     )
 
     $command = switch ($player) {
-        "VLC" { "vlc.exe" }
-        "MPV" { "mpv.com" }
+        "VLC" { if ($IsWindows) { "vlc.exe" } else { "vlc" } }
+        "MPV" { if ($IsWindows) { "mpv.com" } else { "mpv" } }
         "Potplayer" { "PotPlayerMini64.exe" }
         "MPC-HC" { "mpc-hc64.exe" }
     }
@@ -241,6 +254,16 @@ Function Add-Favorite {
     $favorites = $favorites | Sort-Object -Property @{Expression='Count';Descending=$true}, @{Expression='LastUsed';Descending=$true}
     if ($favorites.Count -gt $maxEntries) { $favorites = $favorites[0..($maxEntries-1)] }
     Save-Favorites -favorites $favorites -path $path
+}
+
+# Open FlightAware radar page for the given airport
+Function Open-Radar {
+    param(
+        [string]$ICAO
+    )
+
+    $url = "https://beta.flightaware.com/live/airport/$ICAO"
+    Start-Process $url
 }
 
 Function Select-FavoriteATC {
@@ -903,6 +926,7 @@ if ($RandomATC) {
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
     Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+    if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
     # Output player info after the welcome message
     if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
@@ -941,6 +965,7 @@ if ($RandomATC) {
     Clear-Host
     Write-Welcome -airportInfo $selectedATC.AirportInfo
     Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+    if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
     # Output player info after the welcome message
     if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
