@@ -35,6 +35,9 @@ Volume level for the ATC stream. Default is 65.
 .PARAMETER LofiVolume
 Volume level for the Lofi Girl stream. Default is 50.
 
+.PARAMETER LofiSource
+Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -55,12 +58,22 @@ This command runs the script, includes webcam video if available, and uses fzf f
 .EXAMPLE
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player Potplayer
 This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses Potplayer as the media player.
+
 .EXAMPLE
 .\lofiatc.ps1 -IncludeWebcamIfAvailable -UseFZF -Player VLC
 This command runs the script, includes webcam video if available, uses fzf for selecting ATC streams, and uses VLC as the media player.
+
 .EXAMPLE
 .\lofiatc.ps1 -UseFavorite
 This command lets you pick from the favorites list instead of browsing continents and countries.
+
+.EXAMPLE
+.\lofiatc.ps1 -LofiSource "C:\Path\To\Your\LofiAudio.mp3"
+This command plays a local audio file instead of the default stream
+
+.EXAMPLE
+.\lofiatc.ps1 -LofiSource "http://youtube.com/watch?v=jfKfPfyJRdk"
+This command plays a custom audio source from Youtube. Spotify streams wont work due to DRM restrictions.
 
 #>
 
@@ -76,7 +89,8 @@ param (
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
-    [int]$LofiVolume = 50
+    [int]$LofiVolume = 50,
+    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"  # Default
 )
 
 # MP4 == Default app for all files
@@ -878,7 +892,7 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 }
 
 
-$lofiMusicUrl = "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+$lofiMusicUrl = $LofiSource
 $atcSources = Import-ATCSources -csvPath $csvPath
 $favorites = Get-Favorites -path $favoritesJson
 $selectedATC = $null
