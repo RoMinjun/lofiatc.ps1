@@ -263,7 +263,13 @@ Function Open-Radar {
     )
 
     $url = "https://beta.flightaware.com/live/airport/$ICAO"
-    Start-Process $url
+    if ($IsWindows) {
+        Start-Process $url
+    } elseif ($IsMacOS) {
+        & open $url
+    } else {
+        & xdg-open $url
+    }
 }
 
 Function Select-FavoriteATC {
