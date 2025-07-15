@@ -395,7 +395,7 @@ Function Select-ATCStream {
 
             if ($selected) {
                 if (-not $SkipCheck -and -not (Test-StreamUrl -Url $selected.'Stream URL')) {
-                    Write-Host "Stream check failed. Choose another channel." -ForegroundColor Red
+                    Write-Host "Stream check failed. Choose another channel. If the problem persists, run ./tools/UpdateATCSources.ps1 to refresh the list." -ForegroundColor Red
                     $airportChoices = $airportChoices | Where-Object { $_.'Stream URL' -ne $selected.'Stream URL' }
                     if ($airportChoices.Count -eq 0) {
                         Write-Host "No other channels available for $($selected.ICAO)." -ForegroundColor Red
@@ -449,7 +449,7 @@ Function Select-ATCStreamFZF {
 
     if ($selectedStream) {
         if (-not $SkipCheck -and -not (Test-StreamUrl -Url $selectedStream.'Stream URL')) {
-            Write-Host "Stream check failed. Choose another channel." -ForegroundColor Red
+            Write-Host "Stream check failed. Choose another channel. If the problem persists, run ./tools/UpdateATCSources.ps1 to refresh the list." -ForegroundColor Red
             $atcSources = $atcSources | Where-Object { $_.ICAO -eq $selectedStream.ICAO -and $_.'Stream URL' -ne $selectedStream.'Stream URL' }
             if ($atcSources.Count -eq 0) {
                 Write-Host "No other channels available for $($selectedStream.ICAO)." -ForegroundColor Red
@@ -936,6 +936,20 @@ $selectedATC = $null
 
 if ($RandomATC) {
     $selectedATC = Get-RandomATCStream -atcSources $atcSources
+    if (-not $SkipCheck -and -not (Test-StreamUrl -Url $selectedATC.StreamUrl)) {
+        Write-Host "Stream check failed for $($selectedATC.AirportInfo.ICAO). If the problem persists, run ./tools/UpdateATCSources.ps1 to refresh the list." -ForegroundColor Red
+        $same = $atcSources | Where-Object { $_.ICAO -eq $selectedATC.AirportInfo.ICAO }
+        if ($same.Count -gt 1) {
+            if ($UseFZF) {
+                $selectedATC = Select-ATCStreamFZF -atcSources $same -SkipCheck:$SkipCheck
+            } else {
+                $selectedATC = Select-ATCStream -atcSources $same -continent $same[0].Continent -country $same[0].Country -SkipCheck:$SkipCheck
+            }
+        } else {
+            Write-Host "No other channels available for $($selectedATC.AirportInfo.ICAO)." -ForegroundColor Red
+            exit
+        }
+    }
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Write-Welcome -airportInfo $selectedATC.AirportInfo
@@ -958,7 +972,7 @@ if ($RandomATC) {
     if ($UseFavorite) {
         $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
         if (-not $SkipCheck -and $selectedATC -and -not (Test-StreamUrl -Url $selectedATC.StreamUrl)) {
-            Write-Host "Stream check failed. Listing other channels for $($selectedATC.AirportInfo.ICAO)." -ForegroundColor Red
+            Write-Host "Stream check failed. Listing other channels for $($selectedATC.AirportInfo.ICAO). If the problem persists, run ./tools/UpdateATCSources.ps1 to refresh the list." -ForegroundColor Red
             $same = $atcSources | Where-Object { $_.ICAO -eq $selectedATC.AirportInfo.ICAO }
             if ($UseFZF) {
                 $selectedATC = Select-ATCStreamFZF -atcSources $same -SkipCheck:$SkipCheck
