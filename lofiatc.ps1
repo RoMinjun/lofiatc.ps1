@@ -913,6 +913,17 @@ $isLofiPlaylist = $false
 if ($LofiSource -match 'list=' -or $LofiSource -match '\.(m3u8?|pls)$') {
     $isLofiPlaylist = $true
 }
+# If a YouTube playlist is supplied and the user didn't explicitly choose a
+# player, prefer MPV when available because VLC often fails with playlists.
+if ($isLofiPlaylist -and -not $PSBoundParameters.ContainsKey('Player')) {
+    try {
+        Test-Player -player 'MPV' | Out-Null
+        $Player = 'MPV'
+        Write-Verbose 'Using MPV for playlist playback'
+    } catch {
+        Write-Warning 'YouTube playlists may not play correctly without MPV.'
+    }
+}
 $atcSources = Import-ATCSources -csvPath $csvPath
 $favorites = Get-Favorites -path $favoritesJson
 $selectedATC = $null
