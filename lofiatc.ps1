@@ -836,7 +836,6 @@ Function Start-Player {
         [switch]$noVideo,
         [switch]$noAudio,
         [switch]$basicArgs,
-        [switch]$playlist,
         [switch]$shuffle,
         [switch]$loop,
         [int]$volume = 100
@@ -987,9 +986,9 @@ if (-not $NoLofiMusic) {
         Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
     }
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume -playlist:$isLofiPlaylist -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
     } else {
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume -playlist:$isLofiPlaylist -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
     }
 }
 
