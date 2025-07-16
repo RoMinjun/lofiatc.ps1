@@ -79,6 +79,11 @@ Two parameters control the audio level of each stream:
 - `-ATCVolume` sets the ATC stream volume (default `65`).
 - `-LofiVolume` sets the Lofi Girl volume (default `50`).
 
+### **Custom Lofi Source**
+Use the `-LofiSource` parameter to supply your own audio or video stream.  This
+can be a direct media URL, a local file, or a YouTube playlist.  When a playlist
+URL is provided the tracks are shuffled and looped automatically.
+
 ### **Favorites**
 Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites).
 

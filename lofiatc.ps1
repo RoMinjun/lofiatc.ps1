@@ -36,7 +36,9 @@ Volume level for the ATC stream. Default is 65.
 Volume level for the Lofi Girl stream. Default is 50.
 
 .PARAMETER LofiSource
-Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
+Specify a custom URL or file path for the Lofi audio/video source.  You can also
+provide a YouTube playlist URL, which will be shuffled and looped.  Defaults to
+the Lofi Girl YouTube stream if not provided.
 
 .NOTES
 File Name      : lofiatc.ps1
@@ -74,6 +76,10 @@ This command plays a local audio file instead of the default stream
 .EXAMPLE
 .\lofiatc.ps1 -LofiSource "http://youtube.com/watch?v=jfKfPfyJRdk"
 This command plays a custom audio source from Youtube. Spotify streams wont work due to DRM restrictions.
+
+.EXAMPLE
+.\lofiatc.ps1 -LofiSource "https://www.youtube.com/playlist?list=PL1234567890"
+This command plays a YouTube playlist which will be shuffled and looped continuously.
 
 #>
 
@@ -830,38 +836,49 @@ Function Start-Player {
         [switch]$noVideo,
         [switch]$noAudio,
         [switch]$basicArgs,
+        [switch]$playlist,
+        [switch]$shuffle,
+        [switch]$loop,
         [int]$volume = 100
     )
 
     $playerArgs = switch ($player) {
         "VLC" {
-            $vlcArgs = "`"$url`"" 
+            $vlcArgs = "`"$url`""
             if ($noVideo) { $vlcArgs += " --no-video" }
             if ($noAudio) { $vlcArgs += " --no-audio" }
+            if ($shuffle) { $vlcArgs += " --random" }
+            if ($loop)    { $vlcArgs += " --loop" }
             $vlcArgs += " --volume=$volume"
             $vlcArgs
         }
         "MPV" {
-            $mpvArgs = "`"$url`"" 
+            $mpvArgs = "`"$url`""
             if ($noVideo) { $mpvArgs += " --no-video" }
             if ($noAudio) { $mpvArgs += " --no-audio" }
             if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
+            if ($shuffle) { $mpvArgs += " --shuffle" }
+            if ($loop)    { $mpvArgs += " --loop-playlist=inf" }
             $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
         "Potplayer" {
-            $potplayerArgs = "`"$url`"" 
+            $potplayerArgs = "`"$url`""
             if ($noVideo) { $potplayerArgs += "" } # Not possible with potplayer
             if ($noAudio) { $potplayerArgs += " /volume=0" }
             if ($basicArgs) { $potplayerArgs += " /new" }
+            if ($shuffle) { $potplayerArgs += " /random" }
+            if ($loop)    { $potplayerArgs += " /repeat" }
             $potplayerArgs += " /volume=$volume"
             $potplayerArgs
         }
         "MPC-HC" {
-            $mpchcArgs = "`"$url`"" 
+            $mpchcArgs = "`"$url`""
             if ($noVideo) { $mpchcArgs += "" } # Not possible with MPC-HC
             if ($noAudio) { $mpchcArgs += " /mute" }
             if ($basicArgs) { $mpchcArgs += " /new" }
+            if ($shuffle) { $mpchcArgs += " /shuffle" }
+            if ($loop)    { $mpchcArgs += " /repeat" }
             $mpchcArgs += " /volume $volume"
             $mpchcArgs
         }
@@ -893,6 +910,10 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 
 
 $lofiMusicUrl = $LofiSource
+$isLofiPlaylist = $false
+if ($LofiSource -match 'list=' -or $LofiSource -match '\.(m3u8?|pls)$') {
+    $isLofiPlaylist = $true
+}
 $atcSources = Import-ATCSources -csvPath $csvPath
 $favorites = Get-Favorites -path $favoritesJson
 $selectedATC = $null
@@ -966,9 +987,9 @@ if (-not $NoLofiMusic) {
         Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
     }
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
+        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume -playlist:$isLofiPlaylist -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
     } else {
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
+        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume -playlist:$isLofiPlaylist -shuffle:$isLofiPlaylist -loop:$isLofiPlaylist
     }
 }
 
