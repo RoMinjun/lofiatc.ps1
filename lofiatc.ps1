@@ -765,7 +765,8 @@ Function Get-METAR-LastUpdatedTime {
 
 Function Write-Welcome {
     param (
-        [object]$airportInfo
+        [object]$airportInfo,
+        [switch]$OpenRadar
     )
 
     # Check PowerShell version
@@ -793,6 +794,7 @@ Function Write-Welcome {
     $camera         = if ($isPowerShell7) { "`u{1F3A5}" } else { "" }
     $link           = if ($isPowerShell7) { "`u{1F517}" } else { "" }
     $hourglass      = if ($isPowerShell7) { "`u{23F3}" } else { "" }
+    $radar          = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
 
     # Fetch raw METAR
     $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
@@ -837,7 +839,10 @@ Function Write-Welcome {
     Write-Output "$antenna Air Traffic Control:"
     Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
     Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')"
-
+    if ($OpenRadar) {
+        $radarUrl = "https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)"
+        Write-Output "    $radar Radar: $radarUrl"
+    }
     Write-Output ""
 
     # Include webcam information if available
@@ -930,7 +935,7 @@ if ($RandomATC) {
     $selectedATC = Get-RandomATCStream -atcSources $atcSources
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
-    Write-Welcome -airportInfo $selectedATC.AirportInfo
+    Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
     Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
     if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
@@ -969,7 +974,7 @@ if ($RandomATC) {
     $selectedATCUrl = $selectedATC.StreamUrl
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Clear-Host
-    Write-Welcome -airportInfo $selectedATC.AirportInfo
+    Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
     Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
     if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
