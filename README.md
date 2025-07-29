@@ -53,6 +53,8 @@ Ensure you have the following installed before running the script:
 - **fzf** *(Optional, but recommended)*:  
   Install with: `winget install --id=junegunn.fzf -e`
 
+The script can automatically detect `mpv` or `vlc` on macOS and Linux when no player is specified.
+
 ---
 
 ## **Clone the Repository**
@@ -91,3 +93,9 @@ This command updates and sorts `atc_sources.csv` in the repository root.  When y
 ```powershell
 ./tools/UpdateATCSources.ps1 -SortOnly
 ```
+
+### Open FlightAware Radar
+Pass `-OpenRadar` to automatically launch the selected airport's radar page in your browser. The function works on Windows, macOS, and Linux by calling the appropriate system opener.
+
+### Cross-Platform Player Detection
+When no `-Player` is specified the script now tries to locate `mpv` or `vlc` on macOS/Linux before falling back to Windows defaults.
