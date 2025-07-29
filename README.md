@@ -69,6 +69,17 @@ Execute the script using PowerShell:
 .\lofiatc.ps1
 ```
 
+## Update Air Traffic Control sources locally
+I've also added an option to get updated sources based on the base source file `atc_sources.csv`. If created, this file will be prioritized over the base csv file. Run the following script from the `<projectroot>/tools` to locally update sources:
+```powershell
+.\UpdateATCSources.ps1
+```
+> [!IMPORTANT]
+> The base csv file `atc_sources.csv` may never be deleted when using `lofiatc.ps1` since the `UpdateATCSources.ps1` and the `lofiatc.ps1` scripts both make use of that base sources file.
+
+> [!TIP]
+> If you wish to keep using the base `atc_sources.csv` after you've updated your sources locally, use the `-UseBaseCSV` param with the `lofiatc.ps1` script
+
 ## **Explore Script Options**
 Learn about all the features and parameters with the PowerShell `Get-Help` command:
 ```powershell
@@ -84,18 +95,11 @@ Two parameters control the audio level of each stream:
 ### **Favorites**
 Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites).
 
-## **Update ATC Source List**
-Fetch the latest ATC stream information from LiveATC and merge it with the existing list.  The script also sorts the CSV for easier browsing:
-```powershell
-./tools/UpdateATCSources.ps1
-```
-This command updates and sorts `atc_sources.csv` in the repository root.  When you only need to reorder the existing file without fetching new data, run:
-```powershell
-./tools/UpdateATCSources.ps1 -SortOnly
-```
-
 ### Open FlightAware Radar
 Pass `-OpenRadar` to automatically launch the selected airport's radar page in your browser. The function works on Windows, macOS, and Linux by calling the appropriate system opener.
 
 ### Cross-Platform Player Detection
 When no `-Player` is specified the script now tries to locate `mpv` or `vlc` on macOS/Linux before falling back to Windows defaults.
+
+# Help liveatc.net's existence
+This repo wouldn't be anything without [liveatc.net](https://www.liveatc.net). If you live near an airport and have a passion for air traffic control, and if it's legal in your country, consider [contacting LiveATC.net](https://www.liveatc.net/ct/contact.php). They can help you get set up with the necessary equipment.
