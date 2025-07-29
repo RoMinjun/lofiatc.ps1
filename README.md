@@ -69,6 +69,13 @@ Execute the script using PowerShell:
 .\lofiatc.ps1
 ```
 
+## **Update ATC Source List (Optional)**
+Fetch the latest ATC stream information from LiveATC and merge it with the existing list.  The script also sorts the CSV for easier browsing:
+```powershell
+./tools/UpdateATCSources.ps1
+```
+This command updates and sorts `atc_sources.csv` in the repository root.
+
 ## **Explore Script Options**
 Learn about all the features and parameters with the PowerShell `Get-Help` command:
 ```powershell
@@ -83,16 +90,6 @@ Two parameters control the audio level of each stream:
 
 ### **Favorites**
 Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites).
-
-## **Update ATC Source List**
-Fetch the latest ATC stream information from LiveATC and merge it with the existing list.  The script also sorts the CSV for easier browsing:
-```powershell
-./tools/UpdateATCSources.ps1
-```
-This command updates and sorts `atc_sources.csv` in the repository root.  When you only need to reorder the existing file without fetching new data, run:
-```powershell
-./tools/UpdateATCSources.ps1 -SortOnly
-```
 
 ### Open FlightAware Radar
 Pass `-OpenRadar` to automatically launch the selected airport's radar page in your browser. The function works on Windows, macOS, and Linux by calling the appropriate system opener.
