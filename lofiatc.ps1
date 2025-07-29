@@ -345,7 +345,7 @@ Function Select-ItemFZF {
         [array]$items
     )
 
-    $selectedItem = $items | fzf --prompt "$prompt> " --ignore-case --exact
+    $selectedItem = $items | fzf --prompt "$prompt> " --exact
     if ($selectedItem) {
         return $selectedItem.Trim()
     } else {
@@ -872,7 +872,11 @@ Function Start-Player {
             $vlcArgs = "`"$url`"" 
             if ($noVideo) { $vlcArgs += " --no-video" }
             if ($noAudio) { $vlcArgs += " --no-audio" }
-            $vlcArgs += " --volume=$volume"
+            if ($IsWindows) {
+                $vlcArgs += " --volume=$volume"
+            } else {
+                $vlcArgs += " --gain $($volume / 100)"
+            }
             $vlcArgs
         }
         "MPV" {
