@@ -875,7 +875,7 @@ Function Start-Player {
             if ($IsWindows) {
                 $vlcArgs += " --volume=$volume"
             } else {
-                $vlcArgs += " --gain $($volume / 100)"
+                $vlcArgs += " --gain $($volume / 100) --demux=rawaud --quiet"
             }
             $vlcArgs
         }
