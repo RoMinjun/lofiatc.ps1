@@ -12,7 +12,8 @@ Include webcam video stream if available for the selected ATC source.
 Do not play Lofi music.
 
 .PARAMETER RandomATC
-Select a random ATC stream from the list of sources.
+Select a random ATC stream from the list of sources. When combined with -ICAO,
+choose a random channel for that airport.
 
 .PARAMETER PlayLofiGirlVideo
 Play the Lofi Girl video instead of just the audio.
@@ -956,8 +957,8 @@ if ($ICAO) {
         exit
     }
 
-    if ($matches.Count -eq 1 -or $RandomChannel) {
-        $match = if ($RandomChannel -and $matches.Count -gt 1) { Get-Random -InputObject $matches } else { $matches[0] }
+    if ($matches.Count -eq 1 -or $RandomChannel -or $RandomATC) {
+        $match = if (($RandomChannel -or $RandomATC) -and $matches.Count -gt 1) { Get-Random -InputObject $matches } else { $matches[0] }
     } else {
         $channels = $matches | ForEach-Object {
             $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
