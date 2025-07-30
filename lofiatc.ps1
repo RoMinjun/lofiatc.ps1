@@ -97,8 +97,9 @@ param (
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"  # Default
-    , [switch]$OpenRadar
+    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"  # Default,
+    [string]$ICAO,
+    [switch]$OpenRadar
 )
 
 # MP4 == Default app for all files
@@ -935,67 +936,65 @@ if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
 $lofiMusicUrl = $LofiSource
 $atcSources = Import-ATCSources -csvPath $csvPath
 $favorites = Get-Favorites -path $favoritesJson
+
 $selectedATC = $null
-
-if ($RandomATC) {
-    $selectedATC = Get-RandomATCStream -atcSources $atcSources
-    $selectedATCUrl = $selectedATC.StreamUrl
-    $selectedWebcamUrl = $selectedATC.WebcamUrl
-    Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
-    Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
-    if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
-
-    # Output player info after the welcome message
-    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
-        Write-Verbose "Player selected by user: $Player"
-    } else {
-        Write-Verbose "Default player selected: $Player"
-    }
-
-    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
-        Write-Verbose "Opening ATC stream: $selectedATCUrl"
-        if ($selectedWebcamUrl) {
-            Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+if ($ICAO) {
+    $match = $atcSources | Where-Object { $_.ICAO -eq $ICAO } | Select-Object -First 1
+    if ($match) {
+        $selectedATC = @{ 
+            StreamUrl   = $match.'Stream URL'
+            WebcamUrl   = $match.'Webcam URL'
+            AirportInfo = $match
         }
+    } else {
+        Write-Error "No ATC stream found for ICAO $ICAO"
+        exit
     }
-} else {
-    if ($UseFavorite) {
-        $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
-    }
-    if (-not $selectedATC) {
-        if ($UseFZF) {
-            $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
-        } else {
-            while (-not $selectedATC) {
-                $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
-                do {
-                    $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
-                    $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
-                    if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
-                    $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
-                } while (-not $selectedATC)
+}
+
+if (-not $selectedATC) {
+    if ($RandomATC) {
+        $selectedATC = Get-RandomATCStream -atcSources $atcSources
+    } else {
+        if ($UseFavorite) {
+            $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
+        }
+        if (-not $selectedATC) {
+            if ($UseFZF) {
+                $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
+            } else {
+                while (-not $selectedATC) {
+                    $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
+                    do {
+                        $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
+                        $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
+                        if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
+                        $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+                    } while (-not $selectedATC)
+                }
             }
         }
     }
-    $selectedATCUrl = $selectedATC.StreamUrl
-    $selectedWebcamUrl = $selectedATC.WebcamUrl
-    Clear-Host
-    Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
-    Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
-    if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
+}
 
-    # Output player info after the welcome message
-    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
-        Write-Verbose "Player selected by user: $Player"
-    } else {
-        Write-Verbose "Default player selected: $Player"
-    }
+$selectedATCUrl = $selectedATC.StreamUrl
+$selectedWebcamUrl = $selectedATC.WebcamUrl
+Clear-Host
+Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
+Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
-    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
-        Write-Verbose "Opening ATC stream: $selectedATCUrl"
-        if ($selectedWebcamUrl) {
-            Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
-        }
+# Output player info after the welcome message
+if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
+    Write-Verbose "Player selected by user: $Player"
+} else {
+    Write-Verbose "Default player selected: $Player"
+}
+
+if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+    Write-Verbose "Opening ATC stream: $selectedATCUrl"
+    if ($selectedWebcamUrl) {
+        Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
     }
 }
 

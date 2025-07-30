@@ -68,6 +68,10 @@ Execute the script using PowerShell:
 ```powershell
 .\lofiatc.ps1
 ```
+You can specify an airport directly:
+```powershell
+.\lofiatc.ps1 -ICAO RJTT
+```
 
 ## Update Air Traffic Control sources locally
 I've also added an option to get updated sources based on the base source file `atc_sources.csv`. If created, this file will be prioritized over the base csv file. Run the following script from the `<projectroot>/tools` to locally update sources:
