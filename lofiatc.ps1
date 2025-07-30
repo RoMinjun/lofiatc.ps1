@@ -930,7 +930,9 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -PassThru:$PassThru
+    $spParams = @{ FilePath = $playerPath; ArgumentList = $playerArgs; PassThru = $PassThru }
+    if ($IsWindows) { $spParams.NoNewWindow = $true }
+    Start-Process @spParams
 }
 
 # Function to start Discord Rich Presence
@@ -1070,9 +1072,11 @@ if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
 }
 
 # Starting the ATC audio stream
+
 $playerProcs = @()
-$proc = Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume -PassThru
-$playerProcs += $proc
+try {
+    $proc = Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume -PassThru
+    $playerProcs += $proc
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
@@ -1095,7 +1099,14 @@ if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
 }
 
 if ($playerProcs.Count -gt 0) {
-    Wait-Process -Id ($playerProcs | Where-Object { $_ } | Select-Object -ExpandProperty Id)
+    foreach ($p in $playerProcs) {
+        if ($p -and -not $p.HasExited) {
+            try { $p.WaitForExit() } catch { }
+        }
+    }
+}
+}
+finally {
+    if ($DiscordRPC) { Stop-DiscordPresence }
 }
 
-if ($DiscordRPC) { Stop-DiscordPresence }
