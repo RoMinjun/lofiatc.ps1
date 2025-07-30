@@ -28,7 +28,32 @@ Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
 Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
 
 .PARAMETER DiscordRPC
-Enable Discord Rich Presence using the discordrpc module.
+Enable Discord Rich Presence using the discordrpc module. Combine with the
+additional `Discord*` parameters to customize the presence.
+
+.PARAMETER DiscordApplicationID
+Specify a custom Discord application ID to change the game title and assets.
+
+.PARAMETER DiscordTemplate
+Select a template from `Get-DSTemplate` when starting Discord Rich Presence.
+
+.PARAMETER DiscordDetails
+Custom text for the Details line.
+
+.PARAMETER DiscordState
+Custom text for the State line. Defaults to "ICAO - Channel" when not provided.
+
+.PARAMETER DiscordLargeImageKey
+Key name for the large image asset.
+
+.PARAMETER DiscordLargeImageText
+Tooltip text for the large image.
+
+.PARAMETER DiscordSmallImageKey
+Key name for the small image asset.
+
+.PARAMETER DiscordSmallImageText
+Tooltip text for the small image.
 
 .PARAMETER Player
 Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
@@ -101,6 +126,10 @@ This command skips continent/country prompts and starts with Tokyo Haneda's chan
 .\lofiatc.ps1 -DiscordRPC
 This command starts the script and updates your Discord Rich Presence.
 
+.EXAMPLE
+.\lofiatc.ps1 -DiscordRPC -DiscordTemplate YouTube -DiscordDetails 'lofiatc'
+Customize the presence using a template and custom details.
+
 #>
 
 [CmdletBinding()]
@@ -113,6 +142,14 @@ param (
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
     [switch]$DiscordRPC,
+    [string]$DiscordApplicationID,
+    [string]$DiscordTemplate,
+    [string]$DiscordDetails,
+    [string]$DiscordState,
+    [string]$DiscordLargeImageKey,
+    [string]$DiscordLargeImageText,
+    [string]$DiscordSmallImageKey,
+    [string]$DiscordSmallImageText,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
@@ -939,7 +976,15 @@ Function Start-Player {
 Function Start-DiscordPresence {
     param(
         [string]$ICAO,
-        [string]$Channel
+        [string]$Channel,
+        [string]$ApplicationID,
+        [string]$Template,
+        [string]$Details,
+        [string]$State,
+        [string]$LargeImageKey,
+        [string]$LargeImageText,
+        [string]$SmallImageKey,
+        [string]$SmallImageText
     )
 
     if (-not (Get-Module -ListAvailable -Name discordrpc)) {
@@ -948,11 +993,16 @@ Function Start-DiscordPresence {
     }
 
     Import-Module discordrpc -ErrorAction SilentlyContinue
-    $params = @{
-        Details = 'Listening to lofiATC'
-        State   = "${ICAO} - ${Channel}"
-        Start   = 'Now'
-    }
+    $params = @{}
+    if ($ApplicationID) { $params.ApplicationID = $ApplicationID }
+    if ($Template) { $params.Template = $Template }
+    $params.Details = if ($Details) { $Details } else { 'Listening to lofiATC' }
+    $params.State   = if ($State) { $State } else { "${ICAO} - ${Channel}" }
+    $params.Start   = 'Now'
+    if ($LargeImageKey)  { $params.LargeImageKey  = $LargeImageKey }
+    if ($LargeImageText) { $params.LargeImageText = $LargeImageText }
+    if ($SmallImageKey)  { $params.SmallImageKey  = $SmallImageKey }
+    if ($SmallImageText) { $params.SmallImageText = $SmallImageText }
     Start-DSClient @params | Out-Null
 }
 
@@ -1053,7 +1103,16 @@ if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
 # Start Discord Rich Presence if requested
 if ($DiscordRPC) {
-    Start-DiscordPresence -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description'
+    Start-DiscordPresence -ICAO $selectedATC.AirportInfo.ICAO \
+        -Channel $selectedATC.AirportInfo.'Channel Description' \
+        -ApplicationID $DiscordApplicationID \
+        -Template $DiscordTemplate \
+        -Details $DiscordDetails \
+        -State $DiscordState \
+        -LargeImageKey $DiscordLargeImageKey \
+        -LargeImageText $DiscordLargeImageText \
+        -SmallImageKey $DiscordSmallImageKey \
+        -SmallImageText $DiscordSmallImageText
     Register-EngineEvent PowerShell.Exiting -Action { Stop-DiscordPresence } | Out-Null
 }
 
