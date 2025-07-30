@@ -1,7 +1,7 @@
 <div align="center">
 
 # lofiatc.ps1
-An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell. This script integrates multimedia players like VLC, Potplayer, MPC-HC, or mpv, enabling you to simultaneously enjoy Lofi Girl and live Air Traffic Control streams from around the world.
+An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and designed to be cross-platform (Linux, macOS, and Windows). This script integrates multimedia players like VLC, PotPlayer, MPC-HC, or mpv, enabling you to simultaneously enjoy Lofi Girl and live Air Traffic Control streams from around the world.
 
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
 
