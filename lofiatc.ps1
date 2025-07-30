@@ -963,7 +963,11 @@ if ($ICAO) {
             $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
             "{0}{1}" -f $_.'Channel Description', $webcamIndicator
         } | Sort-Object -Unique
-        $chanSel = Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels
+        $chanSel = if ($UseFZF) {
+            Select-ItemFZF -prompt "Select a channel for ${ICAO}" -items $channels
+        } else {
+            Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels
+        }
         $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
         $match = $matches | Where-Object { $_.'Channel Description' -eq $chanClean } | Select-Object -First 1
     }
