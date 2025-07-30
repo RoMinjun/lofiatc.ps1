@@ -27,6 +27,9 @@ Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
 .PARAMETER UseFavorite
 Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
 
+.PARAMETER DiscordRPC
+Enable Discord Rich Presence using the discordrpc module.
+
 .PARAMETER Player
 Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
 
@@ -94,6 +97,10 @@ This command skips continent/country prompts and starts with Tokyo Haneda's chan
 .\lofiatc.ps1 -ICAO RJTT -RandomATC
 This command skips continent/country prompts and starts with Tokyo Haneda's channels, selecting a random channel.
 
+.EXAMPLE
+.\lofiatc.ps1 -DiscordRPC
+This command starts the script and updates your Discord Rich Presence.
+
 #>
 
 [CmdletBinding()]
@@ -105,6 +112,7 @@ param (
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
+    [switch]$DiscordRPC,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
     [int]$ATCVolume = 65,
@@ -924,6 +932,27 @@ Function Start-Player {
     Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
 }
 
+# Function to start Discord Rich Presence
+Function Start-DiscordPresence {
+    param(
+        [string]$ICAO,
+        [string]$Channel
+    )
+
+    if (-not (Get-Module -ListAvailable -Name discordrpc)) {
+        Write-Warning "discordrpc module not found. Install with 'Install-Module discordrpc -Scope CurrentUser'"
+        return
+    }
+
+    Import-Module discordrpc -ErrorAction SilentlyContinue
+    $params = @{
+        Details = 'Listening to lofiATC'
+        State   = "${ICAO} - ${Channel}"
+        Start   = 'Now'
+    }
+    Start-DSClient @params | Out-Null
+}
+
 # Determine the player to use
 $Player = Resolve-Player -explicitPlayer $Player
 
@@ -1011,6 +1040,11 @@ Clear-Host
 Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
 Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
 if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
+
+# Start Discord Rich Presence if requested
+if ($DiscordRPC) {
+    Start-DiscordPresence -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description'
+}
 
 # Output player info after the welcome message
 if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
