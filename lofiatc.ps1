@@ -38,6 +38,12 @@ Volume level for the Lofi Girl stream. Default is 50.
 .PARAMETER LofiSource
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
+.PARAMETER ICAO
+Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomChannel is used.
+
+.PARAMETER RandomChannel
+When -ICAO resolves to multiple channels choose one at random instead of prompting.
+
 .PARAMETER OpenRadar
 Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
 
@@ -82,6 +88,10 @@ This command plays a custom audio source from Youtube. Spotify streams wont work
 .\lofiatc.ps1 -OpenRadar
 This command launches the FlightAware radar page for the selected airport.
 
+.EXAMPLE
+.\lofiatc.ps1 -ICAO RJTT
+This command skips continent/country prompts and starts with Tokyo Haneda's channels.
+
 #>
 
 [CmdletBinding()]
@@ -99,6 +109,7 @@ param (
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk"  # Default,
     [string]$ICAO,
+    [switch]$RandomChannel,
     [switch]$OpenRadar
 )
 
@@ -939,16 +950,28 @@ $favorites = Get-Favorites -path $favoritesJson
 
 $selectedATC = $null
 if ($ICAO) {
-    $match = $atcSources | Where-Object { $_.ICAO -eq $ICAO } | Select-Object -First 1
-    if ($match) {
-        $selectedATC = @{ 
-            StreamUrl   = $match.'Stream URL'
-            WebcamUrl   = $match.'Webcam URL'
-            AirportInfo = $match
-        }
-    } else {
+    $matches = $atcSources | Where-Object { $_.ICAO -eq $ICAO }
+    if (-not $matches) {
         Write-Error "No ATC stream found for ICAO $ICAO"
         exit
+    }
+
+    if ($matches.Count -eq 1 -or $RandomChannel) {
+        $match = if ($RandomChannel -and $matches.Count -gt 1) { Get-Random -InputObject $matches } else { $matches[0] }
+    } else {
+        $channels = $matches | ForEach-Object {
+            $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
+            "{0}{1}" -f $_.'Channel Description', $webcamIndicator
+        } | Sort-Object -Unique
+        $chanSel = Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels
+        $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
+        $match = $matches | Where-Object { $_.'Channel Description' -eq $chanClean } | Select-Object -First 1
+    }
+
+    $selectedATC = @{
+        StreamUrl   = $match.'Stream URL'
+        WebcamUrl   = $match.'Webcam URL'
+        AirportInfo = $match
     }
 }
 
