@@ -40,10 +40,7 @@ Volume level for the Lofi Girl stream. Default is 50.
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
 .PARAMETER ICAO
-Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomChannel is used.
-
-.PARAMETER RandomChannel
-When -ICAO resolves to multiple channels choose one at random instead of prompting.
+Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
 
 .PARAMETER OpenRadar
 Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
@@ -93,6 +90,10 @@ This command launches the FlightAware radar page for the selected airport.
 .\lofiatc.ps1 -ICAO RJTT
 This command skips continent/country prompts and starts with Tokyo Haneda's channels.
 
+.EXAMPLE
+.\lofiatc.ps1 -ICAO RJTT -RandomATC
+This command skips continent/country prompts and starts with Tokyo Haneda's channels, selecting a random channel.
+
 #>
 
 [CmdletBinding()]
@@ -110,7 +111,6 @@ param (
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk",
     [string]$ICAO,
-    [switch]$RandomChannel,
     [switch]$OpenRadar
 )
 
@@ -957,8 +957,8 @@ if ($ICAO) {
         exit
     }
 
-    if ($icaoMatches.Count -eq 1 -or $RandomChannel -or $RandomATC) {
-        $match = if (($RandomChannel -or $RandomATC) -and $icaoMatches.Count -gt 1) { Get-Random -InputObject $icaoMatches } else { $icaoMatches[0] }
+    if ($icaoMatches.Count -eq 1 -or $RandomATC) {
+        $match = if ($RandomATC -and $icaoMatches.Count -gt 1) { Get-Random -InputObject $icaoMatches } else { $icaoMatches[0] }
     } else {
         $channels = $icaoMatches | ForEach-Object {
             $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
