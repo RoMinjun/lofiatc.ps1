@@ -887,7 +887,8 @@ Function Start-Player {
         [switch]$noVideo,
         [switch]$noAudio,
         [switch]$basicArgs,
-        [int]$volume = 100
+        [int]$volume = 100,
+        [switch]$PassThru
     )
 
     $playerArgs = switch ($player) {
@@ -929,7 +930,7 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
+    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -PassThru:$PassThru
 }
 
 # Function to start Discord Rich Presence
@@ -951,6 +952,13 @@ Function Start-DiscordPresence {
         Start   = 'Now'
     }
     Start-DSClient @params | Out-Null
+}
+
+# Function to stop Discord Rich Presence
+Function Stop-DiscordPresence {
+    if (Get-Command -Name Stop-DSClient -ErrorAction SilentlyContinue) {
+        Stop-DSClient | Out-Null
+    }
 }
 
 # Determine the player to use
@@ -1044,6 +1052,7 @@ if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 # Start Discord Rich Presence if requested
 if ($DiscordRPC) {
     Start-DiscordPresence -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description'
+    Register-EngineEvent PowerShell.Exiting -Action { Stop-DiscordPresence } | Out-Null
 }
 
 # Output player info after the welcome message
@@ -1061,7 +1070,9 @@ if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
 }
 
 # Starting the ATC audio stream
-Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume
+$playerProcs = @()
+$proc = Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume -PassThru
+$playerProcs += $proc
 
 # Starting the Lofi music if not disabled
 if (-not $NoLofiMusic) {
@@ -1069,13 +1080,22 @@ if (-not $NoLofiMusic) {
         Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
     }
     if ($PlayLofiGirlVideo) {
-        Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
+        $proc = Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume -PassThru
+        $playerProcs += $proc
     } else {
-        Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
+        $proc = Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume -PassThru
+        $playerProcs += $proc
     }
 }
 
 # Starting the webcam stream if available
 if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
-    Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs
+    $proc = Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs -PassThru
+    $playerProcs += $proc
 }
+
+if ($playerProcs.Count -gt 0) {
+    Wait-Process -Id ($playerProcs | Where-Object { $_ } | Select-Object -ExpandProperty Id)
+}
+
+if ($DiscordRPC) { Stop-DiscordPresence }

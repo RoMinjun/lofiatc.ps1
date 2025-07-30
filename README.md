@@ -102,7 +102,7 @@ Pass `-OpenRadar` to automatically launch the selected airport's radar page in y
 When no `-Player` is specified the script now tries to locate `mpv` or `vlc` on macOS/Linux before falling back to Windows defaults.
 
 ### Discord Rich Presence
-Use the `-DiscordRPC` switch to show what you're listening to in Discord. This requires the `discordrpc` module which can be installed via `Install-Module discordrpc -Scope CurrentUser`.
+Use the `-DiscordRPC` switch to show what you're listening to in Discord. This requires the `discordrpc` module which can be installed via `Install-Module discordrpc -Scope CurrentUser`. When enabled the script waits for the media players to close so your status clears automatically.
 
 # Help liveatc.net's existence
 This repo wouldn't be anything without [liveatc.net](https://www.liveatc.net). If you live near an airport and have a passion for air traffic control, and if it's legal in your country, consider [contacting LiveATC.net](https://www.liveatc.net/ct/contact.php). They can help you get set up with the necessary equipment.
