@@ -838,17 +838,19 @@ Function Write-Welcome {
 
     Write-Output "$antenna Air Traffic Control:"
     Write-Output "    $mic Channel: $($airportInfo.'Channel Description')"
-    Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')"
-    if ($OpenRadar) {
-        $radarUrl = "https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)"
-        Write-Output "    $radar Radar: $radarUrl"
-    }
-    Write-Output ""
+    Write-Output "    $headphones Stream:  $($airportInfo.'Stream URL')`n"
 
-    # Include webcam information if available
-    if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
-        Write-Output "$camera Webcam:"
-        Write-Output "    $($airportInfo.'Webcam URL')`n"
+    if ($OpenRadar -or -not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
+        Write-Output "$link External Links:"
+        if ($OpenRadar) {
+            $radarUrl = "https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)"
+            Write-Output "    $radar Radar:  $radarUrl"
+        }
+        # Include webcam information if available
+        if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
+            Write-Output "    $camera Webcam: $($airportInfo.'Webcam URL')"
+        }
+        Write-Output ""
     }
 
     # Display METAR source and last updated time
