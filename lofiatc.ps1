@@ -28,7 +28,7 @@ Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
 Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
 
 .PARAMETER Player
-Specify the media player to use (VLC, Potplayer, MPC-HC, MPV or Cosmic). Default is VLC if there is no default set in system for mp4.
+Specify the media player to use (VLC, Potplayer, MPC-HC, MPV, Cosmic, Celluloid, or SMPlayer). Default is VLC if there is no default set in system for mp4.
 
 .PARAMETER ATCVolume
 Volume level for the ATC stream. Default is 65.
@@ -105,7 +105,7 @@ param (
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
-    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC", "Cosmic")]
+    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC", "Cosmic", "Celluloid", "SMPlayer")]
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
@@ -166,8 +166,10 @@ Function Resolve-Player {
             default         { return "VLC" }
         }
     } else {
-        # On non-Windows prefer mpv then vlc. Cosmic-player is supported if found.
+        # On non-Windows prefer mpv or other linux players. Cosmic-player is supported if found.
         if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
+        if (Get-Command celluloid -ErrorAction SilentlyContinue) { return "Celluloid" }
+        if (Get-Command smplayer -ErrorAction SilentlyContinue) { return "SMPlayer" }
         if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
         if (Get-Command cosmic-player -ErrorAction SilentlyContinue) { return "Cosmic" }
         return "MPV"
@@ -186,6 +188,8 @@ Function Test-Player {
         "Potplayer" { "PotPlayerMini64.exe" }
         "MPC-HC" { "mpc-hc64.exe" }
         "Cosmic" { "cosmic-player" }
+        "Celluloid" { "celluloid" }
+        "SMPlayer" { "smplayer" }
     }
 
     $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
@@ -897,15 +901,31 @@ Function Start-Player {
             $vlcArgs
         }
         "MPV" {
-            $mpvArgs = "`"$url`"" 
+            $mpvArgs = "`"$url`""
             if ($noVideo) { $mpvArgs += " --no-video" }
             if ($noAudio) { $mpvArgs += " --no-audio" }
             if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
             $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
+        "Celluloid" {
+            $cellArgs = "`"$url`""
+            if ($noVideo) { $cellArgs += " --no-video" }
+            if ($noAudio) { $cellArgs += " --no-audio" }
+            if ($basicArgs) { $cellArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
+            $cellArgs += " --volume=$volume"
+            $cellArgs
+        }
+        "SMPlayer" {
+            $smArgs = "`"$url`""
+            if ($noVideo) { $smArgs += " --no-video" }
+            if ($noAudio) { $smArgs += " --no-audio" }
+            if ($basicArgs) { $smArgs += " --really-quiet" }
+            $smArgs += " --volume=$volume"
+            $smArgs
+        }
         "Potplayer" {
-            $potplayerArgs = "`"$url`"" 
+            $potplayerArgs = "`"$url`""
             if ($noVideo) { $potplayerArgs += "" } # Not possible with potplayer
             if ($noAudio) { $potplayerArgs += " /volume=0" }
             if ($basicArgs) { $potplayerArgs += " /new" }
