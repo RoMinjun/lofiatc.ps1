@@ -28,7 +28,7 @@ Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
 Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
 
 .PARAMETER Player
-Specify the media player to use (VLC, Potplayer, MPC-HC or MPV). Default is VLC if there is no default set in system for mp4.
+Specify the media player to use (VLC, Potplayer, MPC-HC, MPV or Cosmic). Default is VLC if there is no default set in system for mp4.
 
 .PARAMETER ATCVolume
 Volume level for the ATC stream. Default is 65.
@@ -105,7 +105,7 @@ param (
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
-    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
+    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC", "Cosmic")]
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
@@ -166,9 +166,10 @@ Function Resolve-Player {
             default         { return "VLC" }
         }
     } else {
-        # On non-Windows prefer mpv then vlc
+        # On non-Windows prefer mpv then vlc. Cosmic-player is supported if found.
         if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
         if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
+        if (Get-Command cosmic-player -ErrorAction SilentlyContinue) { return "Cosmic" }
         return "MPV"
     }
 }
@@ -184,6 +185,7 @@ Function Test-Player {
         "MPV" { if ($IsWindows) { "mpv.com" } else { "mpv" } }
         "Potplayer" { "PotPlayerMini64.exe" }
         "MPC-HC" { "mpc-hc64.exe" }
+        "Cosmic" { "cosmic-player" }
     }
 
     $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
@@ -911,12 +913,31 @@ Function Start-Player {
             $potplayerArgs
         }
         "MPC-HC" {
-            $mpchcArgs = "`"$url`"" 
+            $mpchcArgs = "`"$url`""
             if ($noVideo) { $mpchcArgs += "" } # Not possible with MPC-HC
             if ($noAudio) { $mpchcArgs += " /mute" }
             if ($basicArgs) { $mpchcArgs += " /new" }
             $mpchcArgs += " /volume $volume"
             $mpchcArgs
+        }
+        "Cosmic" {
+            $resolvedUrl = $url
+            if ($url -match 'youtu(be)?\.com|youtu\.be') {
+                try {
+                    $resolvedUrl = (yt-dlp -f best -g $url) -join ''
+                } catch {
+                    Write-Warning "Failed to resolve YouTube URL with yt-dlp."
+                }
+            } elseif ($url -match '\.pls(\?|$)') {
+                try {
+                    $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
+                    $fileLine = ($content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1)
+                    if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
+                } catch {
+                    Write-Warning "Failed to resolve PLS URL: $url"
+                }
+            }
+            "`"$resolvedUrl`""
         }
     }
 

@@ -1,7 +1,7 @@
 <div align="center">
 
 # lofiatc.ps1
-An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and designed to be cross-platform (Linux, macOS, and Windows). This script integrates multimedia players like VLC, PotPlayer, MPC-HC, or mpv, enabling you to simultaneously enjoy Lofi Girl and live Air Traffic Control streams from around the world.
+An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and designed to be cross-platform (Linux, macOS, and Windows). This script integrates multimedia players like VLC, PotPlayer, MPC-HC, mpv, or Cosmic Player, enabling you to simultaneously enjoy Lofi Girl and live Air Traffic Control streams from around the world.
 
 ![](https://i.redd.it/8suf7s5ywqad1.jpeg)
 
@@ -50,10 +50,12 @@ Ensure you have the following installed before running the script:
     Install with: `winget install potplayer --id Daum.PotPlayer -s winget`
   - **MPC-HC**:  
     Install with: `winget install MPC-HC --id clsid2.mpc-hc`
-  - **MPV**:  
+  - **MPV**:
     Install with:
     - Windows: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
     - Debian based distros: `sudo apt install mpv`
+  - **Cosmic Player** (Linux only):
+    Install with: `sudo apt install cosmic-player`
 - **yt-dlp** *(for loading lofi girl)*:
     Install with:
     - Windows: `winget install --id=yt-dlp.yt-dlp  -e`
@@ -63,7 +65,7 @@ Ensure you have the following installed before running the script:
   - Windows: `winget install --id=junegunn.fzf -e`
   - Debian based distros: `sudo apt install fzf`
 
-The script can automatically detect `mpv` or `vlc` on macOS and Linux when no player is specified.
+The script can automatically detect `mpv` or `vlc` on macOS and Linux when no player is specified. `Cosmic Player` is supported on Linux but needs to be selected explicitly with `-Player Cosmic`. When using `Cosmic Player`, YouTube and `.pls` streams are resolved to direct links using `yt-dlp` and `curl` respectively.
 
 ---
 
