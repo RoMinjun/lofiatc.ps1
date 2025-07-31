@@ -937,12 +937,21 @@ Function Start-Player {
                     Write-Warning "Failed to resolve PLS URL: $url"
                 }
             }
-            "`"$resolvedUrl`""
+            $cosmicArgs = "`"$resolvedUrl`""
+            if ($noVideo) { $cosmicArgs += " --no-video" }
+            if ($noAudio) { $cosmicArgs += " --no-audio" }
+            if ($basicArgs) { $cosmicArgs += " --no-ui --quiet" }
+            $cosmicArgs
         }
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
+    $startParams = @{ FilePath = $playerPath; ArgumentList = $playerArgs; NoNewWindow = $true }
+    if ($player -eq "Cosmic") {
+        $startParams["RedirectStandardOutput"] = "/dev/null"
+        $startParams["RedirectStandardError"]  = "/dev/null"
+    }
+    Start-Process @startParams
 }
 
 # Determine the player to use
