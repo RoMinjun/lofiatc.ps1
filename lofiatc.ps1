@@ -957,11 +957,10 @@ Function Start-Player {
                     Write-Warning "Failed to resolve PLS URL: $url"
                 }
             }
-            $cosmicArgs = "`"$resolvedUrl`""
-            if ($noVideo) { $cosmicArgs += " --no-video" }
-            if ($noAudio) { $cosmicArgs += " --no-audio" }
-            if ($basicArgs) { $cosmicArgs += " --no-ui --quiet" }
-            $cosmicArgs
+            # Cosmic Player does not currently offer flags to mute audio or
+            # disable video. We simply pass the resolved URL and suppress the
+            # player's own output via Start-Process redirection.
+            "`"$resolvedUrl`""
         }
     }
 

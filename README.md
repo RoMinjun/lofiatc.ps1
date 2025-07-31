@@ -58,7 +58,7 @@ Ensure you have the following installed before running the script:
     Install with: `sudo apt install celluloid`
   - **SMPlayer** (Linux only):
     Install with: `sudo apt install smplayer`
-  - **Cosmic Player** (Linux only):
+-  - **Cosmic Player** (Linux only):
     Install with: `sudo apt install cosmic-player`
 - **yt-dlp** *(for loading lofi girl)*:
     Install with:
@@ -69,7 +69,7 @@ Ensure you have the following installed before running the script:
   - Windows: `winget install --id=junegunn.fzf -e`
   - Debian based distros: `sudo apt install fzf`
 
-The script can automatically detect `mpv`, `vlc`, `celluloid`, or `smplayer` on macOS and Linux when no player is specified. `Cosmic Player` is supported on Linux but needs to be selected explicitly with `-Player Cosmic`. When using `Cosmic Player`, YouTube and `.pls` streams are resolved to direct links using `yt-dlp` and `curl` respectively, and the player's output is suppressed. The same playback flags (`-NoVideo`, `-NoAudio`, `-BasicArgs`) work with Cosmic Player as with the other players.
+The script can automatically detect `mpv`, `vlc`, `celluloid`, or `smplayer` on macOS and Linux when no player is specified. `Cosmic Player` is supported on Linux but must be chosen explicitly with `-Player Cosmic`. When using Cosmic Player the script resolves YouTube streams via `yt-dlp -f best -g` and extracts direct links from `.pls` files with `curl`. Output from Cosmic Player is discarded using `/dev/null`. Note that Cosmic Player does not support the `-NoVideo`, `-NoAudio`, or `-BasicArgs` flags.
 
 ---
 
