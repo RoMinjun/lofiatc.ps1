@@ -69,7 +69,7 @@ Ensure you have the following installed before running the script:
   - Windows: `winget install --id=junegunn.fzf -e`
   - Debian based distros: `sudo apt install fzf`
 
-The script can automatically detect `mpv`, `vlc`, `celluloid`, or `smplayer` on macOS and Linux when no player is specified. `Cosmic Player` is supported on Linux but must be chosen explicitly with `-Player Cosmic`. When using Cosmic Player the script resolves YouTube streams via `yt-dlp -f best -g` and extracts direct links from `.pls` files with `curl`. Output from Cosmic Player is discarded using `/dev/null`. Note that Cosmic Player does not support the `-NoVideo`, `-NoAudio`, or `-BasicArgs` flags.
+The script can automatically detect `mpv`, `vlc`, `celluloid`, or `smplayer` on macOS and Linux when no player is specified. `Cosmic Player` is supported on Linux but must be chosen explicitly with `-Player Cosmic`. When using Cosmic Player the script resolves YouTube streams via `yt-dlp -f best -g` and extracts direct links from `.pls` files with `curl`. Output from Cosmic Player is discarded using shell redirection to `/dev/null`. Note that Cosmic Player does not support the `-NoVideo`, `-NoAudio`, or `-BasicArgs` flags.
 
 ---
 

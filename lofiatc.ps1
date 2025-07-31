@@ -959,18 +959,20 @@ Function Start-Player {
             }
             # Cosmic Player does not currently offer flags to mute audio or
             # disable video. We simply pass the resolved URL and suppress the
-            # player's own output via Start-Process redirection.
+            # player's own output using shell redirection to /dev/null.
             "`"$resolvedUrl`""
         }
     }
 
     $playerPath = Test-Player -player $player
-    $startParams = @{ FilePath = $playerPath; ArgumentList = $playerArgs; NoNewWindow = $true }
     if ($player -eq "Cosmic") {
-        $startParams["RedirectStandardOutput"] = "/dev/null"
-        $startParams["RedirectStandardError"]  = "/dev/null"
+        # Use a shell to discard Cosmic Player output, mimicking
+        # `cosmic-player <url> >/dev/null 2>&1`
+        $shellCmd = "cosmic-player $playerArgs >/dev/null 2>&1"
+        Start-Process -FilePath "/bin/sh" -ArgumentList "-c", $shellCmd -NoNewWindow
+    } else {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
     }
-    Start-Process @startParams
 }
 
 # Determine the player to use
