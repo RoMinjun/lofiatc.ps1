@@ -41,17 +41,27 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and d
 ## **Requirements**
 Ensure you have the following installed before running the script:
 - **PowerShell 5.1 or later**
-- **A Multimedia Player** (choose one of the following):
+- **A Multimedia Player** (choose one or multiple of the following):
   - **VLC Media Player**:  
-    Install with: `winget install -e --id VideoLAN.VLC`
+    Install with:
+    - Windows `winget install -e --id VideoLAN.VLC`
+    - Debian based distros: `sudo apt install vlc`
   - **Potplayer**:  
     Install with: `winget install potplayer --id Daum.PotPlayer -s winget`
   - **MPC-HC**:  
     Install with: `winget install MPC-HC --id clsid2.mpc-hc`
   - **MPV**:  
-    Install with: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
+    Install with:
+    - Windows: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
+    - Debian based distros: `sudo apt install mpv`
+- **yt-dlp** *(for loading lofi girl)*:
+    Install with:
+    - Windows: `winget install --id=yt-dlp.yt-dlp  -e`
+    - Debian based distros: `sudo apt install yt-dlp`
 - **fzf** *(Optional, but recommended)*:  
-  Install with: `winget install --id=junegunn.fzf -e`
+  Install with:
+  - Windows: `winget install --id=junegunn.fzf -e`
+  - Debian based distros: `sudo apt install fzf`
 
 The script can automatically detect `mpv` or `vlc` on macOS and Linux when no player is specified.
 
