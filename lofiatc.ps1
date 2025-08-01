@@ -669,7 +669,7 @@ Function Get-AirportInfo {
     )
     if (-not $global:AirportData) {
         try {
-            $global:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/mwgg/Airports/master/airports.json' -Method Get
+            $global:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
         } catch {
             Write-Error "Failed to load airport database. Exception: $_"
             return $null
