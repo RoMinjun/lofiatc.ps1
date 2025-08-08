@@ -895,6 +895,49 @@ Function Write-Welcome {
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
+# Function to pick the correct volume flag based on output module
+Function Get-VLCVolumeArg {
+    param (
+        [int]$volume
+    )
+
+    $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"
+    $module = $null
+
+    if (Test-Path $vlcConfigPath) {
+        try {
+            $line = Get-Content -Path $vlcConfigPath |
+                Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
+                Select-Object -First 1
+            if ($line) {
+                $module = ($line -split "=")[1].Trim().ToLower()
+            }
+        } catch {
+            #nuttin
+        }
+    }
+
+    switch -Regex ($module) {
+        'mmdevice|wasapi' {
+            $v = [math]::Round([double]$volume/100,2)
+            return "--aout=wasapi --mmdevice-volume=$v"
+        }
+        'waveout' {
+            $v = [math]::Round([double]$volume/100,2)
+            return "--aout=waveout --waveout-volume=$v"
+        }
+        'directx|directsound' {
+            $v = [math]::Round([double]$volume/100,2)
+            return "--aout=directx --directx-volume=$v"
+        }
+        default {
+            $v = [math]::Round([double]$volume/100,2)
+            return "--aout=directx --directx-volume=$v"
+        }
+    }
+
+}
+
 # Function to start the media player with a given URL
 Function Start-Player {
     param (
@@ -912,7 +955,7 @@ Function Start-Player {
             if ($noVideo) { $vlcArgs += " --no-video" }
             if ($noAudio) { $vlcArgs += " --no-audio" }
             if ($OnWindows) {
-                $vlcArgs += " --volume=$volume --no-volume-save"
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $volume) --no-volume-save"
             } else {
                 $vlcArgs += " --gain $($volume / 100) --demux=rawaud --quiet"
             }
