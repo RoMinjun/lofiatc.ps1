@@ -103,13 +103,33 @@ Two parameters control the audio level of each stream:
 - `-LofiVolume` sets the Lofi Girl volume (default `50`).
 
 ### **Favorites**
-Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites).
+Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries. Use the `-UseFavorite` switch to choose from this list (combine with `-UseFZF` to search within favorites). Streams chosen with `-RandomATC` aren't saved to the favorites list.
+
 
 ### Open FlightAware Radar
 Pass `-OpenRadar` to automatically launch the selected airport's radar page in your browser. The function works on Windows, macOS, and Linux by calling the appropriate system opener.
 
 ### Cross-Platform Player Detection
 When no `-Player` is specified the script now tries to locate `mpv` or `vlc` on macOS/Linux before falling back to Windows defaults.
+
+
+### Save & Load Configuration
+Easily persist your favorite command-line options and reuse them across sessions by saving to or loading from a JSON file.
+- **Save your settings**  
+  Add `-SaveConfig` to export all active parameters to `config.json`.
+- **Load saved settings**  
+  Use `-LoadConfig` to import those options on your next run.
+- **Custom file path**  
+  Specify `-ConfigPath <path>` to read from or write to a different JSON file.
+- **Command-line overrides**  
+  Any flag or parameter you supply when loading will take precedence over the saved values.  
+  For example, even if your config has `OpenRadar: false`, you can re-enable it with:  
+  ```powershell
+  .\lofiatc.ps1 -LoadConfig -OpenRadar
+  ```
+
+
+#### Example
 
 # Help liveatc.net's existence
 This repo wouldn't be anything without [liveatc.net](https://www.liveatc.net). If you live near an airport and have a passion for air traffic control, and if it's legal in your country, consider [contacting LiveATC.net](https://www.liveatc.net/ct/contact.php). They can help you get set up with the necessary equipment.

@@ -45,6 +45,12 @@ Specify an airport by ICAO code. If multiple channels exist you will be prompted
 .PARAMETER OpenRadar
 Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
 
+.PARAMETER SaveConfig
+Save the parameters used for the current run to a configuration file.
+
+.PARAMETER ConfigPath
+Optional path for the saved configuration file. Defaults to a file named `config.json` beside the script.
+
 .NOTES
 File Name      : lofiatc.ps1
 Author         : github.com/RoMinjun
@@ -94,6 +100,18 @@ This command skips continent/country prompts and starts with Tokyo Haneda's chan
 .\lofiatc.ps1 -ICAO RJTT -RandomATC
 This command skips continent/country prompts and starts with Tokyo Haneda's channels, selecting a random channel.
 
+.EXAMPLE
+.\lofiatc.ps1 -RandomATC -SaveConfig
+This command selects a random ATC stream and saves the parameters used to `config.json`.
+
+.EXAMPLE
+.\lofiatc.ps1 -LoadConfig
+This command loads parameters from `config.json` and runs the script with those settings.
+
+.EXAMPLE
+.\lofiatc.ps1 -LoadConfig -OpenRadar
+This command loads parameters from `config.json` and overrides the OpenRadar parameter to true.
+
 #>
 
 [CmdletBinding()]
@@ -111,6 +129,9 @@ param (
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk",
     [string]$ICAO,
+    [switch]$LoadConfig,
+    [switch]$SaveConfig,
+    [string]$ConfigPath,
     [switch]$OpenRadar
 )
 
@@ -926,9 +947,46 @@ Function Start-Player {
     $playerPath = Test-Player -player $player
     Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
 }
+# Determine script directory
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# Load configuration if requested
+if ($LoadConfig) {
+    if (-not $ConfigPath) { $ConfigPath = Join-Path $scriptDir 'config.json' }
+    if (Test-Path $ConfigPath) {
+        $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
+        foreach ($prop in $config.PSObject.Properties) {
+            $name = $prop.Name
+            if ($name -in @('Verbose','Debug','ErrorAction','WarningAction','InformationAction','ProgressAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable','SaveConfig','LoadConfig','ConfigPath')) { continue }
+            if (-not $PSBoundParameters.ContainsKey($name)) {
+                Set-Variable -Name $name -Value $prop.Value -Scope Local
+            }
+        }
+        Write-Host "Loaded config from $ConfigPath"
+    } else {
+        Write-Warning "Config file not found at $ConfigPath"
+    }
+}
 
 # Determine the player to use
 $Player = Resolve-Player -explicitPlayer $Player
+
+# Save configuration if requested
+if ($SaveConfig) {
+    if (-not $ConfigPath) { $ConfigPath = Join-Path $scriptDir 'config.json' }
+    $paramNames = (Get-Command $MyInvocation.MyCommand.Path).Parameters.Keys
+    $config = @{}
+    foreach ($name in $paramNames) {
+        if ($name -notin @('Verbose','Debug','ErrorAction','WarningAction','InformationAction','ProgressAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable','SaveConfig','LoadConfig','ConfigPath')) {
+            $value = Get-Variable -Name $name -ValueOnly
+            if ($value -is [System.Management.Automation.SwitchParameter]) { $value = [bool]$value }
+            $config[$name] = $value
+        }
+    }
+    $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    Write-Host "Saved config to $ConfigPath"
+}
+
 
 # Check if the selected player is installed
 Test-Player -player $Player | Out-Null
@@ -1012,7 +1070,9 @@ $selectedATCUrl = $selectedATC.StreamUrl
 $selectedWebcamUrl = $selectedATC.WebcamUrl
 Clear-Host
 Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
-Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+if (-not $RandomATC) {
+    Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+}
 if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 
 # Output player info after the welcome message
