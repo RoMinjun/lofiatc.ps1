@@ -953,14 +953,19 @@ Function Start-Player {
         "VLC" {
             $vlcArgs = "`"$url`"" 
             if ($noVideo) { $vlcArgs += " --no-video" }
-            if ($noAudio) { $vlcArgs += " --no-audio" }
+
             if ($OnWindows) {
-                $vlcArgs += " $(Get-VLCVolumeArg -volume $volume) --no-volume-save"
+                $vol = $volume
+                if ($noAudio) {
+                    $vol = 0
+                } 
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save"
             } else {
-                $vlcArgs += " --gain $($volume / 100) --demux=rawaud --quiet"
+                if ($noAudio) { $vlcArgs += " --no-audio" }
+                $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --demux=rawaud --quiet"
             }
             $vlcArgs
-        }
+        }   
         "MPV" {
             $mpvArgs = "`"$url`"" 
             if ($noVideo) { $mpvArgs += " --no-video" }
