@@ -147,12 +147,14 @@ Function Get-DefaultAppForMP4 {
         if (Test-Path $keyPath) {
             $key = Get-ItemProperty -Path $keyPath -ErrorAction Stop
             $progID = $key.ProgID
-        } else {
+        }
+        else {
             # Fallback to system default if UserChoice doesn't exist
             $keyPath = "HKCR:\.mp4"
             if (Test-Path $keyPath) {
                 $progID = (Get-ItemProperty -Path $keyPath -ErrorAction Stop).'(default)'
-            } else {
+            }
+            else {
                 return $null
             }
         }
@@ -160,10 +162,12 @@ Function Get-DefaultAppForMP4 {
         # Extract executable name if ProgID follows Applications format
         if ($progID -like "Applications\*") {
             return $progID -replace "Applications\\", ""
-        } else {
+        }
+        else {
             return $progID
         }
-    } catch {
+    }
+    catch {
         return $null
     }
 }
@@ -183,13 +187,14 @@ Function Resolve-Player {
         # On Windows try to resolve from default app
         $defaultApp = Get-DefaultAppForMP4
         switch ($defaultApp) {
-            "vlc.exe"       { return "VLC" }
-            "mpv.exe"       { return "MPV" }
+            "vlc.exe" { return "VLC" }
+            "mpv.exe" { return "MPV" }
             "PotPlayerMini64.exe" { return "Potplayer" }
-            "mpc-hc64.exe"  { return "MPC-HC" }
-            default         { return "VLC" }
+            "mpc-hc64.exe" { return "MPC-HC" }
+            default { return "VLC" }
         }
-    } else {
+    }
+    else {
         # On non-Windows prefer mpv then vlc
         if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
         if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
@@ -247,10 +252,12 @@ Function Get-Favorites {
                 if (-not $f.PSObject.Properties['LastUsed']) { $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty }
             }
             return $data
-        } catch {
+        }
+        catch {
             return @()
         }
-    } else {
+    }
+    else {
         return @()
     }
 }
@@ -278,18 +285,19 @@ Function Add-Favorite {
         $existing.Count++
         $existing.LastUsed = Get-Date
         $favorites = $favorites | Where-Object { !(($_.ICAO -eq $ICAO) -and ($_.Channel -eq $Channel)) }
-        $favorites = ,$existing + $favorites
-    } else {
+        $favorites = , $existing + $favorites
+    }
+    else {
         $newEntry = [pscustomobject]@{
             ICAO     = $ICAO
             Channel  = $Channel
             Count    = 1
             LastUsed = Get-Date
         }
-        $favorites = ,$newEntry + $favorites
+        $favorites = , $newEntry + $favorites
     }
-    $favorites = $favorites | Sort-Object -Property @{Expression='Count';Descending=$true}, @{Expression='LastUsed';Descending=$true}
-    if ($favorites.Count -gt $maxEntries) { $favorites = $favorites[0..($maxEntries-1)] }
+    $favorites = $favorites | Sort-Object -Property @{Expression = 'Count'; Descending = $true }, @{Expression = 'LastUsed'; Descending = $true }
+    if ($favorites.Count -gt $maxEntries) { $favorites = $favorites[0..($maxEntries - 1)] }
     Save-Favorites -favorites $favorites -path $path
 }
 
@@ -302,9 +310,11 @@ Function Open-Radar {
     $url = "https://beta.flightaware.com/live/airport/$ICAO"
     if ($OnWindows) {
         Start-Process $url
-    } elseif ($IsMacOS) {
+    }
+    elseif ($IsMacOS) {
         & open $url
-    } else {
+    }
+    else {
         & xdg-open $url
     }
 }
@@ -332,11 +342,12 @@ Function Select-FavoriteATC {
     if ($sel) {
         $fav = $favEntries | Where-Object { $_.Display -eq $sel }
         return @{
-            StreamUrl  = $fav.Entry.'Stream URL'
-            WebcamUrl  = $fav.Entry.'Webcam URL'
+            StreamUrl   = $fav.Entry.'Stream URL'
+            WebcamUrl   = $fav.Entry.'Webcam URL'
             AirportInfo = $fav.Entry
         }
-    } else {
+    }
+    else {
         return $null
     }
 }
@@ -385,7 +396,8 @@ Function Select-ItemFZF {
     $selectedItem = $items | fzf --prompt "$prompt> " --exact
     if ($selectedItem) {
         return $selectedItem.Trim()
-    } else {
+    }
+    else {
         Write-Host "No selection made. Exiting script." -ForegroundColor Yellow
         exit
     }
@@ -439,14 +451,15 @@ Function Select-ATCStream {
                 if ($null -eq $chanSel) { break }
                 $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
                 $selected = $airportChoices | Where-Object { $_.'Channel Description' -eq $chanClean }
-            } else {
+            }
+            else {
                 $selected = $airportChoices[0]
             }
 
             if ($selected) {
                 return @{
-                    StreamUrl = $selected.'Stream URL'
-                    WebcamUrl = $selected.'Webcam URL'
+                    StreamUrl   = $selected.'Stream URL'
+                    WebcamUrl   = $selected.'Webcam URL'
                     AirportInfo = $selected
                 }
             }
@@ -466,7 +479,8 @@ Function Select-ATCStreamFZF {
     $choices = $atcSources | ForEach-Object {
         $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
             " [Webcam available]"
-        } else {
+        }
+        else {
             ""
         }
 
@@ -478,7 +492,8 @@ Function Select-ATCStreamFZF {
     $selectedStream = $atcSources | Where-Object {
         $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) {
             " [Webcam available]"
-        } else {
+        }
+        else {
             ""
         }
 
@@ -488,11 +503,12 @@ Function Select-ATCStreamFZF {
 
     if ($selectedStream) {
         return @{
-            StreamUrl = $selectedStream.'Stream URL'
-            WebcamUrl = $selectedStream.'Webcam URL'
+            StreamUrl   = $selectedStream.'Stream URL'
+            WebcamUrl   = $selectedStream.'Webcam URL'
             AirportInfo = $selectedStream
         }
-    } else {
+    }
+    else {
         Write-Error "No matching ATC stream found."
         exit
     }
@@ -508,8 +524,8 @@ Function Get-RandomATCStream {
     $randomIndex = Get-Random -Minimum 0 -Maximum $atcSources.Count
     $selectedStream = $atcSources[$randomIndex]
     return @{
-        StreamUrl = $selectedStream.'Stream URL'
-        WebcamUrl = $selectedStream.'Webcam URL'
+        StreamUrl   = $selectedStream.'Stream URL'
+        WebcamUrl   = $selectedStream.'Webcam URL'
         AirportInfo = $selectedStream
     }
 }
@@ -525,10 +541,12 @@ Function Get-METAR-TAF {
         $raw = $response.Content.Trim()
         if ($raw) {
             return $raw
-        } else {
+        }
+        else {
             return "METAR/TAF data unavailable."
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to fetch METAR/TAF data for $ICAO. Exception: $_"
         return "METAR/TAF data unavailable."
     }
@@ -547,7 +565,8 @@ Function ConvertFrom-METAR {
     if ($metar -match "(?<windDir>\d{3})(?<windSpeed>\d{2})(G(?<gustSpeed>\d{2}))?KT") {
         $decoded["Wind"] = if ($matches.gustSpeed) {
             "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots"
-        } else {
+        }
+        else {
             "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots"
         }
     }
@@ -555,18 +574,22 @@ Function ConvertFrom-METAR {
     # Match visibility
     if ($metar -match "(?<visibility>9999)") {
         $decoded["Visibility"] = "10+ km (Unlimited)"
-    } elseif ($metar -match "\b(?<visibility>\d{4})\b") {
+    }
+    elseif ($metar -match "\b(?<visibility>\d{4})\b") {
         $decoded["Visibility"] = "$([int]$matches.visibility / 1000) km"
-    } elseif ($metar -match "(?<visibility>\d+SM)") {
+    }
+    elseif ($metar -match "(?<visibility>\d+SM)") {
         $decoded["Visibility"] = "$([math]::Round([double]($matches.visibility -replace 'SM','') * 1.60934, 3)) km"
-    } else {
+    }
+    else {
         $decoded["Visibility"] = "Unavailable"
     }
 
     # Match cloud coverage and ceiling, including vertical visibility
     if ($metar -match "VV(?<vv>\d{3})") {
         $decoded["Ceiling"] = "Vertical Visibility at $([int]$matches.vv * 100) ft"
-    } elseif ($metar -match "(?<clouds>BKN|OVC|SCT|FEW)(?<ceiling>\d{3})") {
+    }
+    elseif ($metar -match "(?<clouds>BKN|OVC|SCT|FEW)(?<ceiling>\d{3})") {
         $cloudType = switch ($matches.clouds) {
             "BKN" { "Broken" }
             "OVC" { "Overcast" }
@@ -575,7 +598,8 @@ Function ConvertFrom-METAR {
             default { $matches.clouds }
         }
         $decoded["Ceiling"] = "$cloudType at $([int]$matches.ceiling * 100) ft"
-    } else {
+    }
+    else {
         $decoded["Ceiling"] = "Unavailable"
     }
     # Match temperature and dew point
@@ -583,22 +607,26 @@ Function ConvertFrom-METAR {
         # Remove leading zeros for temperature
         $temperature = if ($matches.temp -eq "-00") { 
             "0$([char]176)C" 
-        } else { 
+        }
+        else { 
             "$([int]$matches.temp)$([char]176)C" 
         }
 
         # Remove leading zeros for dew point
         $dewPoint = if ($matches.dew -eq "-00") { 
             "0$([char]176)C" 
-        } elseif ($matches.dew -like "M*") {
+        }
+        elseif ($matches.dew -like "M*") {
             "-$([int]($matches.dew.Trim('M')))$([char]176)C"
-        } else {
+        }
+        else {
             "$([int]$matches.dew)$([char]176)C"
         }
 
         $decoded["Temperature"] = $temperature
         $decoded["DewPoint"] = $dewPoint
-    } else {
+    }
+    else {
         $decoded["Temperature"] = "Unavailable"
         $decoded["DewPoint"] = "Unavailable"
     }
@@ -606,10 +634,12 @@ Function ConvertFrom-METAR {
     # Match pressure in hPa (e.g., Q1023) or inHg (e.g., A2996)
     if ($metar -match "Q(?<pressureHPA>\d{4})") {
         $decoded["Pressure"] = "$([int]$matches.pressureHPA) hPa"
-    } elseif ($metar -match "A(?<pressureINHG>\d{4})") {
+    }
+    elseif ($metar -match "A(?<pressureINHG>\d{4})") {
         $pressureHPA = [double]($matches.pressureINHG / 100) * 33.8639
         $decoded["Pressure"] = "$([math]::Round($pressureHPA, 1)) hPa"
-    } else {
+    }
+    else {
         $decoded["Pressure"] = "Unavailable"
     }
 
@@ -623,51 +653,51 @@ $global:AirportData = $null
 
 # Mapping of common IANA time zones to Windows IDs for PowerShell 5.1
 $global:IanaToWindowsMap = @{
-    "Etc/UTC"             = "UTC"
-    "Europe/London"       = "GMT Standard Time"
-    "Europe/Dublin"       = "GMT Standard Time"
-    "Europe/Amsterdam"    = "W. Europe Standard Time"
-    "Europe/Paris"        = "Romance Standard Time"
-    "Europe/Berlin"       = "W. Europe Standard Time"
-    "Europe/Madrid"       = "Romance Standard Time"
-    "Europe/Brussels"     = "Romance Standard Time"
-    "Europe/Rome"         = "W. Europe Standard Time"
-    "Europe/Vienna"       = "W. Europe Standard Time"
-    "Europe/Prague"       = "Central Europe Standard Time"
-    "Europe/Moscow"       = "Russian Standard Time"
-    "Europe/Athens"       = "GTB Standard Time"
-    "Europe/Bucharest"    = "GTB Standard Time"
-    "Africa/Cairo"        = "Egypt Standard Time"
-    "Africa/Johannesburg" = "South Africa Standard Time"
-    "Asia/Jerusalem"      = "Israel Standard Time"
-    "Asia/Dubai"          = "Arabian Standard Time"
-    "Asia/Tehran"         = "Iran Standard Time"
-    "Asia/Riyadh"         = "Arab Standard Time"
-    "Asia/Karachi"        = "Pakistan Standard Time"
-    "Asia/Kolkata"        = "India Standard Time"
-    "Asia/Dhaka"          = "Bangladesh Standard Time"
-    "Asia/Bangkok"        = "SE Asia Standard Time"
-    "Asia/Singapore"      = "Singapore Standard Time"
-    "Asia/Hong_Kong"      = "China Standard Time"
-    "Asia/Shanghai"       = "China Standard Time"
-    "Asia/Taipei"         = "Taipei Standard Time"
-    "Asia/Tokyo"          = "Tokyo Standard Time"
-    "Asia/Seoul"          = "Korea Standard Time"
-    "Australia/Perth"     = "W. Australia Standard Time"
-    "Australia/Adelaide"  = "Cen. Australia Standard Time"
-    "Australia/Sydney"    = "AUS Eastern Standard Time"
-    "Pacific/Auckland"    = "New Zealand Standard Time"
-    "America/Halifax"     = "Atlantic Standard Time"
-    "America/St_Johns"    = "Newfoundland Standard Time"
+    "Etc/UTC"                        = "UTC"
+    "Europe/London"                  = "GMT Standard Time"
+    "Europe/Dublin"                  = "GMT Standard Time"
+    "Europe/Amsterdam"               = "W. Europe Standard Time"
+    "Europe/Paris"                   = "Romance Standard Time"
+    "Europe/Berlin"                  = "W. Europe Standard Time"
+    "Europe/Madrid"                  = "Romance Standard Time"
+    "Europe/Brussels"                = "Romance Standard Time"
+    "Europe/Rome"                    = "W. Europe Standard Time"
+    "Europe/Vienna"                  = "W. Europe Standard Time"
+    "Europe/Prague"                  = "Central Europe Standard Time"
+    "Europe/Moscow"                  = "Russian Standard Time"
+    "Europe/Athens"                  = "GTB Standard Time"
+    "Europe/Bucharest"               = "GTB Standard Time"
+    "Africa/Cairo"                   = "Egypt Standard Time"
+    "Africa/Johannesburg"            = "South Africa Standard Time"
+    "Asia/Jerusalem"                 = "Israel Standard Time"
+    "Asia/Dubai"                     = "Arabian Standard Time"
+    "Asia/Tehran"                    = "Iran Standard Time"
+    "Asia/Riyadh"                    = "Arab Standard Time"
+    "Asia/Karachi"                   = "Pakistan Standard Time"
+    "Asia/Kolkata"                   = "India Standard Time"
+    "Asia/Dhaka"                     = "Bangladesh Standard Time"
+    "Asia/Bangkok"                   = "SE Asia Standard Time"
+    "Asia/Singapore"                 = "Singapore Standard Time"
+    "Asia/Hong_Kong"                 = "China Standard Time"
+    "Asia/Shanghai"                  = "China Standard Time"
+    "Asia/Taipei"                    = "Taipei Standard Time"
+    "Asia/Tokyo"                     = "Tokyo Standard Time"
+    "Asia/Seoul"                     = "Korea Standard Time"
+    "Australia/Perth"                = "W. Australia Standard Time"
+    "Australia/Adelaide"             = "Cen. Australia Standard Time"
+    "Australia/Sydney"               = "AUS Eastern Standard Time"
+    "Pacific/Auckland"               = "New Zealand Standard Time"
+    "America/Halifax"                = "Atlantic Standard Time"
+    "America/St_Johns"               = "Newfoundland Standard Time"
     "America/Argentina/Buenos_Aires" = "Argentina Standard Time"
-    "America/Sao_Paulo"   = "E. South America Standard Time"
-    "America/New_York"    = "Eastern Standard Time"
-    "America/Chicago"     = "Central Standard Time"
-    "America/Denver"      = "Mountain Standard Time"
-    "America/Phoenix"     = "US Mountain Standard Time"
-    "America/Los_Angeles" = "Pacific Standard Time"
-    "America/Anchorage"   = "Alaskan Standard Time"
-    "Pacific/Honolulu"    = "Hawaiian Standard Time"
+    "America/Sao_Paulo"              = "E. South America Standard Time"
+    "America/New_York"               = "Eastern Standard Time"
+    "America/Chicago"                = "Central Standard Time"
+    "America/Denver"                 = "Mountain Standard Time"
+    "America/Phoenix"                = "US Mountain Standard Time"
+    "America/Los_Angeles"            = "Pacific Standard Time"
+    "America/Anchorage"              = "Alaskan Standard Time"
+    "Pacific/Honolulu"               = "Hawaiian Standard Time"
 }
 
 # Helper to convert IANA timezone to a TimeZoneInfo object
@@ -677,10 +707,12 @@ Function ConvertTo-TimeZoneInfo {
     )
     try {
         return [System.TimeZoneInfo]::FindSystemTimeZoneById($IanaId)
-    } catch {
+    }
+    catch {
         if ($global:IanaToWindowsMap.ContainsKey($IanaId)) {
             return [System.TimeZoneInfo]::FindSystemTimeZoneById($global:IanaToWindowsMap[$IanaId])
-        } else {
+        }
+        else {
             throw "Timezone ID '$IanaId' not recognized"
         }
     }
@@ -694,7 +726,8 @@ Function Get-AirportInfo {
     if (-not $global:AirportData) {
         try {
             $global:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
-        } catch {
+        }
+        catch {
             Write-Error "Failed to load airport database. Exception: $_"
             return $null
         }
@@ -718,7 +751,8 @@ Function Get-AirportDateTime {
         $local = [System.TimeZoneInfo]::ConvertTimeFromUtc([datetime]::UtcNow, $tzInfo)
         $formatted = $local.ToString('dd MMMM yyyy HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)
         return "$formatted LT"
-    } catch {
+    }
+    catch {
         Write-Error "Date and time not found for $ICAO. Exception: $_"
         return "Date/time data unavailable"
     }
@@ -733,7 +767,7 @@ Function Get-AirportSunriseSunset {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
         $lat = $airportInfo.lat
         $lon = $airportInfo.lon
-        $tz  = $airportInfo.tz
+        $tz = $airportInfo.tz
         if (-not ($lat -and $lon -and $tz)) { throw "Missing data" }
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
@@ -742,20 +776,21 @@ Function Get-AirportSunriseSunset {
         $uri = "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0&tzid=$tz"
         $sunInfo = Invoke-RestMethod -Uri $uri -Method Get
         $sunriseRaw = $sunInfo.results.sunrise
-        $sunsetRaw  = $sunInfo.results.sunset
+        $sunsetRaw = $sunInfo.results.sunset
 
         # Parse the returned timestamps
         $sunriseOffset = [datetimeoffset]::Parse($sunriseRaw, [cultureinfo]::InvariantCulture)
-        $sunsetOffset  = [datetimeoffset]::Parse($sunsetRaw,  [cultureinfo]::InvariantCulture)
+        $sunsetOffset = [datetimeoffset]::Parse($sunsetRaw, [cultureinfo]::InvariantCulture)
 
         # Convert explicitly to the airport timezone in case the API omits it
         $sunrise = [System.TimeZoneInfo]::ConvertTime($sunriseOffset, $tzInfo).ToString('HH:mm')
-        $sunset  = [System.TimeZoneInfo]::ConvertTime($sunsetOffset,  $tzInfo).ToString('HH:mm')
+        $sunset = [System.TimeZoneInfo]::ConvertTime($sunsetOffset, $tzInfo).ToString('HH:mm')
         return @{
             Sunrise = $sunrise
             Sunset  = $sunset
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to fetch data for $ICAO. Exception: $_"
         return @{
             Sunrise = "Data unavailable"
@@ -773,9 +808,9 @@ Function Get-METAR-LastUpdatedTime {
         $metar = Get-METAR-TAF -ICAO $ICAO
         if ($metar -match '\b(?<ts>\d{6})Z\b') {
             $ts = $matches.ts
-            $day = [int]$ts.Substring(0,2)
-            $hour = [int]$ts.Substring(2,2)
-            $min = [int]$ts.Substring(4,2)
+            $day = [int]$ts.Substring(0, 2)
+            $hour = [int]$ts.Substring(2, 2)
+            $min = [int]$ts.Substring(4, 2)
             $now = (Get-Date).ToUniversalTime()
             $year = $now.Year
             $month = $now.Month
@@ -784,17 +819,20 @@ Function Get-METAR-LastUpdatedTime {
                 $year = $prev.Year
                 $month = $prev.Month
             }
-            $obs = New-Object DateTime($year,$month,$day,$hour,$min,0,[System.DateTimeKind]::Utc)
+            $obs = New-Object DateTime($year, $month, $day, $hour, $min, 0, [System.DateTimeKind]::Utc)
             $diff = $now - $obs
             if ($diff.TotalHours -ge 1) {
                 return "{0:N0} hours" -f [math]::Floor($diff.TotalHours)
-            } else {
+            }
+            else {
                 return "{0:N0} minutes" -f [math]::Floor($diff.TotalMinutes)
             }
-        } else {
+        }
+        else {
             throw 'Time code not found'
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"
         return "Last updated time unavailable."
     }
@@ -806,32 +844,47 @@ Function Write-Welcome {
         [switch]$OpenRadar
     )
 
-    # Check PowerShell version
-    $isPowerShell7 = $PSVersionTable.PSVersion.Major -ge 7
+    # Force UTF-8 output so PS 5.1 can render emoji in Windows Terminal
+    try {
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [Console]::OutputEncoding = $utf8
+        $OutputEncoding = $utf8
+    }
+    catch {}
 
-    # Unicode Symbols (Use blank strings for PowerShell 5.1)
-    $airplane       = if ($isPowerShell7) { "`u{2708}`u{FE0F}" } else { "" }
-    $location       = if ($isPowerShell7) { "`u{1F4CD}" } else { "" }
-    $earth          = if ($isPowerShell7) { "`u{1F30D}" } else { "" }
-    $departure      = if ($isPowerShell7) { "`u{1F6EB}" } else { "" }
-    $clock          = if ($isPowerShell7) { "`u{23F0}" } else { "" }
-    $weather        = if ($isPowerShell7) { "`u{1F326}`u{FE0F}" } else { "" }
-    $wind           = if ($isPowerShell7) { "`u{1F32C}`u{FE0F}" } else { "" }
-    $eye            = if ($isPowerShell7) { "`u{1F441}`u{FE0F}" } else { "" }
-    $cloud          = if ($isPowerShell7) { "`u{2601}`u{FE0F}" } else { "" }
-    $thermometer    = if ($isPowerShell7) { "`u{1F321}`u{FE0F}" } else { "" }
-    $droplet        = if ($isPowerShell7) { "`u{1F4A7}" } else { "" }
-    $barometer      = if ($isPowerShell7) { "`u{1F4CF}" } else { "" }
-    $note           = if ($isPowerShell7) { "`u{1F4DD}" } else { "" }
-    $sunrise        = if ($isPowerShell7) { "`u{1F305}" } else { "" }
-    $sunset         = if ($isPowerShell7) { "`u{1F304}" } else { "" }
-    $antenna        = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
-    $mic            = if ($isPowerShell7) { "`u{1F5E3}`u{FE0F}" } else { "" }
-    $headphones     = if ($isPowerShell7) { "`u{1F3A7}" } else { "" }
-    $camera         = if ($isPowerShell7) { "`u{1F3A5}" } else { "" }
-    $link           = if ($isPowerShell7) { "`u{1F517}" } else { "" }
-    $hourglass      = if ($isPowerShell7) { "`u{23F3}" } else { "" }
-    $radar          = if ($isPowerShell7) { "`u{1F4E1}" } else { "" }
+    function New-Emoji {
+        param(
+            [int]$CodePoint,
+            [switch]$VS16  # add U+FE0F variation selector
+        )
+        $s = [System.Char]::ConvertFromUtf32($CodePoint)
+        if ($VS16) { $s += [char]0xFE0F }
+        return $s
+    }
+    
+    # Unicode Symbols
+    $airplane = New-Emoji 0x2708 -VS16
+    $location = New-Emoji 0x1F4CD
+    $earth = New-Emoji 0x1F30D
+    $departure = New-Emoji 0x1F6EB
+    $clock = New-Emoji 0x23F0
+    $weather = New-Emoji 0x1F326 -VS16
+    $wind = New-Emoji 0x1F32C -VS16
+    $eye = New-Emoji 0x1F441 -VS16
+    $cloud = New-Emoji 0x2601  -VS16
+    $thermometer = New-Emoji 0x1F321 -VS16
+    $droplet = New-Emoji 0x1F4A7
+    $barometer = New-Emoji 0x1F4CF
+    $note = New-Emoji 0x1F4DD
+    $sunrise = New-Emoji 0x1F305
+    $sunset = New-Emoji 0x1F304
+    $antenna = New-Emoji 0x1F4E1
+    $mic = New-Emoji 0x1F5E3 -VS16
+    $headphones = New-Emoji 0x1F3A7
+    $camera = New-Emoji 0x1F3A5
+    $link = New-Emoji 0x1F517
+    $hourglass = New-Emoji 0x23F3
+    $radar = New-Emoji 0x1F4E1
 
     # Fetch raw METAR
     $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
@@ -907,31 +960,32 @@ Function Get-VLCVolumeArg {
     if (Test-Path $vlcConfigPath) {
         try {
             $line = Get-Content -Path $vlcConfigPath |
-                Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
-                Select-Object -First 1
+            Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
+            Select-Object -First 1
             if ($line) {
                 $module = ($line -split "=")[1].Trim().ToLower()
             }
-        } catch {
+        }
+        catch {
             #nuttin
         }
     }
 
     switch -Regex ($module) {
         'mmdevice|wasapi' {
-            $v = [math]::Round([double]$volume/100,2)
+            $v = [math]::Round([double]$volume / 100, 2)
             return "--aout=wasapi --mmdevice-volume=$v"
         }
         'waveout' {
-            $v = [math]::Round([double]$volume/100,2)
+            $v = [math]::Round([double]$volume / 100, 2)
             return "--aout=waveout --waveout-volume=$v"
         }
         'directx|directsound' {
-            $v = [math]::Round([double]$volume/100,2)
+            $v = [math]::Round([double]$volume / 100, 2)
             return "--aout=directx --directx-volume=$v"
         }
         default {
-            $v = [math]::Round([double]$volume/100,2)
+            $v = [math]::Round([double]$volume / 100, 2)
             return "--aout=directx --directx-volume=$v"
         }
     }
@@ -960,7 +1014,8 @@ Function Start-Player {
                     $vol = 0
                 } 
                 $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save"
-            } else {
+            }
+            else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
                 $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --demux=rawaud --quiet"
             }
@@ -1005,13 +1060,14 @@ if ($LoadConfig) {
         $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
         foreach ($prop in $config.PSObject.Properties) {
             $name = $prop.Name
-            if ($name -in @('Verbose','Debug','ErrorAction','WarningAction','InformationAction','ProgressAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable','SaveConfig','LoadConfig','ConfigPath')) { continue }
+            if ($name -in @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) { continue }
             if (-not $PSBoundParameters.ContainsKey($name)) {
                 Set-Variable -Name $name -Value $prop.Value -Scope Local
             }
         }
         Write-Host "Loaded config from $ConfigPath"
-    } else {
+    }
+    else {
         Write-Warning "Config file not found at $ConfigPath"
     }
 }
@@ -1025,7 +1081,7 @@ if ($SaveConfig) {
     $paramNames = (Get-Command $MyInvocation.MyCommand.Path).Parameters.Keys
     $config = @{}
     foreach ($name in $paramNames) {
-        if ($name -notin @('Verbose','Debug','ErrorAction','WarningAction','InformationAction','ProgressAction','ErrorVariable','WarningVariable','InformationVariable','OutVariable','OutBuffer','PipelineVariable','SaveConfig','LoadConfig','ConfigPath')) {
+        if ($name -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) {
             $value = Get-Variable -Name $name -ValueOnly
             if ($value -is [System.Management.Automation.SwitchParameter]) { $value = [bool]$value }
             $config[$name] = $value
@@ -1048,7 +1104,8 @@ $maxFavorites = 10
 if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
     Write-Host "Using live sources CSV: $liveCsv"
     $csvPath = $liveCsv
-} else {
+}
+else {
     Write-Host "Using base sources CSV: $baseCsv"
     $csvPath = $baseCsv
 }
@@ -1068,14 +1125,16 @@ if ($ICAO) {
 
     if ($icaoMatches.Count -eq 1 -or $RandomATC) {
         $match = if ($RandomATC -and $icaoMatches.Count -gt 1) { Get-Random -InputObject $icaoMatches } else { $icaoMatches[0] }
-    } else {
+    }
+    else {
         $channels = $icaoMatches | ForEach-Object {
             $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
             "{0}{1}" -f $_.'Channel Description', $webcamIndicator
         } | Sort-Object -Unique
         $chanSel = if ($UseFZF) {
             Select-ItemFZF -prompt "Select a channel for ${ICAO}" -items $channels
-        } else {
+        }
+        else {
             Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels
         }
         $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
@@ -1092,14 +1151,16 @@ if ($ICAO) {
 if (-not $selectedATC) {
     if ($RandomATC) {
         $selectedATC = Get-RandomATCStream -atcSources $atcSources
-    } else {
+    }
+    else {
         if ($UseFavorite) {
             $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
         }
         if (-not $selectedATC) {
             if ($UseFZF) {
                 $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
-            } else {
+            }
+            else {
                 while (-not $selectedATC) {
                     $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
                     do {
@@ -1126,7 +1187,8 @@ if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
 # Output player info after the welcome message
 if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
     Write-Verbose "Player selected by user: $Player"
-} else {
+}
+else {
     Write-Verbose "Default player selected: $Player"
 }
 
@@ -1147,7 +1209,8 @@ if (-not $NoLofiMusic) {
     }
     if ($PlayLofiGirlVideo) {
         Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
-    } else {
+    }
+    else {
         Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
     }
 }
