@@ -114,6 +114,9 @@ param (
     [switch]$OpenRadar
 )
 
+# Check if running on Windows ($IsWindows) doesn't exist on PowerShell 5.1, so define it manually
+$OnWindows = $env:OS -eq 'Windows_NT'
+
 # MP4 == Default app for all files
 # Function to check the default application for .mp4
 Function Get-DefaultAppForMP4 {
@@ -155,7 +158,7 @@ Function Resolve-Player {
         return $explicitPlayer
     }
 
-    if ($IsWindows) {
+    if ($OnWindows) {
         # On Windows try to resolve from default app
         $defaultApp = Get-DefaultAppForMP4
         switch ($defaultApp) {
@@ -180,8 +183,8 @@ Function Test-Player {
     )
 
     $command = switch ($player) {
-        "VLC" { if ($IsWindows) { "vlc.exe" } else { "vlc" } }
-        "MPV" { if ($IsWindows) { "mpv.com" } else { "mpv" } }
+        "VLC" { if ($OnWindows) { "vlc.exe" } else { "vlc" } }
+        "MPV" { if ($OnWindows) { "mpv.com" } else { "mpv" } }
         "Potplayer" { "PotPlayerMini64.exe" }
         "MPC-HC" { "mpc-hc64.exe" }
     }
@@ -276,7 +279,7 @@ Function Open-Radar {
     )
 
     $url = "https://beta.flightaware.com/live/airport/$ICAO"
-    if ($IsWindows) {
+    if ($OnWindows) {
         Start-Process $url
     } elseif ($IsMacOS) {
         & open $url
@@ -887,8 +890,8 @@ Function Start-Player {
             $vlcArgs = "`"$url`"" 
             if ($noVideo) { $vlcArgs += " --no-video" }
             if ($noAudio) { $vlcArgs += " --no-audio" }
-            if ($IsWindows) {
-                $vlcArgs += " --volume=$volume"
+            if ($OnWindows) {
+                $vlcArgs += " --volume=$volume --no-volume-save"
             } else {
                 $vlcArgs += " --gain $($volume / 100) --demux=rawaud --quiet"
             }
