@@ -204,46 +204,44 @@ Function Resolve-Player {
 
 # Function to resolve links correctly (default .pls doesn't resolve on Mac/Linux)
 Function Resolve-StreamUrl {
-    param (
-        [string]$url
-    )
+    param([string]$url)
 
     $resolvedUrl = $url
+
     if ($url -match 'youtu(be)?\.com|youtu\.be') {
         try {
-            $resolvedUrl = $(yt-dlp -g $url) -join ''
-        }
-        catch {
-            Write-Error "Failed to resolve YT Url with yt-dlp: ${url}"
+            if (Get-Command yt-dlp -ErrorAction SilentlyContinue) {
+                $resolved = yt-dlp -g --no-warnings --skip-download -- $url 2>$null
+            } elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
+                $resolved = youtube-dl -g --no-warnings --skip-download -- $url 2>$null
+            }
+            if ($resolved) { $resolvedUrl = ($resolved -join '') }
+        } catch {
+            Write-Warning "Failed to resolve YouTube URL with yt-dlp/youtube-dl. Falling back to original URL."
         }
     }
     elseif ($url -match '\.pls(\?|$)') {
         try {
-            $content = $(Invoke-WebRequest -Uri $url -UseBasicParsing).Content
-            $fileLine = $($content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1)
-            if ($fileLine) {
-                $resolvedUrl = $fileLine -replace '^File1=', ''
-            }
-        }
-        catch {
-            Write-Error "Failed to resolve PLS URL: ${url}"
+            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
+            $fileLine = $content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1
+            if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
+        } catch {
+            Write-Warning "Failed to resolve PLS URL. Falling back to original URL."
         }
     }
-    elseif ($IsLinux -and $url -match "liveatc\.net") {
+    elseif (($script:IsLinux -or $IsLinux) -and $url -match 'liveatc\.net') {
         try {
-            $m3u = $(curl -sL $url)
+            $m3u = curl -sL -- $url
             $streamLine = $m3u -split "`n" | Where-Object { $_ -and ($_ -notmatch '^#') } | Select-Object -First 1
-            if ($streamLine) {
-                $resolvedUrl = $streamLine
-            }
+            if ($streamLine) { $resolvedUrl = $streamLine }
+        } catch {
+            Write-Warning "Failed to resolve LiveATC M3U. Falling back to original URL."
         }
-        catch {
-            Write-Error "Failed to resolve M3U URL: ${url}"
-        }
-
-        return $resolvedUrl
     }
+
+    return $resolvedUrl
 }
+
 
 # Function to check if the selected player is available
 Function Test-Player {
@@ -1061,7 +1059,7 @@ Function Start-Player {
             }
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
-                $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --demux=rawaud --quiet"
+                $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --quiet"
             }
             $vlcArgs
         }   
