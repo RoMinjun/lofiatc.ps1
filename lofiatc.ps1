@@ -1042,7 +1042,7 @@ Function Get-VLCVolumeArg {
         }
         return [PSCustomObject]@{
             Mode = 'RCStdin'
-            Prepend = '--extraintf rc --rc-fake-tty --rc-quiet'
+            Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1'
             Value = $vlcVol
         }
     }
@@ -1073,7 +1073,7 @@ Function Start-Player {
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
                 # Set volume via RC stdin since --gain is ignored/deprecated
-                $vlc += " --quiet"
+                $vlcArgs += " --quiet"
 
                 # resolve the actual volume
                 $volSetting = Get-VLCVolumeArg -volume $volume -NoAudio:$noAudio
@@ -1085,13 +1085,8 @@ Function Start-Player {
                 $psi.Arguments = "$($volSetting.Prepend) $vlcArgs"
                 $psi.UseShellExecute = $false
                 $psi.RedirectStandardInput = $true
-                $psi.RedirectStandardOutput = $true
-                $psi.RedirectStandardError = $true
-                $psi.CreateNoWindow = $true
 
                 $proc = [Diagnostics.Process]::Start($psi)
-                $proc.BeginOutputReadLine()
-                $proc.BeginErrorReadLine()
                 $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
                 return
             }
@@ -1129,7 +1124,7 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow | Out-Null
+    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null
 }
 # Determine script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
