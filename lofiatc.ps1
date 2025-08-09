@@ -202,6 +202,49 @@ Function Resolve-Player {
     }
 }
 
+# Function to resolve links correctly (default .pls doesn't resolve on Mac/Linux)
+Function Resolve-StreamUrl {
+    param (
+        [string]$url
+    )
+
+    $resolvedUrl = $url
+    if ($url -match 'youtu(be)?\.com|youtu\.be') {
+        try {
+            $resolvedUrl = $(yt-dlp -g $url) -join ''
+        }
+        catch {
+            Write-Error "Failed to resolve YT Url with yt-dlp: ${url}"
+        }
+    }
+    elseif ($url -match '\.pls(\?|$)') {
+        try {
+            $content = $(Invoke-WebRequest -Uri $url -UseBasicParsing).Content
+            $fileLine = $($content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1)
+            if ($fileLine) {
+                $resolvedUrl = $fileLine -replace '^File1=', ''
+            }
+        }
+        catch {
+            Write-Error "Failed to resolve PLS URL: ${url}"
+        }
+    }
+    elseif ($IsLinux -and $url -match "liveatc\.net") {
+        try {
+            $m3u = $(curl -sL $url)
+            $streamLine = $m3u -split "`n" | Where-Object { $_ -and ($_ -notmatch '^#') } | Select-Object -First 1
+            if ($streamLine) {
+                $resolvedUrl = $streamLine
+            }
+        }
+        catch {
+            Write-Error "Failed to resolve M3U URL: ${url}"
+        }
+
+        return $resolvedUrl
+    }
+}
+
 # Function to check if the selected player is available
 Function Test-Player {
     param (
@@ -1003,6 +1046,7 @@ Function Start-Player {
         [int]$volume = 100
     )
 
+    $url = Resolve-StreamUrl $url
     $playerArgs = switch ($player) {
         "VLC" {
             $vlcArgs = "`"$url`"" 
@@ -1013,7 +1057,7 @@ Function Start-Player {
                 if ($noAudio) {
                     $vol = 0
                 } 
-                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save"
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save --quiet"
             }
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
@@ -1048,7 +1092,7 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
+    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow | Out-Null
 }
 # Determine script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
