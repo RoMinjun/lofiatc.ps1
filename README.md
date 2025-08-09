@@ -58,6 +58,10 @@ Ensure you have the following installed before running the script:
     Install with:
     - Windows: `winget install --id=yt-dlp.yt-dlp  -e`
     - Debian based distros: `sudo apt install yt-dlp`
+- **git** *(for installing repo)*:
+    Install with:
+    - Windows: `winget install --id Git.Git -e --source winget`
+    - Debian based distros: `sudo apt install git`
 - **fzf** *(Optional, but recommended)*:  
   Install with:
   - Windows: `winget install --id=junegunn.fzf -e`
