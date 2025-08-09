@@ -1046,8 +1046,6 @@ Function Get-VLCVolumeArg {
             Value = $vlcVol
         }
     }
-
-
 }
 
 # Function to start the media player with a given URL
@@ -1068,11 +1066,9 @@ Function Start-Player {
             if ($noVideo) { $vlcArgs += " --no-video" }
 
             if ($OnWindows) {
-                $vol = $volume
-                if ($noAudio) {
-                    $vol = 0
-                } 
-                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$noAudio)) --no-volume-save --quiet"
+                $vol = if ($noAudio) { 0 } else { $volume }
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$noAudio) --no-volume-save --quiet"
+                $vlcArgs
             }
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
@@ -1082,13 +1078,16 @@ Function Start-Player {
                 # resolve the actual volume
                 $volSetting = Get-VLCVolumeArg -volume $volume -NoAudio:$noAudio
 
-                $playerPath = Test-Player -Player "VLC"
+                $playerPath = Test-Player -player "VLC"
+
                 $psi = New-Object Diagnostics.ProcessStartInfo
                 $psi.FileName = $playerPath
                 $psi.Arguments = "$($volSetting.Prepend) $vlcArgs"
                 $psi.UseShellExecute = $false
                 $psi.RedirectStandardInput = $true
+                $psi.RedirectStandardOutput = $true
                 $psi.RedirectStandardError = $true
+                $psi.CreateNoWindow = $true
 
                 $proc = [Diagnostics.Process]::Start($psi)
                 $proc.BeginOutputReadLine()
