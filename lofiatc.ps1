@@ -992,44 +992,61 @@ Function Write-Welcome {
 # Function to pick the correct volume flag based on output module
 Function Get-VLCVolumeArg {
     param (
-        [int]$volume
+        [int]$volume,
+        [switch]$NoAudio
     )
 
-    $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"
-    $module = $null
+    if ($OnWindows) {
+        $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"
+        $module = $null
 
-    if (Test-Path $vlcConfigPath) {
-        try {
-            $line = Get-Content -Path $vlcConfigPath |
-            Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
-            Select-Object -First 1
-            if ($line) {
-                $module = ($line -split "=")[1].Trim().ToLower()
+        if (Test-Path $vlcConfigPath) {
+            try {
+                $line = Get-Content -Path $vlcConfigPath |
+                Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
+                Select-Object -First 1
+                if ($line) {
+                    $module = ($line -split "=")[1].Trim().ToLower()
+                }
+            }
+            catch {
+                #nuttin
             }
         }
-        catch {
-            #nuttin
+
+        switch -Regex ($module) {
+            'mmdevice|wasapi' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=wasapi --mmdevice-volume=$v"
+            }
+            'waveout' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=waveout --waveout-volume=$v"
+            }
+            'directx|directsound' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=directx --directx-volume=$v"
+            }
+            default {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=directx --directx-volume=$v"
+            }
+        }
+    }
+    else {
+        $pct = [math]::Max(0, [math]::Min(100, $volume))
+        $vlcVol = if ($NoAudio) {
+            0
+        } else {
+            [int][math]::Round($pct * 2.56)
+        }
+        return [PSCustomObject]@{
+            Mode = 'RCStdin'
+            Prepend = '--extraintf rc --rc-fake-tty'
+            Value = $vlcVol
         }
     }
 
-    switch -Regex ($module) {
-        'mmdevice|wasapi' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=wasapi --mmdevice-volume=$v"
-        }
-        'waveout' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=waveout --waveout-volume=$v"
-        }
-        'directx|directsound' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=directx --directx-volume=$v"
-        }
-        default {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=directx --directx-volume=$v"
-        }
-    }
 
 }
 
@@ -1055,11 +1072,26 @@ Function Start-Player {
                 if ($noAudio) {
                     $vol = 0
                 } 
-                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save --quiet"
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$noAudio)) --no-volume-save --quiet"
             }
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
-                $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --quiet"
+                # Set volume via RC stdin since --gain is ignored/deprecated
+                $vlc += " --quiet"
+
+                # resolve the actual volume
+                $volSetting = Get-VLCVolumeArg -volume $volume -NoAudio:$noAudio
+
+                $playerPath = Test-Player -Player "VLC"
+                $psi = New-Object Diagnostics.ProcessStartInfo
+                $psi.FileName = $playerPath
+                $psi.Arguments = "$($volSetting.Prepend) $vlcArgs"
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardInput = $true
+
+                $proc = [Diagnostics.Process]::Start($psi)
+                $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
+                return
             }
             $vlcArgs
         }   
