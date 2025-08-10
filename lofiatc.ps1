@@ -202,6 +202,47 @@ Function Resolve-Player {
     }
 }
 
+# Function to resolve links correctly (default .pls doesn't resolve on Mac/Linux)
+Function Resolve-StreamUrl {
+    param([string]$url)
+
+    $resolvedUrl = $url
+
+    if ($url -match 'youtu(be)?\.com|youtu\.be') {
+        try {
+            if (Get-Command yt-dlp -ErrorAction SilentlyContinue) {
+                $resolved = yt-dlp -g --no-warnings --skip-download -- $url 2>$null
+            } elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
+                $resolved = youtube-dl -g --no-warnings --skip-download -- $url 2>$null
+            }
+            if ($resolved) { $resolvedUrl = ($resolved -join '') }
+        } catch {
+            Write-Warning "Failed to resolve YouTube URL with yt-dlp/youtube-dl. Falling back to original URL."
+        }
+    }
+    elseif ($url -match '\.pls(\?|$)') {
+        try {
+            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
+            $fileLine = $content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1
+            if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
+        } catch {
+            Write-Warning "Failed to resolve PLS URL. Falling back to original URL."
+        }
+    }
+    elseif (($script:IsLinux -or $IsLinux) -and $url -match 'liveatc\.net') {
+        try {
+            $m3u = curl -sL -- $url
+            $streamLine = $m3u -split "`n" | Where-Object { $_ -and ($_ -notmatch '^#') } | Select-Object -First 1
+            if ($streamLine) { $resolvedUrl = $streamLine }
+        } catch {
+            Write-Warning "Failed to resolve LiveATC M3U. Falling back to original URL."
+        }
+    }
+
+    return $resolvedUrl
+}
+
+
 # Function to check if the selected player is available
 Function Test-Player {
     param (
@@ -951,45 +992,60 @@ Function Write-Welcome {
 # Function to pick the correct volume flag based on output module
 Function Get-VLCVolumeArg {
     param (
-        [int]$volume
+        [int]$volume,
+        [switch]$NoAudio
     )
 
-    $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"
-    $module = $null
+    if ($OnWindows) {
+        $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"
+        $module = $null
 
-    if (Test-Path $vlcConfigPath) {
-        try {
-            $line = Get-Content -Path $vlcConfigPath |
-            Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
-            Select-Object -First 1
-            if ($line) {
-                $module = ($line -split "=")[1].Trim().ToLower()
+        if (Test-Path $vlcConfigPath) {
+            try {
+                $line = Get-Content -Path $vlcConfigPath |
+                Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } |
+                Select-Object -First 1
+                if ($line) {
+                    $module = ($line -split "=")[1].Trim().ToLower()
+                }
+            }
+            catch {
+                #nuttin
             }
         }
-        catch {
-            #nuttin
+
+        switch -Regex ($module) {
+            'mmdevice|wasapi' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=wasapi --mmdevice-volume=$v"
+            }
+            'waveout' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=waveout --waveout-volume=$v"
+            }
+            'directx|directsound' {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=directx --directx-volume=$v"
+            }
+            default {
+                $v = [math]::Round([double]$volume / 100, 2)
+                return "--aout=directx --directx-volume=$v"
+            }
         }
     }
-
-    switch -Regex ($module) {
-        'mmdevice|wasapi' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=wasapi --mmdevice-volume=$v"
+    else {
+        $pct = [math]::Max(0, [math]::Min(100, $volume))
+        $vlcVol = if ($NoAudio) {
+            0
+        } else {
+            [int][math]::Round($pct * 2.56)
         }
-        'waveout' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=waveout --waveout-volume=$v"
-        }
-        'directx|directsound' {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=directx --directx-volume=$v"
-        }
-        default {
-            $v = [math]::Round([double]$volume / 100, 2)
-            return "--aout=directx --directx-volume=$v"
+        return [PSCustomObject]@{
+            Mode = 'RCStdin'
+            Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1 --quiet'
+            Value = $vlcVol
         }
     }
-
 }
 
 # Function to start the media player with a given URL
@@ -1003,21 +1059,37 @@ Function Start-Player {
         [int]$volume = 100
     )
 
+    $url = Resolve-StreamUrl $url
     $playerArgs = switch ($player) {
         "VLC" {
             $vlcArgs = "`"$url`"" 
             if ($noVideo) { $vlcArgs += " --no-video" }
 
             if ($OnWindows) {
-                $vol = $volume
-                if ($noAudio) {
-                    $vol = 0
-                } 
-                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol) --no-volume-save"
+                $vol = if ($noAudio) { 0 } else { $volume }
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$noAudio) --no-volume-save --quiet"
+                $vlcArgs
             }
             else {
                 if ($noAudio) { $vlcArgs += " --no-audio" }
-                $vlcArgs += " --gain $([math]::Round(([double]$volume)/100,2)) --demux=rawaud --quiet"
+                # Set volume via RC stdin since --gain is ignored/deprecated
+                $vlcArgs += " --quiet"
+
+                # resolve the actual volume
+                $volSetting = Get-VLCVolumeArg -volume $volume -NoAudio:$noAudio
+
+                $playerPath = Test-Player -player "VLC"
+
+                $psi = New-Object Diagnostics.ProcessStartInfo
+                $psi.FileName = $playerPath
+                $psi.Arguments = "$($volSetting.Prepend) $vlcArgs"
+                $psi.UseShellExecute = $false
+                $psi.RedirectStandardInput = $true
+                $psi.RedirectStandardOutput = $true
+
+                $proc = [Diagnostics.Process]::Start($psi)
+                $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
+                return
             }
             $vlcArgs
         }   
@@ -1025,7 +1097,7 @@ Function Start-Player {
             $mpvArgs = "`"$url`"" 
             if ($noVideo) { $mpvArgs += " --no-video" }
             if ($noAudio) { $mpvArgs += " --no-audio" }
-            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
+            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no" }
             $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
@@ -1048,7 +1120,12 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow
+    if ($IsLinux) {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -RedirectStandardError '/dev/null' *> $null | Out-Null
+    }
+    else {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null
+    }
 }
 # Determine script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
