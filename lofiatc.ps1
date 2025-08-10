@@ -1042,7 +1042,7 @@ Function Get-VLCVolumeArg {
         }
         return [PSCustomObject]@{
             Mode = 'RCStdin'
-            Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1'
+            Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1 --quiet'
             Value = $vlcVol
         }
     }
@@ -1085,6 +1085,7 @@ Function Start-Player {
                 $psi.Arguments = "$($volSetting.Prepend) $vlcArgs"
                 $psi.UseShellExecute = $false
                 $psi.RedirectStandardInput = $true
+                $psi.RedirectStandardOutput = $true
 
                 $proc = [Diagnostics.Process]::Start($psi)
                 $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
@@ -1096,12 +1097,7 @@ Function Start-Player {
             $mpvArgs = "`"$url`"" 
             if ($noVideo) { $mpvArgs += " --no-video" }
             if ($noAudio) { $mpvArgs += " --no-audio" }
-            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --really-quiet" }
-
-            if (-not $OnWindows) { 
-                $mpvArgs += " --no-terminal" 
-            }
-
+            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --no-terminal" }
             $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
