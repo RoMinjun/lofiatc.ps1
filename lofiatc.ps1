@@ -1120,7 +1120,12 @@ Function Start-Player {
     }
 
     $playerPath = Test-Player -player $player
-    Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null
+    if ($IsLinux) {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -RedirectStandardError '/dev/null' *> $null | Out-Null
+    }
+    else {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null
+    }
 }
 # Determine script directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
