@@ -1097,7 +1097,7 @@ Function Start-Player {
             $mpvArgs = "`"$url`"" 
             if ($noVideo) { $mpvArgs += " --no-video" }
             if ($noAudio) { $mpvArgs += " --no-audio" }
-            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --no-terminal" }
+            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no" }
             $mpvArgs += " --volume=$volume"
             $mpvArgs
         }
