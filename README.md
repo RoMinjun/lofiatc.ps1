@@ -161,7 +161,7 @@ Get-Help .\lofiatc.ps1 -Full
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
 
 > [!TIP]
-> Switches are boolean—just include them (no `true/false` needed). CLI overrides always win over loaded config.
+> Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
 
 <br>
 
