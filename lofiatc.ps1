@@ -576,7 +576,7 @@ Function Get-METAR-TAF {
     param (
         [string]$ICAO
     )
-    $url = "https://metar.vatsim.net/metar.php?id=$ICAO"
+    $url = "https://aviationweather.gov/api/data/metar?ids=$ICAO"
     try {
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
         $raw = $response.Content.Trim()
@@ -985,7 +985,7 @@ Function Write-Welcome {
     }
 
     # Display METAR source and last updated time
-    Write-Output "$link Data Source: METAR data retrieved from https://metar.vatsim.net for $($airportInfo.ICAO)"
+    Write-Output "$link Data Source: METAR data retrieved from NOAA (https://aviationweather.gov) for $($airportInfo.ICAO)"
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
