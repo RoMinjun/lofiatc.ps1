@@ -212,11 +212,13 @@ Function Resolve-StreamUrl {
         try {
             if (Get-Command yt-dlp -ErrorAction SilentlyContinue) {
                 $resolved = yt-dlp -g --no-warnings --skip-download -- $url 2>$null
-            } elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
+            }
+            elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
                 $resolved = youtube-dl -g --no-warnings --skip-download -- $url 2>$null
             }
             if ($resolved) { $resolvedUrl = ($resolved -join '') }
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to resolve YouTube URL with yt-dlp/youtube-dl. Falling back to original URL."
         }
     }
@@ -225,7 +227,8 @@ Function Resolve-StreamUrl {
             $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
             $fileLine = $content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1
             if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to resolve PLS URL. Falling back to original URL."
         }
     }
@@ -234,7 +237,8 @@ Function Resolve-StreamUrl {
             $m3u = curl -sL -- $url
             $streamLine = $m3u -split "`n" | Where-Object { $_ -and ($_ -notmatch '^#') } | Select-Object -First 1
             if ($streamLine) { $resolvedUrl = $streamLine }
-        } catch {
+        }
+        catch {
             Write-Warning "Failed to resolve LiveATC M3U. Falling back to original URL."
         }
     }
@@ -449,15 +453,22 @@ Function Select-ATCStream {
     param (
         [array]$atcSources,
         [string]$continent,
-        [string]$country
+        [string]$country,
+        [string]$state
     )
 
     while ($true) {
         Clear-Host
-        # Filter ATC sources by selected continent and country
+        # Filter ATC sources by selected continent and country, optionally a state
         $choices = $atcSources | Where-Object {
             $_.Continent.Trim().ToLower() -eq $continent.Trim().ToLower() -and
-            $_.Country.Trim().ToLower() -eq $country.Trim().ToLower()
+            $_.Country.Trim().ToLower() -eq $country.Trim().ToLower() -and
+            (
+                -not $state -or (
+                    -not [string]::IsNullOrWhiteSpace($_.'State/Province') -and
+                    $_.'State/Province'.Trim().ToLower() -eq $state.Trim().ToLower()
+                )
+            )
         }
 
         if ($choices.Count -eq 0) {
@@ -525,7 +536,15 @@ Function Select-ATCStreamFZF {
             ""
         }
 
-        "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        $state = $_.'State/Province'
+        $location = if (-not [string]::IsNullOrWhiteSpace($state)) {
+            "{0}, {1}, {2}" -f $_.City, $state, $_.'Country'
+        }
+        else {
+            "{0}, {1}" -f $_.City, $_.'Country'
+        }
+        "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
+        #"[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
     $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
@@ -538,7 +557,16 @@ Function Select-ATCStreamFZF {
             ""
         }
 
-        $formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
+        $state = $_.'State/Province'
+        $location = if (-not [string]::IsNullOrWhiteSpace($state)) {
+            "{0}, {1}, {2}" -f $_.City, $state, $_.'Country'
+        }
+        else {
+            "{0}, {1}" -f $_.City, $_.'Country'
+        }
+
+        $formattedEntry = "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
+        #$formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
         $formattedEntry -eq $selectedChoice
     }
 
@@ -1037,13 +1065,14 @@ Function Get-VLCVolumeArg {
         $pct = [math]::Max(0, [math]::Min(100, $volume))
         $vlcVol = if ($NoAudio) {
             0
-        } else {
+        }
+        else {
             [int][math]::Round($pct * 2.56)
         }
         return [PSCustomObject]@{
-            Mode = 'RCStdin'
+            Mode    = 'RCStdin'
             Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1 --quiet'
-            Value = $vlcVol
+            Value   = $vlcVol
         }
     }
 }
@@ -1244,7 +1273,24 @@ if (-not $selectedATC) {
                         $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
                         $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
                         if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
-                        $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+                        $states = @($atcSources | Where-Object {
+                                $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() -and
+                                $_.Country.Trim().ToLower() -eq $selectedCountry.Trim().ToLower() -and
+                                -not [string]::IsNullOrWhiteSpace($_.'State/Province')
+                            } | Select-Object -ExpandProperty 'State/Province' | Sort-Object -Unique)
+
+                        if ($states.Count -gt 0) {
+                            do {
+                                $selectedState = Select-Item -prompt "Select a state or province from ${selectedCountry}:" -items $states -AllowBack
+                                if ($null -eq $selectedState) { $selectedCountry = $null; break }
+                                $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry -state $selectedState
+                            } while (-not $selectedATC -and $selectedCountry)
+
+                            if (-not $selectedCountry) { continue }
+                        }
+                        else {
+                            $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
+                        }
                     } while (-not $selectedATC)
                 }
             }
