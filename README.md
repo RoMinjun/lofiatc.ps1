@@ -132,8 +132,5 @@ Easily persist your favorite command-line options and reuse them across sessions
   .\lofiatc.ps1 -LoadConfig -OpenRadar
   ```
 
-
-#### Example
-
 # Help liveatc.net's existence
 This repo wouldn't be anything without [liveatc.net](https://www.liveatc.net). If you live near an airport and have a passion for air traffic control, and if it's legal in your country, consider [contacting LiveATC.net](https://www.liveatc.net/ct/contact.php). They can help you get set up with the necessary equipment.
