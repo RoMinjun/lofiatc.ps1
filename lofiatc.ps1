@@ -123,7 +123,7 @@ param (
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
-    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
+    [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC", "COSMIC")]
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
@@ -196,6 +196,7 @@ Function Resolve-Player {
     }
     else {
         # On non-Windows prefer mpv then vlc
+        if (Get-Command cosmic-player -ErrorAction SilentlyContinue) { return "COSMIC" }
         if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
         if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
         return "MPV"
@@ -258,6 +259,7 @@ Function Test-Player {
         "MPV" { if ($OnWindows) { "mpv.com" } else { "mpv" } }
         "Potplayer" { "PotPlayerMini64.exe" }
         "MPC-HC" { "mpc-hc64.exe" }
+        "COSMIC" { "cosmic-player" }
     }
 
     $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
@@ -1146,6 +1148,14 @@ Function Start-Player {
             $mpchcArgs += " /volume $volume"
             $mpchcArgs
         }
+        "COSMIC" {
+            $cosmicArgs = "`"$url`""
+            if ($noVideo -or $noAudio -or $basicArgs -or $volume -ne 100) {
+                Write-Information "cosmic-player does not support command-line options for volume or toggling audio/video."
+            }
+            $cosmicArgs
+        }
+        
     }
 
     $playerPath = Test-Player -player $player
