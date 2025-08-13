@@ -96,6 +96,9 @@ cd lofiatc.ps1
 > [!IMPORTANT]
 > Keep it updated with `git pull`.
 
+> [!NOTE]
+> If you prefer the older, lightweight `lofiatc.ps1` without the new features, switch to the `legacy` branch in this repository.
+
 <br>
 
 ## Run
