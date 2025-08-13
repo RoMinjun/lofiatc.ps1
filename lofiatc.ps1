@@ -270,7 +270,7 @@ Function Test-Player {
 }
 
 # Function to load ATC sources from CSV
-Function Import-ATCSources {
+Function Import-ATCSource {
     param (
         [string]$csvPath
     )
@@ -284,7 +284,7 @@ Function Import-ATCSources {
 }
 
 # Functions for managing favorites
-Function Get-Favorites {
+Function Get-Favorite {
     param(
         [string]$path
     )
@@ -307,7 +307,7 @@ Function Get-Favorites {
     }
 }
 
-Function Save-Favorites {
+Function Save-Favorite {
     param(
         [array]$favorites,
         [string]$path
@@ -324,7 +324,7 @@ Function Add-Favorite {
         [int]$maxEntries = 10
     )
 
-    $favorites = Get-Favorites -path $path
+    $favorites = Get-Favorite -path $path
     $existing = $favorites | Where-Object { $_.ICAO -eq $ICAO -and $_.Channel -eq $Channel }
     if ($existing) {
         $existing.Count++
@@ -343,7 +343,7 @@ Function Add-Favorite {
     }
     $favorites = $favorites | Sort-Object -Property @{Expression = 'Count'; Descending = $true }, @{Expression = 'LastUsed'; Descending = $true }
     if ($favorites.Count -gt $maxEntries) { $favorites = $favorites[0..($maxEntries - 1)] }
-    Save-Favorites -favorites $favorites -path $path
+    Save-Favorite -favorites $favorites -path $path
 }
 
 # Open FlightAware radar page for the given airport
@@ -426,7 +426,7 @@ Function Select-Item {
             }
         }
 
-        Write-Host "Error: Invalid selection." -ForegroundColor Red
+        Write-Error "Error: Invalid selection." -ForegroundColor Red
         Start-Sleep -Seconds 1
     }
 }
@@ -718,10 +718,10 @@ Function ConvertFrom-METAR {
 
 
 # Cache for airport database
-$global:AirportData = $null
+$script:AirportData = $null
 
 # Mapping of common IANA time zones to Windows IDs for PowerShell 5.1
-$global:IanaToWindowsMap = @{
+$script:IanaToWindowsMap = @{
     "Etc/UTC"                        = "UTC"
     "Europe/London"                  = "GMT Standard Time"
     "Europe/Dublin"                  = "GMT Standard Time"
@@ -778,8 +778,8 @@ Function ConvertTo-TimeZoneInfo {
         return [System.TimeZoneInfo]::FindSystemTimeZoneById($IanaId)
     }
     catch {
-        if ($global:IanaToWindowsMap.ContainsKey($IanaId)) {
-            return [System.TimeZoneInfo]::FindSystemTimeZoneById($global:IanaToWindowsMap[$IanaId])
+        if ($script:IanaToWindowsMap.ContainsKey($IanaId)) {
+            return [System.TimeZoneInfo]::FindSystemTimeZoneById($script:IanaToWindowsMap[$IanaId])
         }
         else {
             throw "Timezone ID '$IanaId' not recognized"
@@ -792,16 +792,16 @@ Function Get-AirportInfo {
     param(
         [string]$ICAO
     )
-    if (-not $global:AirportData) {
+    if (-not $script:AirportData) {
         try {
-            $global:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
+            $script:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
         }
         catch {
             Write-Error "Failed to load airport database. Exception: $_"
             return $null
         }
     }
-    $info = $global:AirportData.$ICAO
+    $info = $script:AirportData.$ICAO
     if (-not $info) {
         Write-Error "Airport info not found for $ICAO."
     }
@@ -919,9 +919,12 @@ Function Write-Welcome {
         [Console]::OutputEncoding = $utf8
         $OutputEncoding = $utf8
     }
-    catch {}
+    catch {
+        Write-Verbose "[$($MyInvocation.MyCommand.Name)] $($_.Exception.Message)"
+        return
+    }
 
-    function New-Emoji {
+    function Get-Emoji {
         param(
             [int]$CodePoint,
             [switch]$VS16  # add U+FE0F variation selector
@@ -932,28 +935,28 @@ Function Write-Welcome {
     }
     
     # Unicode Symbols
-    $airplane = New-Emoji 0x2708 -VS16
-    $location = New-Emoji 0x1F4CD
-    $earth = New-Emoji 0x1F30D
-    $departure = New-Emoji 0x1F6EB
-    $clock = New-Emoji 0x23F0
-    $weather = New-Emoji 0x1F326 -VS16
-    $wind = New-Emoji 0x1F32C -VS16
-    $eye = New-Emoji 0x1F441 -VS16
-    $cloud = New-Emoji 0x2601  -VS16
-    $thermometer = New-Emoji 0x1F321 -VS16
-    $droplet = New-Emoji 0x1F4A7
-    $barometer = New-Emoji 0x1F4CF
-    $note = New-Emoji 0x1F4DD
-    $sunrise = New-Emoji 0x1F305
-    $sunset = New-Emoji 0x1F304
-    $antenna = New-Emoji 0x1F4E1
-    $mic = New-Emoji 0x1F5E3 -VS16
-    $headphones = New-Emoji 0x1F3A7
-    $camera = New-Emoji 0x1F3A5
-    $link = New-Emoji 0x1F517
-    $hourglass = New-Emoji 0x23F3
-    $radar = New-Emoji 0x1F4E1
+    $airplane = Get-Emoji 0x2708 -VS16
+    $location = Get-Emoji 0x1F4CD
+    $earth = Get-Emoji 0x1F30D
+    $departure = Get-Emoji 0x1F6EB
+    $clock = Get-Emoji 0x23F0
+    $weather = Get-Emoji 0x1F326 -VS16
+    $wind = Get-Emoji 0x1F32C -VS16
+    $eye = Get-Emoji 0x1F441 -VS16
+    $cloud = Get-Emoji 0x2601  -VS16
+    $thermometer = Get-Emoji 0x1F321 -VS16
+    $droplet = Get-Emoji 0x1F4A7
+    $barometer = Get-Emoji 0x1F4CF
+    $note = Get-Emoji 0x1F4DD
+    $sunrise = Get-Emoji 0x1F305
+    $sunset = Get-Emoji 0x1F304
+    $antenna = Get-Emoji 0x1F4E1
+    $mic = Get-Emoji 0x1F5E3 -VS16
+    $headphones = Get-Emoji 0x1F3A7
+    $camera = Get-Emoji 0x1F3A5
+    $link = Get-Emoji 0x1F517
+    $hourglass = Get-Emoji 0x23F3
+    $radar = Get-Emoji 0x1F4E1
 
     # Fetch raw METAR
     $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
@@ -1038,7 +1041,8 @@ Function Get-VLCVolumeArg {
                 }
             }
             catch {
-                #nuttin
+                Write-Error ("[{0}] {1}" -f $MyInvocation.MyCommand.Name, $_.Exception.Message)
+                return
             }
         }
 
@@ -1079,6 +1083,7 @@ Function Get-VLCVolumeArg {
 
 # Function to start the media player with a given URL
 Function Start-Player {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
     param (
         [string]$url,
         [string]$player,
@@ -1089,6 +1094,12 @@ Function Start-Player {
     )
 
     $url = Resolve-StreamUrl $url
+    $target = "$player -> $url"
+    
+    if (-not $PSCmdlet.ShouldProcess($target, 'Start media player')) {
+        return
+    }
+
     $playerArgs = switch ($player) {
         "VLC" {
             $vlcArgs = "`"$url`"" 
@@ -1171,7 +1182,7 @@ if ($LoadConfig) {
                 Set-Variable -Name $name -Value $prop.Value -Scope Local
             }
         }
-        Write-Host "Loaded config from $ConfigPath"
+        Write-Information "Loaded config from $ConfigPath"
     }
     else {
         Write-Warning "Config file not found at $ConfigPath"
@@ -1194,7 +1205,7 @@ if ($SaveConfig) {
         }
     }
     $config | ConvertTo-Json | Set-Content -Path $ConfigPath
-    Write-Host "Saved config to $ConfigPath"
+    Write-Information "Saved config to $ConfigPath"
 }
 
 
@@ -1208,18 +1219,18 @@ $favoritesJson = Join-Path $scriptDir 'favorites.json'
 $maxFavorites = 10
 
 if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
-    Write-Host "Using live sources CSV: $liveCsv"
+    Write-Information "Using live sources CSV: $liveCsv"
     $csvPath = $liveCsv
 }
 else {
-    Write-Host "Using base sources CSV: $baseCsv"
+    Write-Information "Using base sources CSV: $baseCsv"
     $csvPath = $baseCsv
 }
 
 
 $lofiMusicUrl = $LofiSource
-$atcSources = Import-ATCSources -csvPath $csvPath
-$favorites = Get-Favorites -path $favoritesJson
+$atcSources = Import-ATCSource -csvPath $csvPath
+$favorites = Get-Favorite -path $favoritesJson
 
 $selectedATC = $null
 if ($ICAO) {
