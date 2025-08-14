@@ -1,10 +1,10 @@
 # Function to fetch ATC sources from liveatc.net
 Function Get-LiveATCSources {
     param (
-        [string]$url = "https://www.liveatc.net/search/?icao=KGWS"
+        [string]$url = "https://www.liveatc.net/search/?icao=KASH"
     )
     try {
-        # Extract the ICAO from the URL (e.g. "KGWS")
+        # Extract the ICAO from the URL (e.g. "KASH")
         $icaoFromUrl = $url -replace ".*icao=([^&]+).*", '$1'
         Write-Host "Using ICAO: $icaoFromUrl from URL"
 
@@ -46,7 +46,7 @@ Function Get-LiveATCSources {
 # Function to fetch airport details from liveatc.net
 Function Get-AirportDetails {
     param (
-        [string]$url = "https://www.liveatc.net/search/?icao=KGWS"
+        [string]$url = "https://www.liveatc.net/search/?icao=KASH"
     )
     try {
         # Fetch the HTML content
