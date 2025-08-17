@@ -599,25 +599,78 @@ Function Get-RandomATCStream {
     }
 }
 
-# Function to fetch METAR/TAF data
-Function Get-METAR-TAF {
+# Calculate great-circle distance between two coordinates (km)
+Function Get-DistanceKm {
     param (
-        [string]$ICAO
+        [double]$Lat1,
+        [double]$Lon1,
+        [double]$Lat2,
+        [double]$Lon2
     )
-    $url = "https://aviationweather.gov/api/data/metar?ids=$ICAO"
-    try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $raw = $response.Content.Trim()
-        if ($raw) {
-            return $raw
+    $rad = [math]::PI / 180
+    $dLat = ($Lat2 - $Lat1) * $rad
+    $dLon = ($Lon2 - $Lon1) * $rad
+    $a = [math]::Pow([math]::Sin($dLat / 2), 2) + [math]::Cos($Lat1 * $rad) * [math]::Cos($Lat2 * $rad) * [math]::Pow([math]::Sin($dLon / 2), 2)
+    $c = 2 * [math]::Atan2([math]::Sqrt($a), [math]::Sqrt(1 - $a))
+    return [math]::Round(6371 * $c)
+}
+
+# Function to fetch METAR/TAF data
+Function Get-METAR-TAF {   
+    param (
+        [string]$ICAO,
+        [string[]]$FallbackICAOs
+    )
+
+
+    $icaoList = @($ICAO)
+    if ($FallbackICAOs) {
+        $icaoList += $FallbackICAOs
+    }
+
+
+    foreach ($code in $icaoList) {
+        $url = "https://aviationweather.gov/api/data/metar?ids=$code"
+        try {
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
+            $raw = $response.Content.Trim()
+            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') { return $raw }
+            else { Write-Verbose ("NOAA METAR invalid for {0}: {1}" -f $code, $raw) }
         }
-        else {
+        catch {
+            Write-Error "Failed to fetch METAR/TAF data for $ICAO. Exception: $_"
             return "METAR/TAF data unavailable."
         }
+        try {
+            $vatsimUrl = "https://metar.vatsim.net/metar.php?id=$code"
+            $response = Invoke-WebRequest -Uri $vatsimUrl -UseBasicParsing -Verbose:$false
+            $raw = $response.Content.Trim()
+            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') { return $raw }
+            else { Write-Verbose ("VATSIM METAR invalid for {0}: {1}" -f $code, $raw) }
+        }
+        catch {
+            Write-Verbose ("VATSIM METAR fetch failed for {0}: {1}" -f $code, $_)
+        }
     }
-    catch {
-        Write-Error "Failed to fetch METAR/TAF data for $ICAO. Exception: $_"
-        return "METAR/TAF data unavailable."
+    if (-not $raw) {
+        Write-Error "Failed to fetch METAR/TAF data for $ICAO and fallbacks."
+        return [pscustomobject]@{
+            Report = "METAR/TAF data unavailable."
+            ICAO = $ICAO
+            DistanceKm = $null
+        }
+    }
+
+    $distance = if ($used -ne $ICAO) {
+        $orig = Get-AirportInfo -ICAO $ICAO
+        $alt = Get-AirportInfo -ICAO $used
+        if ($orig -and $alt) { Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon } else { $null }
+    } else { 0 }
+
+    return [pscustomobject]@{
+        Report = $raw
+        ICAO = $used
+        DistanceKm = $distance
     }
 }
 
@@ -871,10 +924,11 @@ Function Get-AirportSunriseSunset {
 # Function to fetch METAR last updated time
 Function Get-METAR-LastUpdatedTime {
     param (
-        [string]$ICAO
+        [string]$ICAO,
+        [string[]]$FallbackICAOs
     )
     try {
-        $metar = Get-METAR-TAF -ICAO $ICAO
+        $metar = Get-METAR-TAF -ICAO $ICAO -FallbackICAOs $FallbackICAOs
         if ($metar -match '\b(?<ts>\d{6})Z\b') {
             $ts = $matches.ts
             $day = [int]$ts.Substring(0, 2)
@@ -959,7 +1013,8 @@ Function Write-Welcome {
     $radar = Get-Emoji 0x1F4E1
 
     # Fetch raw METAR
-    $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO
+    $fallbacks = if ($airportInfo.NearbyICAOs) { $airportInfo.NearbyICAOs -split ';' } else { @() }
+    $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO -FallbackICAOs $Fallbacks
 
     # Decode METAR into structured data
     $decodedMetar = ConvertFrom-METAR -metar $metar
@@ -971,7 +1026,7 @@ Function Write-Welcome {
     $sunTimes = Get-AirportSunriseSunset -ICAO $airportInfo.ICAO
 
     # Fetch METAR last updated time
-    $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO
+    $lastUpdatedTime = Get-METAR-LastUpdatedTime -ICAO $airportInfo.ICAO -FallbackICAOs $fallbacks
 
     # Display welcome message with a simple border
     Write-Output "$airplane Welcome to $($airportInfo.'Airport Name')"
