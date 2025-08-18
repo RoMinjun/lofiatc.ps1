@@ -615,6 +615,18 @@ Function Get-DistanceKm {
     return [math]::Round(6371 * $c)
 }
 
+Function ConvertTo-NauticalMiles {
+    param(
+        [double]$Kilometers,
+        [int]$Decimals = 0
+    )
+    if ($null -eq $Kilometers) {
+        return $null
+    }
+    $nm = $Kilometers / 1.852
+    return [math]::Round($nm, $Decimals)
+}
+
 # Function to fetch METAR/TAF data
 Function Get-METAR-TAF {   
     param (
@@ -682,17 +694,28 @@ Function Get-METAR-TAF {
         $alt = Get-AirportInfo -ICAO $used
         if ($orig -and $alt) {
             Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon
-        } else {
+        }
+        else {
             $null
         }
-    } else {
+    }
+    else {
         0
+    }
+
+    # Convert KM to NM
+    $distanceNm = if ($null -ne $distance) {
+        ConvertTo-NauticalMiles -Kilometers $distance -Decimals 0
+    }
+    else {
+        $null
     }
 
     return [pscustomobject]@{
         Report     = $raw
         ICAO       = $used
         DistanceKm = $distance
+        DistanceNm = $distanceNm
         Source     = $source
         SourceUrl  = $sourceUrl
     }
@@ -1103,12 +1126,32 @@ Function Write-Welcome {
     }
 
     # Display METAR source and last updated time
-    $sourceName = if ($metarInfo.Source) { $metarInfo.Source } else { 'Unknown source' }
-    $sourceUrl = if ($metarInfo.SourceUrl) { " ($($metarInfo.SourceUrl))" } else { '' }
+    $sourceName = if ($metarInfo.Source) {
+        $metarInfo.Source
+    }
+    else {
+        'Unknown source'
+    }
+
+    $sourceUrl = if ($metarInfo.SourceUrl) {
+        " ($($metarInfo.SourceUrl))"
+    }
+    else {
+        ''
+    }
+
     Write-Output "$link Data Source: METAR data retrieved from $sourceName$sourceUrl"
     if ($metarInfo.ICAO -ne $airportInfo.ICAO -and $metarInfo.DistanceKm) {
-        Write-Output "    $radar Using fallback METAR from $($metarInfo.ICAO) ($($metarInfo.DistanceKm)km away)"
+        $distKmText = "$($metarInfo.DistanceKm)km"
+        $distNmText = if ($metarInfo.DistanceNm) {
+            "/$($metarInfo.DistanceNm)nm"
+        }
+        else {
+            ""
+        }
+        Write-Output "    $radar Using fallback METAR from $($metarInfo.ICAO) ($distKmText$distNmText away)"
     }
+
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
