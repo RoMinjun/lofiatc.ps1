@@ -628,24 +628,38 @@ Function Get-METAR-TAF {
         $icaoList += $FallbackICAOs
     }
 
+    $raw = $null
+    $used = $ICAO
+    $source = $null
+    $sourceUrl = $null
 
     foreach ($code in $icaoList) {
         $url = "https://aviationweather.gov/api/data/metar?ids=$code"
         try {
             $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
             $raw = $response.Content.Trim()
-            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') { return $raw }
+            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') {
+                $used = $code
+                $source = 'NOAA'
+                $sourceUrl = 'https://aviationweather.gov'
+                break
+            }
             else { Write-Verbose ("NOAA METAR invalid for {0}: {1}" -f $code, $raw) }
         }
         catch {
-            Write-Error "Failed to fetch METAR/TAF data for $ICAO. Exception: $_"
-            return "METAR/TAF data unavailable."
+            Write-Verbose ("NOAA METAR fetch failed for {0}: {1}" -f $code, $_)
         }
+
         try {
             $vatsimUrl = "https://metar.vatsim.net/metar.php?id=$code"
             $response = Invoke-WebRequest -Uri $vatsimUrl -UseBasicParsing -Verbose:$false
             $raw = $response.Content.Trim()
-            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') { return $raw }
+            if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') {
+                $used = $code
+                $source = 'VATSIM'
+                $sourceUrl = 'https://metar.vatsim.net'
+                break
+            }
             else { Write-Verbose ("VATSIM METAR invalid for {0}: {1}" -f $code, $raw) }
         }
         catch {
@@ -655,22 +669,32 @@ Function Get-METAR-TAF {
     if (-not $raw) {
         Write-Error "Failed to fetch METAR/TAF data for $ICAO and fallbacks."
         return [pscustomobject]@{
-            Report = "METAR/TAF data unavailable."
-            ICAO = $ICAO
+            Report     = "METAR/TAF data unavailable."
+            ICAO       = $ICAO
             DistanceKm = $null
+            Source     = $null
+            SourceUrl  = $null
         }
     }
 
     $distance = if ($used -ne $ICAO) {
         $orig = Get-AirportInfo -ICAO $ICAO
         $alt = Get-AirportInfo -ICAO $used
-        if ($orig -and $alt) { Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon } else { $null }
-    } else { 0 }
+        if ($orig -and $alt) {
+            Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon
+        } else {
+            $null
+        }
+    } else {
+        0
+    }
 
     return [pscustomobject]@{
-        Report = $raw
-        ICAO = $used
+        Report     = $raw
+        ICAO       = $used
         DistanceKm = $distance
+        Source     = $source
+        SourceUrl  = $sourceUrl
     }
 }
 
@@ -928,7 +952,8 @@ Function Get-METAR-LastUpdatedTime {
         [string[]]$FallbackICAOs
     )
     try {
-        $metar = Get-METAR-TAF -ICAO $ICAO -FallbackICAOs $FallbackICAOs
+        $metarInfo = Get-METAR-TAF -ICAO $ICAO -FallbackICAOs $FallbackICAOs
+        $metar = $metarInfo.Report
         if ($metar -match '\b(?<ts>\d{6})Z\b') {
             $ts = $matches.ts
             $day = [int]$ts.Substring(0, 2)
@@ -1013,11 +1038,17 @@ Function Write-Welcome {
     $radar = Get-Emoji 0x1F4E1
 
     # Fetch raw METAR
-    $fallbacks = if ($airportInfo.NearbyICAOs) { $airportInfo.NearbyICAOs -split ';' } else { @() }
-    $metar = Get-METAR-TAF -ICAO $airportInfo.ICAO -FallbackICAOs $Fallbacks
+    $fallbacks = if ($airportInfo.NearbyICAOs) { 
+        $airportInfo.NearbyICAOs -split ';' 
+    } 
+    else { 
+        @() 
+    }
+    $metarInfo = Get-METAR-TAF -ICAO $airportInfo.ICAO -FallbackICAOs $Fallbacks
+    
 
     # Decode METAR into structured data
-    $decodedMetar = ConvertFrom-METAR -metar $metar
+    $decodedMetar = ConvertFrom-METAR -metar $metarInfo.Report
 
     # Fetch current airport date/time
     $airportDateTime = Get-AirportDateTime -ICAO $airportInfo.ICAO
@@ -1044,7 +1075,8 @@ Function Write-Welcome {
     Write-Output "    $thermometer Temperature: $($decodedMetar.Temperature)"
     Write-Output "    $droplet Dew Point:   $($decodedMetar.DewPoint)"
     Write-Output "    $barometer Pressure:    $($decodedMetar.Pressure)"
-    Write-Output "    $note Raw METAR:   $metar`n"
+    Write-Output "    $note Raw METAR:   $($metarInfo.Report)`n"
+    
 
     # Display sunrise and sunset information if available
     if ($sunTimes) {
@@ -1071,7 +1103,12 @@ Function Write-Welcome {
     }
 
     # Display METAR source and last updated time
-    Write-Output "$link Data Source: METAR data retrieved from NOAA (https://aviationweather.gov) for $($airportInfo.ICAO)"
+    $sourceName = if ($metarInfo.Source) { $metarInfo.Source } else { 'Unknown source' }
+    $sourceUrl = if ($metarInfo.SourceUrl) { " ($($metarInfo.SourceUrl))" } else { '' }
+    Write-Output "$link Data Source: METAR data retrieved from $sourceName$sourceUrl"
+    if ($metarInfo.ICAO -ne $airportInfo.ICAO -and $metarInfo.DistanceKm) {
+        Write-Output "    $radar Using fallback METAR from $($metarInfo.ICAO) ($($metarInfo.DistanceKm)km away)"
+    }
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
 }
 
