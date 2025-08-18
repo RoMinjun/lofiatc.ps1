@@ -8,11 +8,11 @@ Function Get-LiveATCSources {
         $icaoFromUrl = $Url -replace ".*icao=([^&]+).*", '$1'
 
         # Fetch HTML
-        $response    = Invoke-WebRequest -Uri $Url -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
         $htmlContent = $response.Content
 
         # Parse for .pls links
-        $atcSources      = @()
+        $atcSources = @()
         $currentFeedName = ""
         $htmlContent -split '<tr>' | ForEach-Object {
             $row = $_.Trim()
@@ -38,8 +38,8 @@ Function Get-LiveATCSources {
 
 # Figure out where the input CSV actually lives
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$inputCsv  = Join-Path $scriptDir '..\atc_sources.csv' | Resolve-Path -ErrorAction Stop
-$csvDir    = Split-Path -Parent $inputCsv
+$inputCsv = Join-Path $scriptDir '..\atc_sources.csv' | Resolve-Path -ErrorAction Stop
+$csvDir = Split-Path -Parent $inputCsv
 
 # **Changed output filename here:**
 $outputCsv = Join-Path $csvDir 'liveatc_sources.csv'
@@ -59,18 +59,18 @@ foreach ($row in $origRows) {
 # Fetch once per distinct ICAO
 $icaoCache = @{}
 $origRows |
-  Select-Object -Expand ICAO -Unique |
-  ForEach-Object {
+Select-Object -Expand ICAO -Unique |
+ForEach-Object {
     Write-Host "Fetching channels for $_…"
     $icaoCache[$_] = Get-LiveATCSources -Url "https://www.liveatc.net/search/?icao=$_"
-  }
+}
 
 # Build output: one row per fetched source
 $allResults = foreach ($icao in $icaoCache.Keys) {
     $meta = $origRows | Where-Object ICAO -eq $icao | Select-Object -First 1
 
     foreach ($src in $icaoCache[$icao]) {
-        $key    = "{0}||{1}" -f $icao, $src.Channel
+        $key = "{0}||{1}" -f $icao, $src.Channel
         $webcam = if ($webcamLookup.ContainsKey($key)) { $webcamLookup[$key] } else { "" }
 
         [PSCustomObject][ordered]@{
@@ -84,14 +84,15 @@ $allResults = foreach ($icao in $icaoCache.Keys) {
             'Channel Description' = $src.Channel
             'Stream URL'          = $src.URL
             'Webcam URL'          = $webcam
+            'NearbyICAOs'         = $meta.NearbyICAOs
         }
     }
 }
 
 # Sort by Continent then ICAO, then export next to the atc_sources.csv
 $allResults |
-  Sort-Object Continent, ICAO |
-  Export-Csv -Path $outputCsv -NoTypeInformation
+Sort-Object Continent, ICAO |
+Export-Csv -Path $outputCsv -NoTypeInformation
 
 Write-Host "`n New sources written to csv: $outputCsv"
 
