@@ -171,7 +171,7 @@ if ($atcObjs | Get-Member -Name 'NearbyICAOs' -MemberType NoteProperty -ErrorAct
 
     # Remove these rows from further checks
     $rowsToCheck = $atcObjs | Where-Object { 
-        -not $_.NearbyICAOs 
+        -not $_.NearbyICAOs `
         -or [string]::IsNullOrWhiteSpace($_.NearbyICAOs) 
     }
 }
