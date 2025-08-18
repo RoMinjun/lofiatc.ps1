@@ -628,7 +628,7 @@ Function ConvertTo-NauticalMiles {
 }
 
 # Function to fetch METAR/TAF data
-Function Get-METAR-TAF {   
+Function Get-METAR-TAF {
     param (
         [string]$ICAO,
         [string[]]$FallbackICAOs
