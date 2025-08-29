@@ -1,5 +1,9 @@
 name: Auto-sort ATC CSV
 
+permissions:
+  contents: write
+  pull-requests: read
+
 on:
   push:
     paths: [ "atc_sources.csv" ]
@@ -12,13 +16,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # keep credentials so we can push to same-repo branches
           persist-credentials: true
 
       - name: Auto-sort (in place)
         shell: pwsh
         run: ./tools/Sort-ATCSources.ps1 -InPlace
 
+      # Push only for same-repo branches (not forks)
       - name: Commit sorted file (same-repo branches only)
         if: |
           github.event_name == 'push' ||
@@ -35,6 +39,7 @@ jobs:
             git push
           fi
 
+      # For fork PRs (no push), just verify
       - name: Verify (fork PRs)
         if: |
           github.event_name == 'pull_request' &&
