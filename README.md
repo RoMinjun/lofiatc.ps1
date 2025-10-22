@@ -16,7 +16,7 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and d
 ![Made with VHS](https://vhs.charm.sh/vhs-6EK95qMAl6yhRH7quA7NEq.gif)
 
 ## Search Your Favorite Airport Using Fuzzy Finder!
-![Fuzzy Finder](./assets/fzf.gif)
+![Fuzzy Finder](https://share.romin.dev/u/9Z0GqOFd0HmCHr.gif)
 
 ## OR Without Fuzzy Finder...
 ![Made with VHS](https://vhs.charm.sh/vhs-2sTPLAkHZ0nzVtAdCifMT3.gif)
