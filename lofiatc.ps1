@@ -40,7 +40,7 @@ Volume level for the Lofi Girl stream. Default is 50.
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
 .PARAMETER LofiGenre
-Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, Jazz, Ambient, Bossa, Asian, Medieval. This is overridden by -LofiSource.
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, Jazz, Ambient, DarkAmbient, Bossa, Asian, Medieval. This is overridden by -LofiSource.
 
 .PARAMETER ICAO
 Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
@@ -148,7 +148,7 @@ param (
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
-    [ValidateSet("Chillhop","Synthwave","Jazz","Ambient","Bossa","Asian","Medieval")]
+    [ValidateSet("Chillhop","Synthwave","Jazz","Ambient","DarkAmbient","Bossa","Asian","Medieval")]
     [string]$LofiGenre,
     [string]$ICAO,
     [switch]$LoadConfig,
@@ -160,13 +160,14 @@ param (
 )
 
 $LofiGenres = @{
-    "Chillhop"  = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
-    "Synthwave" = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
-    "Jazz"      = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
-    "Ambient"   = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
-    "Bossa"     = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
-    "Asian"     = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
-    "Medieval"  = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
+    "Chillhop"      = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
+    "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
+    "Jazz"          = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
+    "Ambient"       = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
+    "Bossa"         = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
+    "Asian"         = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
+    "Medieval"      = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
+    "DarkAmbient"  = "https://youtu.be/S_MOd40zlYU" # Dark Ambient lofi girl
 }
 
 # Check if running on Windows ($IsWindows) doesn't exist on PowerShell 5.1, so define it manually
