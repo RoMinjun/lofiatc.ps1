@@ -39,6 +39,9 @@ Volume level for the Lofi Girl stream. Default is 50.
 .PARAMETER LofiSource
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
+.PARAMETER LofiGenre
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, Jazz, Ambient, Bossa, Asian, Medieval. This is overridden by -LofiSource.
+
 .PARAMETER ICAO
 Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
 
@@ -125,6 +128,10 @@ This command shows a list of nearby airports within a 1000km radius. The default
 .EXAMPLE
 .\lofiatc.ps1 -Nearby -NearbyRadius 1000 -UseFZF
 This command shows a list of nearby airports within a 1000km radius and loads results into fuzzy finder.
+
+.EXAMPLE
+.\lofiatc.ps1 -LofiGenre Synthwave
+This command plays the "Synthwave" preset Lofi stream.
 #>
 
 [CmdletBinding()]
@@ -140,7 +147,9 @@ param (
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+    [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
+    [ValidateSet("Chillhop","Synthwave","Jazz","Ambient","Bossa","Asian","Medieval")]
+    [string]$LofiGenre,
     [string]$ICAO,
     [switch]$LoadConfig,
     [switch]$SaveConfig,
@@ -149,6 +158,16 @@ param (
     [switch]$Nearby,
     [int]$NearbyRadius = 500
 )
+
+$LofiGenres = @{
+    "Chillhop"  = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
+    "Synthwave" = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
+    "Jazz"      = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
+    "Ambient"   = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
+    "Bossa"     = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
+    "Asian"     = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
+    "Medieval"  = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
+}
 
 # Check if running on Windows ($IsWindows) doesn't exist on PowerShell 5.1, so define it manually
 $OnWindows = $env:OS -eq 'Windows_NT'
@@ -1471,7 +1490,14 @@ else {
 }
 
 
-$lofiMusicUrl = $LofiSource
+# Set the source to the genre's URL
+if ($LofiGenre -and (-not $PSBoundParameters.ContainsKey('LofiSource'))) {
+    $lofiMusicUrl = $LofiGenres[$LofiGenre]
+}
+else {
+    $lofiMusicUrl = $LofiSource
+}
+
 $atcSources = Import-ATCSource -csvPath $csvPath
 $favorites = Get-Favorite -path $favoritesJson
 
