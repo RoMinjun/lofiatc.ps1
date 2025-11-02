@@ -118,6 +118,13 @@ This command loads parameters from `config.json` and runs the script with those 
 .\lofiatc.ps1 -LoadConfig -OpenRadar
 This command loads parameters from `config.json` and overrides the OpenRadar parameter to true.
 
+.EXAMPLE
+.\lofiatc.ps1 -Nearby -NearbyRadius 1000
+This command shows a list of nearby airports within a 1000km radius. The default radius (if not specified) is 500km 
+
+.EXAMPLE
+.\lofiatc.ps1 -Nearby -NearbyRadius 1000 -UseFZF
+This command shows a list of nearby airports within a 1000km radius and loads results into fuzzy finder.
 #>
 
 [CmdletBinding()]
