@@ -498,6 +498,7 @@
 "North America","Mexico","Mexico City","","Licenciado Benito Juarez International Airport","MMMX","MEX","MMMX Volaris Ops","https://www.liveatc.net/play/mmmx1_vol_ops.pls","",""
 "North America","Mexico","Monterrey","","General Mariano Escobedo International Airport","MMMY","MTY","MMMY Approach","https://www.liveatc.net/play/mmmy3_app.pls","",""
 "North America","Mexico","Monterrey","","General Mariano Escobedo International Airport","MMMY","MTY","MMMY Tower/Approach","https://www.liveatc.net/play/mmmy.pls","",""
+"North America","Mexico","San Luis Potosi","","Ponciano Arriaga International Airport","MMSP","SLP","MMSP Twr/App/Center","https://www.liveatc.net/play/mmsp3.pls","",""
 "North America","Mexico","Santa Lucia","","Felipe Angeles International Airport","MMSM","NLU","MMSM Approach (119.0)","https://www.liveatc.net/play/mmmx1_mmsm_app1.pls","",""
 "North America","Mexico","Santa Lucia","","Felipe Angeles International Airport","MMSM","NLU","MMSM Approach (128.85)","https://www.liveatc.net/play/mmmx1_mmsm_app2.pls","",""
 "North America","Mexico","Santa Lucia","","Felipe Angeles International Airport","MMSM","NLU","MMSM ATIS","https://www.liveatc.net/play/mmmx1_mmsm_atis.pls","",""
@@ -1485,4 +1486,3 @@
 "South America","Uruguay","Punta del Este","","Capitan Corbeta C A Curbelo International Airport","SULS","PDP","SULS Tower","https://www.liveatc.net/play/suls2_twr.pls","",""
 "South America","Uruguay","Salto","","Nueva Hesperides International Airport","SUSO","STY","SUSO Tower/Ramp","https://www.liveatc.net/play/suso1.pls","",""
 "South America","Venezuela","Ciudad Guayana","","Manuel Carlos Piar Guayana Airport","SVPR","PZO","SVPR Twr/App/FIR","https://www.liveatc.net/play/svpr2.pls","","SVBC"
-"North America","Mexico","San Luis Potosi","","Ponciano Arriaga International Airport","MMSP","SLP","MMSP Twr/App/Center","https://www.liveatc.net/play/mmsp3.pls","",""
