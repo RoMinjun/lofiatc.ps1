@@ -1486,3 +1486,6 @@
 "South America","Uruguay","Punta del Este","","Capitan Corbeta C A Curbelo International Airport","SULS","PDP","SULS Tower","https://www.liveatc.net/play/suls2_twr.pls","",""
 "South America","Uruguay","Salto","","Nueva Hesperides International Airport","SUSO","STY","SUSO Tower/Ramp","https://www.liveatc.net/play/suso1.pls","",""
 "South America","Venezuela","Ciudad Guayana","","Manuel Carlos Piar Guayana Airport","SVPR","PZO","SVPR Twr/App/FIR","https://www.liveatc.net/play/svpr2.pls","","SVBC"
+"North America","United States","Marana","Arizona","Marana Regional Airport","KAVQ","AVQ","KAVQ CTAF","https://www.liveatc.net/play/kavq2_ctaf.pls","",""
+"North America","United States","Cape Girardeau","Missouri","Cape Girardeau Regional Airport","KCGI","CGI","KCGI Tower","https://www.liveatc.net/play/kcgi.pls","",""
+"North America","United States","Topeka","Kansas","Philip Billard Municipal Airport","KTOP","TOP","KTOP Ground/Tower","https://www.liveatc.net/play/ktop2_twrgnd.pls","",""
