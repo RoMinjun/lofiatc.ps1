@@ -1459,7 +1459,7 @@
 "South America","Brazil","Sao Goncalo do Amarante","","Greater Natal International Airport","SBSG","NAT","SBSG Gnd/Twr/App","https://www.liveatc.net/play/sbsg3.pls","",""
 "South America","Brazil","Sao Jose do Rio Preto","","Sao Jose do Rio Preto Airport","SBSR","SJP","SBSR AFIS/App/Center","https://www.liveatc.net/play/sbsr.pls","",""
 "South America","Brazil","Teresina","","Teresina-Senador Petronio Portella Airport","SBTE","THE","Tower/Approach","https://www.liveatc.net/play/sbte2.pls","",""
-"South America","Brazil","Torres","","Torres Airport","SSTE","TSQ","SSTE FCA/Air to Air","https://www.liveatc.net/play/sste2.pls","",""
+"South America","Brazil","Torres","","Torres Airport","SSTE","TSQ","SSTE FCA/Air to Air","https://www.liveatc.net/play/sste2.pls","","SBPA"
 "South America","Chile","Santiago","","Arturo Merino Benitez International Airport","SCEL","SCL","Ground/Tower/Radar","https://www.liveatc.net/play/scel.pls","",""
 "South America","Costa Rica","San Jose","","Juan Santamaria International Airport","MROC","SJO","Delivery/Ground/Tower/Approach/Center/Misc","https://www.liveatc.net/play/mroc.pls","",""
 "South America","Curacao","Willemstad","","Aeropuerto Hato","TNCC","CUR","Control","https://www.liveatc.net/play/tncc.pls","",""
