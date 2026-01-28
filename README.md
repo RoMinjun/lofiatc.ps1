@@ -234,6 +234,9 @@ Each time you select a stream, its ICAO and channel are recorded in `favorites.j
 ### Airport Sources
 The script reads ATC streams from `atc_sources.csv`.
 
+> [!IMPORTANT]
+> Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix. 
+
 - Run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. It'll be called `liveatc_sources.csv`   
 - If a locally updated CSV exists, it is **preferred** over the `liveatc_sources.csv`.  
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
