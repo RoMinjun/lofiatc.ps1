@@ -354,9 +354,14 @@ Function Resolve-StreamUrl {
     }
     elseif ($url -match '\.pls(\?|$)') {
         try {
-            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
-            $fileLine = $content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1
-            if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
+            # Bypass cloudflare by predicting the direct stream url from pls path
+            if ($url -match ".*/(?<feed>[^\.]+)\.pls") {
+                $feedName = $matches['feed']
+                $resolvedUrl = "http://d.liveatc.net/$feedName"
+            }
+            else {
+                Write-Warning "Could not parse feed name from the provided PLS URL. Falling back to original"
+            }
         }
         catch {
             Write-Warning "Failed to resolve PLS URL. Falling back to original URL."

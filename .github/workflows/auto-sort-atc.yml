@@ -6,9 +6,12 @@ permissions:
 
 on:
   push:
-    paths: [ "atc_sources.csv" ]
+    paths: 
+      - "atc_sources.csv"
+      - "liveatc_sources.csv"
   pull_request:
-    paths: [ "atc_sources.csv" ]
+      - "atc_sources.csv"
+      - "liveatc_sources.csv"
 
 jobs:
   sort:
@@ -20,7 +23,13 @@ jobs:
 
       - name: Auto-sort (in place)
         shell: pwsh
-        run: ./tools/Sort-ATCSources.ps1 -InPlace
+        run: |
+          ./tools/Sort-ATCSources.ps1 -InputCsvPath "atc_sources.csv" -InPlace
+
+          # Only try to sort the live file it it actually exists
+          if (Test-Path "liveatc_sources.csv") {
+            ./tools/Sort-ATCSources.ps1 -InputCsvPath "liveatc_sources.csv" -InPlace
+          }
 
       # Push only for same-repo branches (not forks)
       - name: Commit sorted file (same-repo branches only)
@@ -34,8 +43,8 @@ jobs:
           else
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add atc_sources.csv
-            git commit -m "chore: canonical sort atc_sources.csv"
+            git add atc_sources.csv liveatc_sources.csv
+            git commit -m "chore: canonical sort CSVs"
             git push
           fi
 
@@ -45,5 +54,8 @@ jobs:
           github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name != github.repository
         shell: pwsh
-        run: ./tools/Sort-ATCSources.ps1 -Check
-
+        run: |
+          ./tools/Sort-ATCSources.ps1 -InputCsvPath "atc_sources.csv" -Check
+          if (Test-Path "liveatc_sources.csv") {
+            ./tools/Sort-ATCSources.ps1 -InputCsvPath "liveatc_sources.csv" -Check
+          }

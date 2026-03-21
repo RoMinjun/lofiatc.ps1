@@ -235,11 +235,14 @@ Each time you select a stream, its ICAO and channel are recorded in `favorites.j
 The script reads ATC streams from `atc_sources.csv`.
 
 > [!IMPORTANT]
-> Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix. 
+> ~~Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix.~~ A workaround is to use [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), but to keep it stealthy each request would take around 8 seconds (So it can take up hours to fully update the sources). So I wouldn't recommend trying to update yourself anymore. Instead I'll publish a more recent version every now and then. But if you really wish to update yourself, check the steps below.
 
-- Run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. It'll be called `liveatc_sources.csv`   
+- Run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. By default It'll be called `liveatc_sources.csv`. This override the current `liveatc_sources.csv` file 
 - If a locally updated CSV exists, it is **preferred** over the `liveatc_sources.csv`.  
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
+
+#### Updating sources
+Download the [FlareSolverr binary from GitHub](https://github.com/FlareSolverr/FlareSolverr/releases). Run the binary and accept any pop ups. Then run the `Up""dateATCSources.ps1` script as per usual.
 
 ```powershell
 # From <projectroot>/tools
@@ -295,7 +298,7 @@ You can safely delete the repo folder. Optional user files created:
 
 ## Contributing
 PRs welcome! Popular contributions:
-- New/updated ATC sources. Please add to `atc_sources.csv`, let the update script the rest.
+- New/updated ATC sources. Please add to `atc_sources.csv`, let the script update the rest.
 - Better player detection across platforms
 - Additional examples / docs improvements
 
