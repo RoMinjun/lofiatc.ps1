@@ -6,12 +6,9 @@ permissions:
 
 on:
   push:
-    paths: 
-      - "atc_sources.csv"
-      - "liveatc_sources.csv"
+    paths: ["atc_sources.csv", "liveatc_sources.csv"]
   pull_request:
-      - "atc_sources.csv"
-      - "liveatc_sources.csv"
+    paths: ["atc_sources.csv", "liveatc_sources.csv"]
 
 jobs:
   sort:
@@ -25,8 +22,7 @@ jobs:
         shell: pwsh
         run: |
           ./tools/Sort-ATCSources.ps1 -InputCsvPath "atc_sources.csv" -InPlace
-
-          # Only try to sort the live file it it actually exists
+          # Only try to sort the live file if it actually exists
           if (Test-Path "liveatc_sources.csv") {
             ./tools/Sort-ATCSources.ps1 -InputCsvPath "liveatc_sources.csv" -InPlace
           }
