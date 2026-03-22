@@ -883,7 +883,6 @@ Function Start-Player {
     else { Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null }
 }
 
-# --- NEW FUNCTIONS ---
 Function Get-NearbyAirports {
     param ([object]$UserLocation, [array]$AtcSources, [int]$Radius)
     
@@ -938,7 +937,6 @@ Function Select-ATCMap {
         Write-Warning "Could not start local web server. Port is blocked."
         return $null
     }
-    # --------------------------------------------------
 
     $mapData = @()
     $groupedSources = $AtcSources | Group-Object ICAO
@@ -1173,7 +1171,6 @@ Function Select-ATCMap {
     return $selection
 }
 
-# --- MAIN EXECUTION BLOCK ---
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
