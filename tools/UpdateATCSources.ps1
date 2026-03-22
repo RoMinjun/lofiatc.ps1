@@ -37,7 +37,7 @@ function Write-AtcCsv {
     [Parameter(Mandatory)][string]$Path
   )
   $cols = Get-ColumnOrder
-  $Rows | Select-Object $cols | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
+  $Rows | Select-Object $cols -Unique | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
   Write-Host "`nWrote: $Path"
 }
 
