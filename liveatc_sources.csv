@@ -1,7 +1,4 @@
 "Continent","Country","City","State/Province","Airport Name","ICAO","IATA","Channel Description","Stream URL","Webcam URL","NearbyICAOs"
-"<<<<<<< HEAD",,,,,,,,,,
-"=======",,,,,,,,,,
-">>>>>>> d72819b22244b27635c913bdbfc320717780012b",,,,,,,,,,
 "Africa","Ethiopia","Addis Ababa","","Bole International Airport","HAAB","ADD","HAAB Approach","https://www.liveatc.net/play/haab2_app.pls","",""
 "Africa","Ethiopia","Addis Ababa","","Bole International Airport","HAAB","ADD","HAAB Tower","https://www.liveatc.net/play/haab2_twr.pls","",""
 "Africa","Mauritius","Plaine Magnien","","Sir Seewoosagur Ramgoolam International Airport","FIMP","MRU","FIMP Twr/App/Ctr #2","https://www.liveatc.net/play/fimp2.pls","",""
