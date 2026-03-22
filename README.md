@@ -242,7 +242,7 @@ The script reads ATC streams from `atc_sources.csv`.
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
 
 #### Updating sources
-Download the [FlareSolverr binary from GitHub](https://github.com/FlareSolverr/FlareSolverr/releases). Run the binary and accept any pop ups. Then run the `Up""dateATCSources.ps1` script as per usual.
+Download the [FlareSolverr binary from GitHub](https://github.com/FlareSolverr/FlareSolverr/releases). Run the binary and accept any pop ups. Then run the `UpdateATCSources.ps1` script as per usual.
 
 ```powershell
 # From <projectroot>/tools
