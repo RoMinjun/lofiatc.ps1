@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
 A PowerShell script to stream ATC audio, Lofi music, and optionally webcam video using VLC Media Player.
 
