@@ -95,7 +95,7 @@ if (-not $headerLineNum) {
 $metarIds = $metarLines[$headerLineNum..($metarLines.Count - 1)] |
 Where-Object { $_ -and $_.Trim() -ne "" } |
 ForEach-Object {
-    if ($_ -match ',([A-Z0-9]{4}),\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z,') {
+    if ($_ -match ',([A-Z0-9]{4}),\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z,') {
         $matches[1].ToUpperInvariant()
     }
 } |

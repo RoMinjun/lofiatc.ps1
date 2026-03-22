@@ -17,6 +17,9 @@ if (-not $rows) {
   exit 2
 }
 
+# Grab the filename for dynamic console logging
+$fileName = Split-Path $InputCsvPath -Leaf
+
 # Preserve original header order
 $cols = $rows[0].psobject.Properties.Name
 
@@ -56,10 +59,10 @@ $sortedText = Serialize $sorted
 
 if ($Check) {
   if ($origText -ceq $sortedText) {
-    Write-Host "OK: atc_sources.csv is already sorted."
+    Write-Host "OK: $fileName is already sorted."
     exit 0
   } else {
-    Write-Host "NEEDS SORT: atc_sources.csv would be changed by canonical sort."
+    Write-Host "NEEDS SORT: $fileName would be changed by canonical sort."
     exit 1
   }
 }
@@ -70,10 +73,9 @@ $outPath = if ($InPlace) {
 } elseif ($OutputCsvPath) {
   $OutputCsvPath
 } else {
-  Join-Path (Split-Path -Parent $InputCsvPath) 'atc_sources.sorted.csv'
+  Join-Path (Split-Path -Parent $InputCsvPath) "$($fileName -replace '\.csv$','.sorted.csv')"
 }
 
 # Write sorted CSV
 $sorted | Export-Csv -Path $outPath -NoTypeInformation -Encoding UTF8
 Write-Host "Wrote sorted CSV: $outPath"
-

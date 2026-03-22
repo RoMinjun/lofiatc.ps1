@@ -39,6 +39,9 @@ Volume level for the Lofi Girl stream. Default is 50.
 .PARAMETER LofiSource
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
+.PARAMETER LofiGenre
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, Jazz, Ambient, DarkAmbient, Bossa, Asian, Medieval. This is overridden by -LofiSource.
+
 .PARAMETER ICAO
 Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
 
@@ -50,6 +53,12 @@ Save the parameters used for the current run to a configuration file.
 
 .PARAMETER ConfigPath
 Optional path for the saved configuration file. Defaults to a file named `config.json` beside the script.
+
+.PARAMETER Nearby
+Shows a list of nearby airports to your current device location (IP as fallback) 
+
+.PARAMETER NearbyRadius
+If specified, to be used in combination with -Nearby, to change the radius of nearby airports in kilometers
 
 .NOTES
 File Name      : lofiatc.ps1
@@ -112,6 +121,17 @@ This command loads parameters from `config.json` and runs the script with those 
 .\lofiatc.ps1 -LoadConfig -OpenRadar
 This command loads parameters from `config.json` and overrides the OpenRadar parameter to true.
 
+.EXAMPLE
+.\lofiatc.ps1 -Nearby -NearbyRadius 1000
+This command shows a list of nearby airports within a 1000km radius. The default radius (if not specified) is 500km 
+
+.EXAMPLE
+.\lofiatc.ps1 -Nearby -NearbyRadius 1000 -UseFZF
+This command shows a list of nearby airports within a 1000km radius and loads results into fuzzy finder.
+
+.EXAMPLE
+.\lofiatc.ps1 -LofiGenre Synthwave
+This command plays the "Synthwave" preset Lofi stream.
 #>
 
 [CmdletBinding()]
@@ -127,13 +147,28 @@ param (
     [string]$Player,
     [int]$ATCVolume = 65,
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://www.youtube.com/watch?v=jfKfPfyJRdk",
+    [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
+    [ValidateSet("Chillhop","Synthwave","Jazz","Ambient","DarkAmbient","Bossa","Asian","Medieval")]
+    [string]$LofiGenre,
     [string]$ICAO,
     [switch]$LoadConfig,
     [switch]$SaveConfig,
     [string]$ConfigPath,
-    [switch]$OpenRadar
+    [switch]$OpenRadar,
+    [switch]$Nearby,
+    [int]$NearbyRadius = 500
 )
+
+$LofiGenres = @{
+    "Chillhop"      = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
+    "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
+    "Jazz"          = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
+    "Ambient"       = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
+    "Bossa"         = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
+    "Asian"         = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
+    "Medieval"      = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
+    "DarkAmbient"  = "https://youtu.be/S_MOd40zlYU" # Dark Ambient lofi girl
+}
 
 # Check if running on Windows ($IsWindows) doesn't exist on PowerShell 5.1, so define it manually
 $OnWindows = $env:OS -eq 'Windows_NT'
@@ -168,6 +203,101 @@ Function Get-DefaultAppForMP4 {
         }
     }
     catch {
+        return $null
+    }
+}
+
+# Main function to get user's location
+Function Get-CurrentCoordinates {
+    Write-Verbose "Attempting to load System.Device assembly..."
+    $location = $null
+    $AssemblyLoaded = $false
+    
+    try {
+        Add-Type -AssemblyName System.Device -ErrorAction Stop
+        $AssemblyLoaded = $true
+        Write-Verbose "Successfully loaded System.Device assembly."
+    }
+    catch {
+        Write-Verbose "Could not load System.Device assembly (this is normal on PowerShell Core or non-Windows OS)."
+    }
+
+    if ($AssemblyLoaded) {
+        Write-Verbose "Attempting to get device location..."
+        try {
+            $GeoWatcher = New-Object System.Device.Location.GeoCoordinateWatcher
+            $GeoWatcher.Start()
+            
+            Write-Verbose "Waiting 1 second for device watcher to initialize..."
+            Start-Sleep -Seconds 1
+            
+            $startTime = Get-Date
+            $timeoutSeconds = 10 
+
+            while ($GeoWatcher.Status -eq 'Initializing') {
+                if ($GeoWatcher.Permission -eq 'Denied') { break }
+                if (((Get-Date) - $startTime).TotalSeconds -ge $timeoutSeconds) { break }
+                Start-Sleep -Milliseconds 100
+            }
+
+            if ($GeoWatcher.Permission -eq 'Denied') {
+                Write-Warning 'Access Denied for device location.'
+            } 
+            elseif ($GeoWatcher.Status -eq 'Ready') {
+                Write-Verbose "Device location acquired."
+                $loc = $GeoWatcher.Position.Location
+                
+                # Removed the Get-AddressFromCoordinates call
+                $location = [pscustomobject]@{
+                    Latitude  = $loc.Latitude
+                    Longitude = $loc.Longitude
+                    Source    = 'Device'
+                }
+            }
+            elseif ($GeoWatcher.Status -eq 'Initializing') {
+                 Write-Warning "Device location timed out after $($timeoutSeconds + 1) seconds."
+                 $GeoWatcher.Stop()
+            }
+            else {
+                 Write-Warning "Device location service failed. Status: $($GeoWatcher.Status)."
+            }
+        }
+        catch {
+            Write-Warning "An unexpected error occurred with the device location service. Error: $_"
+        }
+    }
+
+    if (-not $location) {
+        Write-Warning "Falling back to IP-based location."
+        $location = Get-IPLocation 
+    }
+    
+    return $location
+}
+
+# Helper function for IP-based fallback
+Function Get-IPLocation {
+    try {
+        $uri = "http://ip-api.com/json/?fields=status,message,lat,lon,city,country"
+        Write-Verbose "Attempting IP-based geolocation fallback..."
+        $location = Invoke-RestMethod -Uri $uri -UseBasicParsing -TimeoutSec 5
+        
+        if ($location.status -eq 'success' -and $location.lat -and $location.lon) {
+            Write-Host "Using approximate location based on IP: $($location.city), $($location.country)." -ForegroundColor Yellow
+            return [pscustomobject]@{
+                Latitude  = $location.lat
+                Longitude = $location.lon
+                City      = $location.city
+                Country   = $location.country
+                Source    = 'IP' # Add source for clarity
+            }
+        } else {
+            Write-Verbose "IP-based geolocation failed: $($location.message)"
+            return $null
+        }
+    }
+    catch {
+        Write-Error "Failed to get location from IP API. $_"
         return $null
     }
 }
@@ -224,9 +354,14 @@ Function Resolve-StreamUrl {
     }
     elseif ($url -match '\.pls(\?|$)') {
         try {
-            $content = (Invoke-WebRequest -Uri $url -UseBasicParsing).Content
-            $fileLine = $content -split "`n" | Where-Object { $_ -match '^File1=' } | Select-Object -First 1
-            if ($fileLine) { $resolvedUrl = $fileLine -replace '^File1=', '' }
+            # Bypass cloudflare by predicting the direct stream url from pls path
+            if ($url -match ".*/(?<feed>[^\.]+)\.pls") {
+                $feedName = $matches['feed']
+                $resolvedUrl = "http://d.liveatc.net/$feedName"
+            }
+            else {
+                Write-Warning "Could not parse feed name from the provided PLS URL. Falling back to original"
+            }
         }
         catch {
             Write-Warning "Failed to resolve PLS URL. Falling back to original URL."
@@ -544,7 +679,6 @@ Function Select-ATCStreamFZF {
             "{0}, {1}" -f $_.City, $_.'Country'
         }
         "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
-        #"[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
     }
 
     $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
@@ -566,7 +700,6 @@ Function Select-ATCStreamFZF {
         }
 
         $formattedEntry = "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
-        #$formattedEntry = "[{0}, {1}] {2} ({4}/{5}) | {3}{6}" -f $_.City, $_.'Country', $_.'Airport Name', $_.'Channel Description', $_.'ICAO', $_.'IATA', $webcamInfo
         $formattedEntry -eq $selectedChoice
     }
 
@@ -1363,9 +1496,85 @@ else {
 }
 
 
-$lofiMusicUrl = $LofiSource
+# Set the source to the genre's URL
+if ($LofiGenre -and (-not $PSBoundParameters.ContainsKey('LofiSource'))) {
+    $lofiMusicUrl = $LofiGenres[$LofiGenre]
+}
+else {
+    $lofiMusicUrl = $LofiSource
+}
+
 $atcSources = Import-ATCSource -csvPath $csvPath
 $favorites = Get-Favorite -path $favoritesJson
+
+if ($Nearby) {
+    # Check if an ICAO was also provided
+    if ($ICAO) {
+        Write-Host "-Nearby switch detected, ignoring -ICAO $ICAO." -ForegroundColor Yellow
+        $ICAO = $null
+    }
+
+    $currentUserLocation = Get-CurrentCoordinates
+    
+    if (-not $currentUserLocation) {
+        Write-Error "Could not determine your location (both device and IP methods failed). Please select manually."
+    }
+    else {
+        $locationLabel = if ($currentUserLocation.Source -eq 'Device') {
+            "your current device location"
+        } else {
+            # Use the city/country from the IP lookup
+            "$($currentUserLocation.City), $($currentUserLocation.Country)"
+        }
+        Write-Host "Finding airports near $locationLabel..." -ForegroundColor Green
+        
+        if (-not $script:AirportData) { Get-AirportInfo -ICAO "KLAX" | Out-Null } # Pre-load database if not already loaded
+        $allAirports = $script:AirportData.PSObject.Properties | ForEach-Object { $_.Value }
+
+        # Calculate distance for each
+        $nearbyList = foreach ($airport in $allAirports) {
+            if ($atcSources.ICAO -contains $airport.icao) {
+                $distance = Get-DistanceKm -Lat1 $currentUserLocation.Latitude -Lon1 $currentUserLocation.Longitude -Lat2 $airport.lat -Lon2 $airport.lon
+                
+                [pscustomobject]@{
+                    ICAO     = $airport.icao
+                    Name     = $airport.name
+                    City     = $airport.city
+                    Country  = $airport.country
+                    Distance = $distance
+                }
+            }
+        }
+
+        $sortedAirports = $nearbyList | 
+          Where-Object { $_.Distance -lt $NearbyRadius } |
+          Sort-Object Distance | 
+          Select-Object -First 50
+        
+        if ($sortedAirports.Count -eq 0) {
+            Write-Error "No LiveATC streams found near your location."
+            Write-Host "Tip: You can specify a larger search area with the -NearbyRadius parameter (e.g., -NearbyRadius 2000)" -ForegroundColor Cyan
+        } else {
+            $choices = $sortedAirports | ForEach-Object {
+                "[{0}] {1}, {2} ({3}km away)" -f $_.ICAO, $_.Name, $_.City, ([math]::Round($_.Distance))
+            }
+
+            $prompt = "Select a nearby airport:"
+            $selectedChoice = if ($UseFZF) {
+                Select-ItemFZF -prompt $prompt -items $choices
+            } else {
+                Select-Item -prompt $prompt -items $choices
+            }
+
+            if ($selectedChoice -match "^\[(?<icao>\w{4})\]") {
+                $ICAO = $matches.icao 
+            } else {
+                Write-Error "Invalid selection. Exiting."
+                exit
+            }
+        }
+    }
+}
 
 $selectedATC = $null
 if ($ICAO) {

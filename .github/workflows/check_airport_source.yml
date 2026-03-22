@@ -1,0 +1,34 @@
+name: Check Airport Source
+
+permissions:
+  contents: write
+  pull-requests: read
+
+on:
+  push:
+    paths: [ "atc_sources.csv" ]
+  pull_request:
+    paths: [ "atc_sources.csv" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Check Airport Source (same-repo branches)
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' &&
+           github.event.pull_request.head.repo.full_name == github.repository)
+        shell: pwsh
+        run: ./tools/Check-AirportSource.ps1
+
+      - name: Verify (fork PRs)
+        if: |
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name != github.repository
+        shell: pwsh
+        run: ./tools/Check-AirportSource.ps1

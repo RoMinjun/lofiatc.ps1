@@ -1,38 +1,93 @@
 param(
-    [Parameter(Mandatory = $true)]
+    # ValueFromRemainingArguments allows you to pass space-separated codes easily
+    [Parameter(Mandatory = $true, ValueFromRemainingArguments = $true)]
     [string[]]$ICAO,
+
+    [Parameter()]
     [string]$OutCsv = "fetched_sources.csv"
 )
 
 # Normalize ICAO input: split on commas/whitespace, trim, uppercase, unique
 $icaoList =
-    $ICAO
-    | ForEach-Object { ($_ -split '[,\s]+') }
-    | Where-Object { $_ -and $_.Trim() -ne '' }
-    | ForEach-Object { $_.Trim().ToUpper() }
-    | Select-Object -Unique
+    $ICAO | ForEach-Object { ($_ -split '[,\s]+') } |
+    Where-Object { $_ -and $_.Trim() -ne '' } |
+    ForEach-Object { $_.Trim().ToUpper() } |
+    Select-Object -Unique
 
 if (-not $icaoList -or $icaoList.Count -eq 0) {
     Write-Error "No valid ICAO codes provided."
     exit 1
 }
 
-# Function to fetch ATC sources from liveatc.net for a single ICAO
-Function Get-LiveATCSources {
+# --- NEW: Function to check if FlareSolverr is alive ---
+Function Test-FlareSolverrConnection {
+    $baseUrl = "http://localhost:8191/"
+    try {
+        Write-Host "Checking connection to FlareSolverr..." -NoNewline
+        $response = Invoke-RestMethod -Uri $baseUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
+        
+        # FlareSolverr usually returns a JSON with a 'msg' property saying it's ready
+        if ($response.msg -match "FlareSolverr") {
+            Write-Host " OK! (Version: $($response.version))" -ForegroundColor Green
+            return $true
+        }
+        
+        Write-Host " Failed! Unexpected response." -ForegroundColor Red
+        return $false
+    }
+    catch {
+        Write-Host " Failed!" -ForegroundColor Red
+        return $false
+    }
+}
+
+# Function to request HTML through FlareSolverr
+Function Get-HtmlViaFlareSolverr {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Icao
+        [string]$TargetUrl
     )
-    $url = "https://www.liveatc.net/search/?icao=$Icao"
-    try {
-        Write-Host "Fetching ATC sources for $Icao ($url)..."
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $htmlContent = $response.Content
+    
+    $flareSolverrUrl = "http://localhost:8191/v1"
+    
+    $payload = @{
+        cmd = "request.get"
+        url = $TargetUrl
+        maxTimeout = 60000
+    } | ConvertTo-Json -Depth 2
 
+    try {
+        Write-Host "Asking FlareSolverr to fetch: $TargetUrl"
+        $response = Invoke-RestMethod -Uri $flareSolverrUrl `
+                                      -Method Post `
+                                      -Body $payload `
+                                      -ContentType "application/json" `
+                                      -TimeoutSec 120
+
+        if ($response.solution.response) {
+            return $response.solution.response
+        } else {
+            Write-Error "FlareSolverr returned a response, but no HTML was found."
+            return $null
+        }
+    }
+    catch {
+        Write-Error "Failed to fetch via FlareSolverr. Exception: $_"
+        return $null
+    }
+}
+
+# Function to parse ATC sources from raw HTML
+Function Parse-LiveATCSources {
+    param(
+        [Parameter(Mandatory = $true)][string]$HtmlContent,
+        [Parameter(Mandatory = $true)][string]$Icao
+    )
+    try {
         $atcSources = @()
         $currentFeedName = ""
 
-        $htmlContent -split '<tr>' | ForEach-Object {
+        $HtmlContent -split '<tr>' | ForEach-Object {
             $row = $_.Trim()
 
             if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<feedName>[^<]+)</strong>') {
@@ -50,34 +105,22 @@ Function Get-LiveATCSources {
         return $atcSources
     }
     catch {
-        Write-Error "[$Icao] Failed to fetch ATC sources. Exception: $_"
+        Write-Error "[$Icao] Failed to parse ATC sources. Exception: $_"
         return @()
     }
 }
 
-# Function to fetch airport details from liveatc.net for a single ICAO
-Function Get-AirportDetails {
+# Function to parse airport details from raw HTML
+Function Parse-AirportDetails {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Icao
+        [Parameter(Mandatory = $true)][string]$HtmlContent
     )
-    $url = "https://www.liveatc.net/search/?icao=$Icao"
     try {
-        Write-Host "Fetching airport details for $Icao ($url)..."
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
-        $htmlContent = $response.Content
-
         $airportDetails = @()
+        $icao = ""; $iata = ""; $airportName = ""; $city = ""
+        $province = ""; $country = ""; $continent = ""
 
-        $icao = ""
-        $iata = ""
-        $airportName = ""
-        $city = ""
-        $province = ""
-        $country = ""
-        $continent = ""
-
-        $htmlContent -split '<tr>' | ForEach-Object {
+        $HtmlContent -split '<tr>' | ForEach-Object {
             $row = $_.Trim()
 
             if ($row -match '<td[^>]*>\s*<strong>ICAO:\s*</strong>(?<icao>[^<]+)\s*<strong>&nbsp;&nbsp;IATA:\s*</strong>(?<iata>[^<]+)\s*&nbsp;&nbsp;<strong>Airport:</strong>\s*(?<airport>[^<]+)') {
@@ -109,12 +152,12 @@ Function Get-AirportDetails {
         return $airportDetails
     }
     catch {
-        Write-Error "[$Icao] Failed to fetch airport details. Exception: $_"
+        Write-Error "Failed to parse airport details. Exception: $_"
         return @()
     }
 }
 
-# Function to save combined data to a CSV file with the preferred column order
+# Function to save combined data to a CSV file
 Function Save-CombinedDataToCSV {
     param (
         [array]$atcSources,
@@ -170,15 +213,31 @@ Function Save-CombinedDataToCSV {
     }
 }
 
+
+# Run the health check before proceeding
+if (-not (Test-FlareSolverrConnection)) {
+    Write-Warning "FlareSolverr is not running or unreachable at http://localhost:8191/."
+    Write-Warning "Please ensure the FlareSolverr Docker container or background process is active."
+    exit 1
+}
+
 $allAtcSources   = @()
 $allAirportInfos = @()
 
 foreach ($code in $icaoList) {
-    $sources = Get-LiveATCSources -Icao $code
-    $details = Get-AirportDetails -Icao $code
-
-    if ($sources) { $allAtcSources += $sources }
-    if ($details) { $allAirportInfos += $details }
+    $url = "https://www.liveatc.net/search/?icao=$code"
+    
+    # Fetch HTML once via FlareSolverr
+    $rawHtml = Get-HtmlViaFlareSolverr -TargetUrl $url
+    
+    if ($null -ne $rawHtml) {
+        # Parse the single payload for both datasets
+        $sources = Parse-LiveATCSources -HtmlContent $rawHtml -Icao $code
+        $details = Parse-AirportDetails -HtmlContent $rawHtml
+        
+        if ($sources) { $allAtcSources += $sources }
+        if ($details) { $allAirportInfos += $details }
+    }
 }
 
 if ($allAtcSources.Count -gt 0) {

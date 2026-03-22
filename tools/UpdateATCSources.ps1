@@ -1,12 +1,9 @@
-# UpdateATCSources.ps1
 param(
   [switch]$SortOnly,
   [switch]$InPlace,
-  [string]$InputCsvPath,      # optional override
-  [string]$OutputCsvPath      # optional override
+  [string]$InputCsvPath,
+  [string]$OutputCsvPath
 )
-
-# --- Helpers ---------------------------------------------------------------
 
 function Get-ScriptRoot {
   if ($PSCommandPath) { Split-Path -Parent $PSCommandPath }
@@ -40,21 +37,103 @@ function Write-AtcCsv {
     [Parameter(Mandatory)][string]$Path
   )
   $cols = Get-ColumnOrder
-  $Rows | Select-Object $cols | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
+  $Rows | Select-Object $cols -Unique | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
   Write-Host "`nWrote: $Path"
 }
 
-# --- Paths ----------------------------------------------------------------
+# Test proxy connection
+Function Test-FlareSolverrConnection {
+    $baseUrl = "http://localhost:8191/"
+    try {
+        Write-Host "Checking connection to FlareSolverr..." -NoNewline
+        $response = Invoke-RestMethod -Uri $baseUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
+        
+        if ($response.msg -match "FlareSolverr") {
+            Write-Host " OK! (Version: $($response.version))" -ForegroundColor Green
+            return $true
+        }
+        
+        Write-Host " Failed! Unexpected response." -ForegroundColor Red
+        return $false
+    }
+    catch {
+        Write-Host " Failed!" -ForegroundColor Red
+        return $false
+    }
+}
+
+Function Get-HtmlViaFlareSolverr {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$TargetUrl
+    )
+    
+    $flareSolverrUrl = "http://localhost:8191/v1"
+    
+    $payload = @{
+        cmd = "request.get"
+        url = $TargetUrl
+        maxTimeout = 60000
+    } | ConvertTo-Json -Depth 2
+
+    try {
+        Write-Host "Asking FlareSolverr to fetch: $TargetUrl"
+        $response = Invoke-RestMethod -Uri $flareSolverrUrl `
+                                      -Method Post `
+                                      -Body $payload `
+                                      -ContentType "application/json" `
+                                      -TimeoutSec 120
+
+        if ($response.solution.response) {
+            return $response.solution.response
+        } else {
+            Write-Error "FlareSolverr returned a response, but no HTML was found."
+            return $null
+        }
+    }
+    catch {
+        Write-Error "Failed to fetch via FlareSolverr. Exception: $_"
+        return $null
+    }
+}
+
+Function Parse-LiveATCSources {
+  param (
+    [Parameter(Mandatory = $true)][string]$HtmlContent,
+    [Parameter(Mandatory = $true)][string]$Icao
+  )
+  try {
+    $atcSources = @()
+    $currentFeedName = ""
+    
+    $HtmlContent -split '<tr>' | ForEach-Object {
+      $row = $_.Trim()
+      if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<feedName>[^<]+)</strong>') {
+        $currentFeedName = $matches['feedName'].Trim()
+      }
+      elseif ($row -match '<a href="(?<url>[^"]+\.pls)"') {
+        $atcSources += [PSCustomObject]@{
+          ICAO    = $Icao
+          Channel = $currentFeedName
+          URL     = "https://www.liveatc.net" + $matches['url'].Trim()
+        }
+      }
+    }
+    return $atcSources
+  }
+  catch {
+    Write-Error "[$Icao] Failed to parse ATC sources. Exception: $_"
+    return @()
+  }
+}
 
 $scriptDir = Get-ScriptRoot
 $inputCsv  = if ($InputCsvPath) { Resolve-Path $InputCsvPath -ErrorAction Stop }
-            else { Resolve-Path (Join-Path $scriptDir '..\atc_sources.csv') -ErrorAction Stop }
+             else { Resolve-Path (Join-Path $scriptDir '..\atc_sources.csv') -ErrorAction Stop }
 $csvDir    = Split-Path -Parent $inputCsv
 
-# Default output for fetch-mode (legacy behavior)
+# Default output for fetch-mode
 $defaultFetchOut = Join-Path $csvDir 'liveatc_sources.csv'
-
-# --- SortOnly short-circuit -----------------------------------------------
 
 if ($SortOnly) {
   $rows = Import-Csv $inputCsv
@@ -64,43 +143,11 @@ if ($SortOnly) {
   return
 }
 
-# --- Fetch mode (original behavior), then sort ----------------------------
-
-# Function to fetch ATC sources from liveatc.net
-Function Get-LiveATCSources {
-  param (
-    [string]$Url = "https://www.liveatc.net/search/?icao=EHAM"
-  )
-  try {
-    # Extract ICAO from the URL
-    $icaoFromUrl = $Url -replace ".*icao=([^&]+).*", '$1'
-
-    # Fetch HTML
-    $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
-    $htmlContent = $response.Content
-
-    # Parse for .pls links
-    $atcSources = @()
-    $currentFeedName = ""
-    $htmlContent -split '<tr>' | ForEach-Object {
-      $row = $_.Trim()
-      if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<feedName>[^<]+)</strong>') {
-        $currentFeedName = $matches['feedName'].Trim()
-      }
-      elseif ($row -match '<a href="(?<url>[^"]+\.pls)"') {
-        $atcSources += [PSCustomObject]@{
-          ICAO    = $icaoFromUrl
-          Channel = $currentFeedName
-          URL     = "https://www.liveatc.net" + $matches['url'].Trim()
-        }
-      }
-    }
-    return $atcSources
-  }
-  catch {
-    Write-Error "Error fetching $($Url): $_"
-    return @()
-  }
+# Run the health check before proceeding with network operations
+if (-not (Test-FlareSolverrConnection)) {
+    Write-Warning "FlareSolverr is not running or unreachable at http://localhost:8191/."
+    Write-Warning "Please ensure the FlareSolverr background process is active."
+    exit 1
 }
 
 # Figure out input rows
@@ -115,13 +162,23 @@ foreach ($row in $origRows) {
   }
 }
 
-# Fetch once per distinct ICAO
+# Fetch once per distinct ICAO using FlareSolverr
 $icaoCache = @{}
 $origRows |
-  Select-Object -Expand ICAO -Unique |
+  Select-Object -ExpandProperty ICAO -Unique |
+  Where-Object { [string]::IsNullOrWhiteSpace($_) -eq $false } |
   ForEach-Object {
-    Write-Host "Fetching channels for $_…"
-    $icaoCache[$_] = Get-LiveATCSources -Url "https://www.liveatc.net/search/?icao=$_"
+    $icao = $_
+    Write-Host "Processing channels for $icao…"
+    
+    $url = "https://www.liveatc.net/search/?icao=$icao"
+    $rawHtml = Get-HtmlViaFlareSolverr -TargetUrl $url
+    
+    if ($null -ne $rawHtml) {
+        $icaoCache[$icao] = Parse-LiveATCSources -HtmlContent $rawHtml -Icao $icao
+    } else {
+        $icaoCache[$icao] = @()
+    }
   }
 
 # Build output: one row per fetched source
@@ -156,4 +213,3 @@ $outPath = if ($OutputCsvPath) { $OutputCsvPath } else { $defaultFetchOut }
 
 # Write CSV in canonical column order
 Write-AtcCsv -Rows $sorted -Path $outPath
-
