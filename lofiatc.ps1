@@ -65,6 +65,9 @@ Generates and opens an interactive HTML map in your browser showing all availabl
 
 .PARAMETER NoWeather
 Skips the live METAR weather fetch when loading the map to vastly improve startup speed.
+
+.PARAMETER Dark
+Initializes the HTML Map in Dark Mode.
 #>
 
 [CmdletBinding()]
@@ -91,7 +94,8 @@ param (
     [switch]$Nearby,
     [int]$NearbyRadius = 500,
     [switch]$ShowMap,
-    [switch]$NoWeather
+    [switch]$NoWeather,
+    [switch]$Dark
 )
 
 $LofiGenres = @{
@@ -787,7 +791,7 @@ Function Write-Welcome {
     $weather = Get-Emoji 0x1F326 -VS16; $wind = Get-Emoji 0x1F32C -VS16; $eye = Get-Emoji 0x1F441 -VS16; $cloud = Get-Emoji 0x2601 -VS16; $thermometer = Get-Emoji 0x1F321 -VS16
     $droplet = Get-Emoji 0x1F4A7; $barometer = Get-Emoji 0x1F4CF; $note = Get-Emoji 0x1F4DD; $sunrise = Get-Emoji 0x1F305; $sunset = Get-Emoji 0x1F304
     $antenna = Get-Emoji 0x1F4E1; $mic = Get-Emoji 0x1F5E3 -VS16; $headphones = Get-Emoji 0x1F3A7; $camera = Get-Emoji 0x1F3A5; $link = Get-Emoji 0x1F517
-    $hourglass = Get-Emoji 0x23F3; $radar = Get-Emoji 0x1F4E1;
+    $hourglass = Get-Emoji 0x23F3; $radar = Get-Emoji 0x1F4E1
 
     $fallbacks = if ($airportInfo.NearbyICAOs) { $airportInfo.NearbyICAOs -split ';' } else { @() }
     $metarInfo = Get-METAR-TAF -ICAO $airportInfo.ICAO -FallbackICAOs $Fallbacks
@@ -938,7 +942,8 @@ Function Select-ATCMap {
         [object]$UserLocation,
         [int]$Radius,
         [switch]$IncludeWebcamIfAvailable,
-        [switch]$NoWeather
+        [switch]$NoWeather,
+        [switch]$Dark
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -1087,11 +1092,11 @@ Function Select-ATCMap {
 
                 $camIcon = ""
                 if (-not [string]::IsNullOrWhiteSpace($cam) -and $IncludeWebcamIfAvailable) {
-                    $camIcon = " $camera"
+                    $camIcon = " 📷"
                     $hasWebcamGlobal = $true
                 }
 
-                $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoCode', '$desc')`" style=`"color: #a2a2bd; text-decoration: none; transition: 0.2s;`" onmouseover=`"this.style.color='#fff'`" onmouseout=`"this.style.color='#a2a2bd'`">$desc</a>$camIcon"
+                $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoCode', '$desc')`" class=`"channel-link`">$desc</a>$camIcon"
             }
 
             $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
@@ -1173,6 +1178,10 @@ Function Select-ATCMap {
     $webcamLegendItem = if ($IncludeWebcamIfAvailable) { '<label class="legend-item" title="This ATC feed includes a live webcam link."><input type="checkbox" class="filter-cb" value="cam" checked> <span class="legend-color color-purple"></span> Has Webcam</label>' } else { "" }
     $locationLegendItem = if ($UserLocation) { '<div class="legend-item" title="Your current device or IP-based location." style="cursor:help; padding-left: 22px;"><span class="legend-color color-green"></span> Your Location</div>' } else { "" }
 
+    $darkModeClass = if ($Dark) { ' class="dark-mode"' } else { '' }
+    $darkModeChecked = if ($Dark) { 'checked' } else { '' }
+    $isDarkJs = if ($Dark) { 'true' } else { 'false' }
+
     $htmlContent = @"
 <!DOCTYPE html>
 <html>
@@ -1182,28 +1191,52 @@ Function Select-ATCMap {
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: #0b0f19; overflow: hidden; }
+        :root {
+            --bg-color: #f4f6f8;
+            --overlay-bg: rgba(255, 255, 255, 0.9);
+            --text-primary: #1a1a2e;
+            --text-secondary: #4a4a6a;
+            --border-color: #ddd;
+            --popup-bg: rgba(255, 255, 255, 0.95);
+            --divider: #ddd;
+            --hover-color: #1a1a2e;
+        }
+        body.dark-mode {
+            --bg-color: #0b0f19;
+            --overlay-bg: rgba(11, 15, 25, 0.85);
+            --text-primary: #fff;
+            --text-secondary: #a2a2bd;
+            --border-color: #333;
+            --popup-bg: rgba(22, 33, 62, 0.95);
+            --divider: #333;
+            --hover-color: #fff;
+        }
+
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); overflow: hidden; transition: background-color 0.3s; }
         #map { height: 100%; width: 100%; z-index: 1; }
 
-        #brand-overlay { position: absolute; top: 20px; right: 20px; z-index: 1000; background: rgba(11, 15, 25, 0.85); color: #fff; padding: 15px 25px; border-radius: 8px; border-left: 5px solid #e94560; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; backdrop-filter: blur(4px); }
+        #brand-overlay { position: absolute; top: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-primary); padding: 15px 25px; border-radius: 8px; border-left: 5px solid #e94560; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; backdrop-filter: blur(4px); transition: 0.3s;}
         #brand-overlay h1 { margin: 0 0 5px 0; font-size: 26px; font-weight: 800; letter-spacing: 1px; }
         #brand-overlay h1 span { color: #e94560; }
-        #brand-overlay p { margin: 0; font-size: 13px; color: #a2a2bd; }
+        #brand-overlay p { margin: 0; font-size: 13px; color: var(--text-secondary); }
         #brand-overlay .sub-text { font-size: 11px; opacity: 0.6; margin-top: 3px; font-style: italic; }
 
         #search-container { position: absolute; top: 20px; left: 60px; z-index: 1000; }
-        #map-search { background: rgba(11, 15, 25, 0.85); border: 1px solid #333; color: white; padding: 10px 15px; border-radius: 20px; width: 280px; outline: none; backdrop-filter: blur(4px); font-size: 14px; transition: background 0.3s;}
+        #map-search { background: var(--overlay-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 10px 15px; border-radius: 20px; width: 280px; outline: none; backdrop-filter: blur(4px); font-size: 14px; transition: 0.3s;}
+        #map-search::placeholder { color: var(--text-secondary); opacity: 0.8; }
 
-        #legend-overlay { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: rgba(11, 15, 25, 0.85); color: #a2a2bd; padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); backdrop-filter: blur(4px); font-size: 13px; }
-        .legend-item { display: flex; align-items: center; margin-bottom: 8px; cursor: help; user-select: none; }
+        #legend-overlay { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-secondary); padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); backdrop-filter: blur(4px); font-size: 13px; transition: 0.3s; }
+        .legend-section-title { margin-bottom:8px; font-weight:bold; color:var(--text-primary); border-bottom:1px solid var(--divider); padding-bottom:4px; padding-left:3px; cursor:default; }
+
+        .legend-item { display: flex; align-items: center; margin-bottom: 8px; cursor: help; user-select: none; color: var(--text-secondary);}
         .legend-item:last-child { margin-bottom: 0; }
         .legend-item input { margin-right: 8px; accent-color: #e94560; cursor: pointer; }
         .legend-color { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; box-shadow: 0 0 3px rgba(0,0,0,0.8); }
 
         /* Credit Overlay Styling */
-        #credit-overlay { position: absolute; bottom: 15px; left: 10px; z-index: 1000; background: rgba(11, 15, 25, 0.6); color: #a2a2bd; padding: 5px 10px; border-radius: 4px; backdrop-filter: blur(2px); font-size: 11px; pointer-events: auto; cursor: default; }
+        #credit-overlay { position: absolute; bottom: 15px; left: 10px; z-index: 1000; background: var(--overlay-bg); color: var(--text-secondary); padding: 5px 10px; border-radius: 4px; backdrop-filter: blur(2px); font-size: 11px; pointer-events: auto; cursor: default; transition: 0.3s; }
         #credit-overlay a { color: #e94560; text-decoration: none; font-weight: bold; transition: 0.2s; }
-        #credit-overlay a:hover { color: #fff; text-decoration: underline; }
+        #credit-overlay a:hover { color: var(--text-primary); text-decoration: underline; }
 
         .color-vfr { background-color: #2ecc71; }
         .color-mvfr { background-color: #3498db; }
@@ -1214,19 +1247,27 @@ Function Select-ATCMap {
         .color-unk { background-color: #95a5a6; }
         .color-blue { background-color: #2A81CB; }
 
-        .leaflet-popup-content-wrapper { background: rgba(22, 33, 62, 0.95); color: #fff; border-radius: 6px; box-shadow: 0 0 10px rgba(0,0,0,0.5); backdrop-filter: blur(3px); }
-        .leaflet-popup-tip { background: rgba(22, 33, 62, 0.95); }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--popup-bg); color: var(--text-primary); transition: background 0.3s, color 0.3s; }
         .leaflet-popup-content b { font-size: 14px; display: block; color: #e94560; padding-bottom: 4px;}
         .fav-star { color: #e94560; }
         .wind-arrow { pointer-events: none; }
 
-        #starting-screen { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background:#0b0f19; z-index: 9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
-        .content-box { z-index: 10; background: rgba(11, 15, 25, 0.9); padding: 40px; border-radius: 20px; border: 1px solid #333; backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+        .metar-box { margin: 6px 0; padding: 6px; border-radius: 4px; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(0,0,0,0.05); color: var(--text-secondary); transition: background 0.3s;}
+        body.dark-mode .metar-box { background: rgba(0,0,0,0.5); }
+
+        .channel-link { color: var(--text-secondary); text-decoration: none; transition: 0.2s; }
+        .channel-link:hover { color: var(--hover-color); text-decoration: underline;}
+
+        #starting-screen { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-color); z-index: 9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition: 0.3s;}
+        .content-box { z-index: 10; background: var(--overlay-bg); padding: 40px; border-radius: 20px; border: 1px solid var(--border-color); backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.3); transition: 0.3s; }
+        .content-box h1 { color: var(--text-primary); margin:0; font-size: 2.8em; letter-spacing: 2px; font-weight: 800; transition: color 0.3s; }
+        .content-box p { color: var(--text-secondary); font-size: 1.3em; margin-bottom: 20px; transition: color 0.3s;}
         .main-img { max-width: 600px; width: 85%; border-radius: 12px; border: 2px solid #e94560; margin-top: 25px; box-shadow: 0 0 20px rgba(233, 69, 96, 0.3); }
-        .bg-gif { position: absolute; bottom: 0; left: 0; width: 100%; height: 25vh; object-fit: cover; opacity: 0.4; z-index: 1; pointer-events: none; }
+        .bg-gif { position: absolute; bottom: 0; left: 0; width: 100%; height: 25vh; object-fit: cover; opacity: 0.4; z-index: 1; pointer-events: none; mix-blend-mode: multiply;}
+        body.dark-mode .bg-gif { mix-blend-mode: screen; }
     </style>
 </head>
-<body>
+<body$darkModeClass>
     <div id="search-container">
         <input type="text" id="map-search" placeholder="Search ICAO, City, or Country... (Press Enter)">
     </div>
@@ -1238,15 +1279,16 @@ Function Select-ATCMap {
     </div>
 
     <div id="legend-overlay">
-        <div style="margin-bottom:8px; font-weight:bold; color:#fff; border-bottom:1px solid #333; padding-bottom:4px; padding-left:3px; cursor:default;">Map Filters</div>
+        <div class="legend-section-title">Map Filters</div>
         $weatherLegendItems
         $webcamLegendItem
         <label class="legend-item" title="Airports saved to your favorites. They grow larger the more you listen!"><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorite</label>
         $locationLegendItem
 
-        <div style="margin-top:10px; margin-bottom:8px; font-weight:bold; color:#fff; border-bottom:1px solid #333; padding-bottom:4px; padding-left:3px; cursor:default;">Overlays</div>
+        <div class="legend-section-title" style="margin-top:10px;">Overlays</div>
         <label class="legend-item" title="Toggle live RainViewer precipitation overlay. Updates every 10 mins."><input type="checkbox" id="toggle-weather"> Weather Radar</label>
         $windToggle
+        <label class="legend-item" title="Toggle Dark/Light Mode"><input type="checkbox" id="toggle-theme" $darkModeChecked> Dark Mode</label>
     </div>
 
     <div id="credit-overlay">made with <span style="color: #e94560;">&#x2764;</span> by <a href="https://github.com/RoMinjun" target="_blank">RoMinjun</a></div>
@@ -1255,8 +1297,8 @@ Function Select-ATCMap {
 
     <div id="starting-screen">
         <div class="content-box">
-            <h1 style="color:white; margin:0; font-size: 2.8em; letter-spacing: 2px; font-weight: 800;">Lofi<span style="color:#e94560">ATC</span> Initialized</h1>
-            <p style="color:#a2a2bd; font-size: 1.3em; margin-bottom: 20px;">Connecting to frequency... You can safely close this tab.</p>
+            <h1>Lofi<span style="color:#e94560">ATC</span> Initialized</h1>
+            <p>Connecting to frequency... You can safely close this tab.</p>
             <img class="main-img" src="https://camo.githubusercontent.com/4a7d03bddbd75ed0b0fbd44640b6185fbf6e50ea9f86512aefec3e483d0bcc7f/68747470733a2f2f692e726564642e69742f387375663773357977716164312e6a706567">
         </div>
         <img class="bg-gif" src="https://camo.githubusercontent.com/417cf116a22b01c8cef61846f506abeed2f4dc0a641c488f5e027fbba151f245/68747470733a2f2f7668732e636861726d2e73682f7668732d314c4f785739597477416a3656346e3746664e5341682e676966">
@@ -1269,9 +1311,24 @@ Function Select-ATCMap {
         }
 
         var map = L.map('map').setView([20, 0], 2);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+
+        var isDarkInitial = $isDarkJs;
+        var lightTileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+        var darkTileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+        var mapTileLayer = L.tileLayer(isDarkInitial ? darkTileUrl : lightTileUrl, {
             maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO'
         }).addTo(map);
+
+        document.getElementById('toggle-theme').addEventListener('change', function(e) {
+            if (e.target.checked) {
+                document.body.classList.add('dark-mode');
+                mapTileLayer.setUrl(darkTileUrl);
+            } else {
+                document.body.classList.remove('dark-mode');
+                mapTileLayer.setUrl(lightTileUrl);
+            }
+        });
 
         var terminatorLayer = L.terminator({ fillOpacity: 0.35, color: '#000', interactive: false }).addTo(map);
         setInterval(function() { terminatorLayer.setTime(); }, 60000);
@@ -1309,7 +1366,6 @@ Function Select-ATCMap {
             var mColor = "#95a5a6";
             var primaryCat = "unk";
 
-            // THE ACTUAL FIX: Properly checking the JS booleans natively
             if (m.isFav) { mColor = "#e94560"; baseRadius = Math.min(5 + (m.favCount * 1.5), 18); primaryCat = "fav"; }
             else if (m.hasCam) { mColor = "#9b59b6"; primaryCat = "cam"; }
             else if (m.fcat === "VFR") { mColor = "#2ecc71"; primaryCat = "vfr"; }
@@ -1321,7 +1377,7 @@ Function Select-ATCMap {
             var titleLabel = m.icao + " - " + m.name;
 
             var popupHTML = "<b>" + favStar + titleLabel + "</b>" +
-                            "<div style='margin: 6px 0; padding: 6px; background: rgba(0,0,0,0.5); border-radius: 4px; font-family: monospace; font-size: 11px; color: #a2a2bd; text-transform: uppercase; letter-spacing: 0.5px; border-left: 2px solid " + mColor + ";'>" + m.rawOb + "</div>" +
+                            "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + m.rawOb + "</div>" +
                             "<div>" + m.desc + "</div>";
 
             var dot = L.circleMarker([m.lat, m.lon], {
@@ -1331,7 +1387,10 @@ Function Select-ATCMap {
             var windArrow = null;
             if (m.wdir !== "null" && m.wspd > 0) {
                 var rot = parseInt(m.wdir) + 180;
-                var arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#fff; text-shadow: 0 0 4px #000, 0 0 6px #000; text-align:center;">&#8593;</div>';
+                var arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#1a1a2e; text-shadow: 0 0 4px #fff, 0 0 6px #fff; text-align:center;">&#8593;</div>';
+                if (document.getElementById('toggle-theme').checked) {
+                    arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#fff; text-shadow: 0 0 4px #000, 0 0 6px #000; text-align:center;">&#8593;</div>';
+                }
                 var wIcon = L.divIcon({ className: 'wind-arrow', html: arrowHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
                 windArrow = L.marker([m.lat, m.lon], { icon: wIcon, interactive: false });
             }
@@ -1341,6 +1400,21 @@ Function Select-ATCMap {
 
             dot.addTo(map);
             if (windArrow) windArrow.addTo(map);
+        });
+
+        // Theme sync for wind arrows
+        document.getElementById('toggle-theme').addEventListener('change', function(e) {
+            var isDark = e.target.checked;
+            allMapItems.forEach(function(item) {
+                if(item.wind) {
+                    var rot = parseInt(item.data.wdir) + 180;
+                    var arrowHtml = isDark ?
+                        '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#fff; text-shadow: 0 0 4px #000, 0 0 6px #000; text-align:center;">&#8593;</div>' :
+                        '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#1a1a2e; text-shadow: 0 0 4px #fff, 0 0 6px #fff; text-align:center;">&#8593;</div>';
+                    var wIcon = L.divIcon({ className: 'wind-arrow', html: arrowHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
+                    item.wind.setIcon(wIcon);
+                }
+            });
         });
 
         function applyFilters() {
@@ -1506,7 +1580,10 @@ if ($LoadConfig) {
         foreach ($prop in $config.PSObject.Properties) {
             $name = $prop.Name
             if ($name -in @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) { continue }
-            if (-not $PSBoundParameters.ContainsKey($name)) { Set-Variable -Name $name -Value $prop.Value -Scope Local }
+
+            if (-not $PSBoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne "") {
+                Set-Variable -Name $name -Value $prop.Value -Scope Local
+            }
         }
         Write-Information "Loaded config from $ConfigPath"
     }
@@ -1523,7 +1600,10 @@ if ($SaveConfig) {
         if ($name -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) {
             $value = Get-Variable -Name $name -ValueOnly
             if ($value -is [System.Management.Automation.SwitchParameter]) { $value = [bool]$value }
-            $config[$name] = $value
+
+            if ($null -ne $value -and $value -ne "") {
+                $config[$name] = $value
+            }
         }
     }
     $config | ConvertTo-Json | Set-Content -Path $ConfigPath
@@ -1582,7 +1662,7 @@ if ($Nearby) {
 $mapSelectedChannel = $null
 
 if ($ShowMap) {
-    $mapSelection = Select-ATCMap -AtcSources $atcSources -Favorites $favorites -CsvPath $csvPath -UserLocation $currentUserLocation -Radius $NearbyRadius -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable -NoWeather:$NoWeather
+    $mapSelection = Select-ATCMap -AtcSources $atcSources -Favorites $favorites -CsvPath $csvPath -UserLocation $currentUserLocation -Radius $NearbyRadius -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable -NoWeather:$NoWeather -Dark:$Dark
 
     if ($mapSelection -and $mapSelection.ICAO) {
         $ICAO = $mapSelection.ICAO
