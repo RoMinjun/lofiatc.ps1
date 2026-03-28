@@ -36,6 +36,7 @@ foreach ($row in $csvData) {
     if ($row.'Stream URL') {
         $streamUrl = $row.'Stream URL'
         try {
+	    # TODO: Rewrite to use directstreaming links to bypass CF
             Invoke-WebRequest -Uri $streamUrl -Method Head -TimeoutSec 20 -ErrorAction Stop | Out-Null
             $streamStatus = "OK"
         } catch {
@@ -47,6 +48,7 @@ foreach ($row in $csvData) {
     if ($row.'Webcam URL') {
         $webcamUrl = $row.'Webcam URL'
         try {
+	    # TODO: Rewrite to use directstreaming links to bypass CF
             Invoke-WebRequest -Uri $webcamUrl -Method Head -TimeoutSec 20 -ErrorAction Stop | Out-Null
             $webcamStatus = "OK"
         } catch {
