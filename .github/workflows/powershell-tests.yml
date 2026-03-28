@@ -7,7 +7,14 @@ on:
       - test
       - feature/**
       - enhancement/**
+    paths:
+      - 'lofiatc.ps1'
+      - 'tests/lofiatc.Tests.ps1'
+
   pull_request:
+    paths:
+      - 'lofiatc.ps1'
+      - 'tests/lofiatc.Tests.ps1'
 
     
 jobs:
