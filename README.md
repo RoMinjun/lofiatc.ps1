@@ -24,6 +24,9 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and d
 ## Airport Info at Your Fingertips! 
 ![Made with VHS](https://vhs.charm.sh/vhs-27zfUBvX3O7fPkWiFHe3T1.gif)
 
+## Select your favorite airport via the map!
+![show sources map](https://raw.githubusercontent.com/RoMinjun/images/main/lofiatc.ps1/show-sources-map.gif)
+
 ---
 
 ![Made with VHS](https://vhs.charm.sh/vhs-1LOxW9YtwAj6V4n7FfNSAh.gif)
@@ -139,7 +142,31 @@ pwsh ./lofiatc.ps1
 # Force a specific player
 .\lofiatc.ps1 -Player mpv
 .\lofiatc.ps1 -Player vlc
+
+# Open the interactive ATC map in your browser
+.\lofiatc.ps1 -ShowMap
+
+# Open the map faster by skipping live weather fetch
+.\lofiatc.ps1 -ShowMap -NoWeather
+
+# Open the map in dark mode
+.\lofiatc.ps1 -ShowMap -Dark
+
+# Show the map centered around your current location, with nearby airport context
+.\lofiatc.ps1 -ShowMap -Nearby
+
+# Open the map and include webcam-enabled feeds where available
+.\lofiatc.ps1 -ShowMap -IncludeWebcamIfAvailable
+
+# Nearby airport selection without the map
+.\lofiatc.ps1 -Nearby
+
+# Nearby airport selection with a custom radius in kilometers
+.\lofiatc.ps1 -Nearby -NearbyRadius 250
 ```
+
+> [!TIP]
+> The interactive map feature works best when your terminal stays open while the browser tab is active.
 
 To explore all features:
 ```powershell
@@ -162,6 +189,14 @@ Get-Help .\lofiatc.ps1 -Full
 | `-LoadConfig`   | switch    | false   | Loads options from `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | `./config.json` | Custom path for saving/loading. |
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
+| `-ICAO`         | string    | none    | Select a specific airport by ICAO code. If multiple channels exist, you’ll be prompted unless `-RandomATC` is used. |
+| `-Nearby`       | switch    | false   | Uses your current location to show or select nearby airports. |
+| `-NearbyRadius` | int       | `500`   | Radius in kilometers used with `-Nearby`. |
+| `-ShowMap`      | switch    | false   | Opens an interactive browser map of available ATC sources. |
+| `-NoWeather`    | switch    | false   | Skips live weather/METAR fetching for the map to improve load speed. |
+| `-Dark`         | switch    | false   | Starts the interactive map in dark mode. |
+| `-NoLofiMusic`  | switch    | false   | Disables the lofi stream and only plays ATC audio. |
+| `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when availab
 
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
@@ -231,6 +266,29 @@ Each time you select a stream, its ICAO and channel are recorded in `favorites.j
 
 <br>
 
+## Interactive Map
+
+Use `-ShowMap` to open an interactive browser map of all available ATC sources.
+
+### What it does
+- Opens a local HTML map in your browser
+- Lets you search by ICAO, city, or country
+- Shows active ATC sources as clickable markers
+- Optionally overlays live weather categories and wind arrows
+- Can highlight webcam-enabled feeds when available
+- Can center the map around your current location when used with `-Nearby`
+
+### Useful combinations
+```powershell
+.\lofiatc.ps1 -ShowMap
+.\lofiatc.ps1 -ShowMap -NoWeather
+.\lofiatc.ps1 -ShowMap -Dark
+.\lofiatc.ps1 -ShowMap -Nearby -NearbyRadius 300
+.\lofiatc.ps1 -ShowMap -IncludeWebcamIfAvailable
+```
+
+<br>
+
 ### Airport Sources
 The script reads ATC streams from `atc_sources.csv`.
 
@@ -285,6 +343,12 @@ Force a specific player any time:
 - **No audio / very low audio:** check OS mixer; ensure per-stream volumes aren’t set to `0`.  
 - **fzf not working:** confirm `fzf` is installed and in `PATH`. Run `fzf --version`.  
 - **yt-dlp errors:** update it to the latest version and retry.
+- **youtube & webcam not loading in player** make sure to update `yt-dlp`, they have made some changes that requires extra packages to be installed for it to work.
+- **Map opens slowly:** use `-ShowMap -NoWeather` to skip live weather fetch and load faster.
+- **Map opens but clicking a channel does nothing:** make sure the PowerShell window is still running in the background; the browser talks back to a temporary local listener started by the script.
+- **Map selection feels stuck:** return to the terminal and press `Q` to cancel the map selection flow.
+- **Nearby airport lookup fails:** location access may be unavailable on your device; the script falls back to IP-based lookup, which is approximate.
+- **No nearby airports found:** try increasing `-NearbyRadius`, for example `-NearbyRadius 1000`.
 
 <br>
 
@@ -292,7 +356,7 @@ Force a specific player any time:
 You can safely delete the repo folder. Optional user files created:
 - `favorites.json`
 - `config.json`
-- locally updated `atc_sources.csv`
+- locally updated `liveatc_sources.csv`
 
 <br>
 
