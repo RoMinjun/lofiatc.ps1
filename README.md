@@ -75,7 +75,7 @@ Ensure you have the following installed before running the script:
     Install with:
     - Windows: `scoop install mpv` or via [mpv.io](https://mpv.io/installation/)
     - Debian based distros: `sudo apt install mpv`
-- **yt-dlp** *(for loading lofi girl)*:
+- **yt-dlp** *(for loading lofi girl & webcam source)*:
     Install with:
     - Windows: `winget install --id=yt-dlp.yt-dlp  -e`
     - Debian based distros: `sudo apt install yt-dlp`
