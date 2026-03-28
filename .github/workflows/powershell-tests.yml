@@ -9,26 +9,23 @@ on:
       - enhancement/**
   pull_request:
 
+    
 jobs:
-  test:
+  pester-test:
     runs-on: windows-latest
 
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - name: Check out repository code
+        uses: actions/checkout@v5
 
-      - name: Set up PowerShell
-        uses: actions/setup-powershell@v2
-
-      - name: Install latest Pester
+      - name: Install Pester
         shell: pwsh
         run: |
           Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
           Import-Module Pester -Force
-          Get-Module Pester -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1 | Format-List Name,Version,Path
 
-      - name: Run tests
+      - name: Run Pester tests
         shell: pwsh
         run: |
           $env:LOFIATC_TEST_MODE = '1'
-          Invoke-Pester -Path ./tests/lofiatc.Tests.ps1 -CI
+          Invoke-Pester ./tests/lofiatc.Tests.ps1 -CI
