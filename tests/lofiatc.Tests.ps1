@@ -4,7 +4,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $scriptPath = Join-Path $repoRoot 'lofiatc.ps1'
 
 $env:LOFIATC_TEST_MODE = '1'
-. $scriptPath
+
+& {
+    . $scriptPath
+}
 
 $script:OnWindows = $false
 $script:AirportData = $null
