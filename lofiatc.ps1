@@ -1571,6 +1571,12 @@ Function Select-ATCMap {
     return $selection
 }
 
+# Allow unit tests to dot-source this script without running the interactive main flow.
+if ($env:LOFIATC_TEST_MODE -eq '1') {
+    return
+}
+
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 if ($LoadConfig) {
