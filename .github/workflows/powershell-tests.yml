@@ -17,15 +17,18 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Ensure Pester is installed
-        shell: powershell
+      - name: Set up PowerShell
+        uses: actions/setup-powershell@v2
+
+      - name: Install latest Pester
+        shell: pwsh
         run: |
-          if (-not (Get-Module -ListAvailable -Name Pester)) {
-            Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
-          }
+          Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -Force
+          Get-Module Pester -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1 | Format-List Name,Version,Path
 
       - name: Run tests
-        shell: powershell
+        shell: pwsh
         run: |
           $env:LOFIATC_TEST_MODE = '1'
-          Invoke-Pester -Path .\tests\lofiatc.Tests.ps1 -EnableExit
+          Invoke-Pester -Path ./tests/lofiatc.Tests.ps1 -CI
