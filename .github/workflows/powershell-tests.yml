@@ -1,0 +1,31 @@
+name: PowerShell Tests
+
+on:
+  push:
+    branches:
+      - main
+      - test
+      - feature/**
+      - enhancement/**
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Pester is installed
+        shell: powershell
+        run: |
+          if (-not (Get-Module -ListAvailable -Name Pester)) {
+            Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
+          }
+
+      - name: Run tests
+        shell: powershell
+        run: |
+          $env:LOFIATC_TEST_MODE = '1'
+          Invoke-Pester -Path .\tests\lofiatc.Tests.ps1 -EnableExit
