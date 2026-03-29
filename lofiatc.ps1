@@ -282,20 +282,50 @@ Function Get-IPLocation {
     }
 }
 
-# Function to determine the appropriate player
+# Function to determine the appropriate player based on user input, system defaults, and availability in PATH
 Function Resolve-Player {
     param([string]$ExplicitPlayer)
 
-    if ($ExplicitPlayer) { return $ExplicitPlayer }
+    if ($ExplicitPlayer) {
+        return $ExplicitPlayer
+    }
 
-    $candidates = if ($OnWindows) {
+    if ($script:OnWindows) {
+        $defaultApp = Get-DefaultAppForMP4
+        $preferredPlayer = $null
+
+        if ($defaultApp) {
+            switch -Regex ($defaultApp.ToLower()) {
+                'vlc'              { $preferredPlayer = 'VLC' }
+                'mpv'              { $preferredPlayer = 'MPV' }
+                'potplayer|daum'   { $preferredPlayer = 'Potplayer' }
+                'mpc|mpc-hc'       { $preferredPlayer = 'MPC-HC' }
+            }
+        }
+
+        if ($preferredPlayer) {
+            $preferredCommand = switch ($preferredPlayer) {
+                'VLC'       { 'vlc.exe' }
+                'MPV'       { 'mpv.com' }
+                'Potplayer' { 'PotPlayerMini64.exe' }
+                'MPC-HC'    { 'mpc-hc64.exe' }
+            }
+
+            if (Get-Command $preferredCommand -ErrorAction SilentlyContinue) {
+                return $preferredPlayer
+            }
+        }
+    }
+
+    $candidates = if ($script:OnWindows) {
         @(
             @{ Name = "MPV"; Command = "mpv.com" }
             @{ Name = "VLC"; Command = "vlc.exe" }
             @{ Name = "Potplayer"; Command = "PotPlayerMini64.exe" }
             @{ Name = "MPC-HC"; Command = "mpc-hc64.exe" }
         )
-    } else {
+    }
+    else {
         @(
             @{ Name = "MPV"; Command = "mpv" }
             @{ Name = "VLC"; Command = "vlc" }
@@ -576,38 +606,6 @@ Function Select-ATCStream {
 }
 
 # Function to select an ATC stream using fzf for filtering, showing webcam availability and channel info in the selection list
-Function Select-ATCStreamFZF {
-    param ([array]$atcSources)
-
-    Clear-Host
-    $choices = $atcSources | ForEach-Object {
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
-        $state = $_.'State/Province'
-        $location = if (-not [string]::IsNullOrWhiteSpace($state)) { "{0}, {1}, {2}" -f $_.City, $state, $_.'Country' }
-        else { "{0}, {1}" -f $_.City, $_.'Country' }
-        "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
-    }
-
-    $selectedChoice = Select-ItemFZF -prompt "Select an ATC stream" -items $choices
-
-    $selectedStream = $atcSources | Where-Object {
-        $webcamInfo = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL')) { " [Webcam available]" } else { "" }
-        $state = $_.'State/Province'
-        $location = if (-not [string]::IsNullOrWhiteSpace($state)) { "{0}, {1}, {2}" -f $_.City, $state, $_.'Country' }
-        else { "{0}, {1}" -f $_.City, $_.'Country' }
-        $formattedEntry = "[{0}] {1} ({2}/{3}) | {4}{5}" -f $location, $_.'Airport Name', $_.'ICAO', $_.'IATA', $_.'Channel Description', $webcamInfo
-        $formattedEntry -eq $selectedChoice
-    }
-
-    if ($selectedStream) {
-        return @{
-            StreamUrl   = $selectedStream.'Stream URL'
-            WebcamUrl   = $selectedStream.'Webcam URL'
-            AirportInfo = $selectedStream
-        }
-    }
-    else { Write-Error "No matching ATC stream found."; exit }
-}
 Function Select-ATCStreamFZF {
     param ([array]$atcSources)
 
@@ -1026,223 +1024,368 @@ Function Select-ATCMap {
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
-    if (-not $script:AirportData) { Get-AirportInfo -ICAO "KLAX" | Out-Null }
+
+    if (-not $script:AirportData) {
+        Get-AirportInfo -ICAO "KLAX" | Out-Null
+    }
+
+    $weatherData = Get-MapWeatherData -AtcSources $AtcSources -NoWeather:$NoWeather
+
+    $server = Start-ATCMapServer
+    $port = $server.Port
+    $listener = $server.Listener
+
+    $jsArray = ConvertTo-MapMarkers `
+        -AtcSources $AtcSources `
+        -Favorites $Favorites `
+        -WeatherMap $weatherData.WeatherMap `
+        -IcaoToFallbacks $weatherData.IcaoToFallbacks `
+        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+        -NoWeather:$NoWeather
+
+    $csvName = Split-Path $CsvPath -Leaf
+    $htmlContent = New-ATCMapHtml `
+        -JsArray $jsArray `
+        -CsvName $csvName `
+        -UserLocation $UserLocation `
+        -Radius $Radius `
+        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+        -NoWeather:$NoWeather `
+        -Dark:$Dark `
+        -Port $port
+
+    $tempMapFile = Join-Path $env:TEMP ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
+
+    # try {
+    #     Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
+
+    #     if ($script:OnWindows) {
+    #         Start-Process $tempMapFile
+    #     }
+    #     elseif ($IsMacOS) {
+    #         & open $tempMapFile
+    #     }
+    #     else {
+    #         & xdg-open $tempMapFile
+    #     }
+
+    #     return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
+    # }
+    # finally {
+    #     if (Test-Path $tempMapFile) {
+    #         Remove-Item $tempMapFile -Force -ErrorAction SilentlyContinue
+    #     }
+    # }
+    try {
+        Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
+
+        if ($script:OnWindows) {
+            Start-Process $tempMapFile
+        }
+        elseif ($IsMacOS) {
+            & open $tempMapFile
+        }
+        else {
+            & xdg-open $tempMapFile
+        }
+
+        return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
+    }
+    finally {
+        # Intentionally do not delete immediately.
+        # Some browsers open the file asynchronously and may not finish reading it
+        # before this PowerShell process exits the function.
+    }
+}
+
+# Converts a string to be safely embedded in JavaScript code by escaping special characters.
+Function ConvertTo-JsSafeString {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) { return '' }
+
+    return ($Value -replace '\\', '\\\\' `
+                   -replace "'", "\\'" `
+                   -replace '"', '\"' `
+                   -replace "`r", '' `
+                   -replace "`n", ' ')
+}
+
+# Converts a string to be safely embedded in HTML content by encoding special characters.
+Function ConvertTo-HtmlSafeString {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) { return '' }
+
+    return [System.Net.WebUtility]::HtmlEncode($Value)
+}
+
+# Fetches METAR data for all ICAOs in the provided sources, including fallbacks, and returns a map of ICAO to weather data and a map of ICAOs to their fallback lists.
+Function Get-MapWeatherData {
+    param(
+        [array]$AtcSources,
+        [switch]$NoWeather
+    )
 
     $weatherMap = @{}
     $icaoToFallbacks = @{}
 
-    if (-not $NoWeather) {
-        Write-Host "Fetching live weather & wind data..." -ForegroundColor Cyan
-        try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
-
-        # Collect all Primary and Nearby/Fallback ICAOs from the CSV
-        $allIcaosToFetch = [System.Collections.Generic.HashSet[string]]::new()
-
-        foreach ($src in $AtcSources) {
-            $allIcaosToFetch.Add($src.ICAO) | Out-Null
-            if (-not [string]::IsNullOrWhiteSpace($src.NearbyICAOs)) {
-                $fbs = $src.NearbyICAOs -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-                $icaoToFallbacks[$src.ICAO] = $fbs
-                foreach ($fb in $fbs) { $allIcaosToFetch.Add($fb) | Out-Null }
-            }
-        }
-
-        $icaoArray = @($allIcaosToFetch)
-
-        # Bulk Fetch from NOAA
-        for ($i = 0; $i -lt $icaoArray.Count; $i += 50) {
-            $chunk = $icaoArray[$i..[math]::Min($i + 49, $icaoArray.Count - 1)] -join ','
-            try {
-                $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 10
-                foreach ($item in $wxData) {
-                    if ($item.icaoId) {
-                        $weatherMap[$item.icaoId] = @{
-                            fcat  = if ($item.fltcat) { $item.fltcat } else { "UNK" }
-                            wdir  = if ($null -ne $item.wdir) { $item.wdir } else { "null" }
-                            wspd  = if ($null -ne $item.wspd) { $item.wspd } else { 0 }
-                            rawOb = if ($item.rawOb) { $item.rawOb -replace "'", "\'" -replace '"', '\"' -replace "`n", " " } else { "METAR Unavailable" }
-                        }
-                    }
-                }
-            }
-            catch { Write-Verbose "NOAA fetch failed for chunk: $_" }
-        }
-
-        # Fetch missing primaries from VATSIM
-        $missingPrimaries = $AtcSources.ICAO | Sort-Object -Unique | Where-Object {
-            $missing = -not $weatherMap.ContainsKey($_)
-            if ($missing -and $icaoToFallbacks.ContainsKey($_)) {
-                $hasWorkingFallback = $false
-                foreach ($fb in $icaoToFallbacks[$_]) {
-                    if ($weatherMap.ContainsKey($fb)) { $hasWorkingFallback = $true; break }
-                }
-                $missing = -not $hasWorkingFallback
-            }
-            $missing
-        }
-
-        if ($missingPrimaries.Count -gt 0 -and $missingPrimaries.Count -lt 150) {
-            Write-Host "Fetching VATSIM alternative METARs for $($missingPrimaries.Count) stations..." -ForegroundColor DarkCyan
-            foreach ($mIcao in $missingPrimaries) {
-                try {
-                    $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-                    $vRaw = $vRes.Content.Trim()
-                    if ($vRaw -match "\b$mIcao\b") {
-                        # Roughly calculate VFR/IFR from VATSIM string
-                        $fcat = "VFR"
-                        if ($vRaw -match "\bM?1/4SM|\bM?1/2SM|\bM?3/4SM") { $fcat = "LIFR" }
-                        elseif ($vRaw -match "\b[1-2]SM|\b1 1/2SM|\b2 1/2SM") { $fcat = "IFR" }
-                        elseif ($vRaw -match "\b[3-5]SM") { $fcat = "MVFR" }
-
-                        if ($vRaw -match "(BKN|OVC|VV)(00[0-4])") { $fcat = "LIFR" }
-                        elseif ($vRaw -match "(BKN|OVC|VV)(00[5-9])") { if ($fcat -ne "LIFR") { $fcat = "IFR" } }
-                        elseif ($vRaw -match "(BKN|OVC|VV)(0[1-2]\d|030)") { if ($fcat -notin @("LIFR", "IFR")) { $fcat = "MVFR" } }
-
-                        $wdir = "null"; $wspd = 0
-                        if ($vRaw -match "(?<wdir>\d{3}|VRB)(?<wspd>\d{2,3})(G\d{2,3})?KT") {
-                            if ($matches.wdir -match "\d{3}") { $wdir = [int]$matches.wdir }
-                            $wspd = [int]$matches.wspd
-                        }
-
-                        $weatherMap[$mIcao] = @{
-                            fcat  = $fcat
-                            wdir  = $wdir
-                            wspd  = $wspd
-                            rawOb = "[VATSIM] " + ($vRaw -replace "'", "\'" -replace '"', '\"' -replace "`n", " ")
-                        }
-                    }
-                }
-                catch {}
-            }
-        }
-
-        if ($weatherMap.Count -eq 0) {
-            Write-Warning "Could not connect to weather services. Map will default to Offline/Unknown colors."
+    if ($NoWeather) {
+        return @{
+            WeatherMap      = $weatherMap
+            IcaoToFallbacks = $icaoToFallbacks
         }
     }
-    else {
-        Write-Host "Skipping bulk weather fetch (-NoWeather enabled)..." -ForegroundColor Yellow
+
+    Write-Host "Fetching live weather & wind data..." -ForegroundColor Cyan
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    }
+    catch {}
+
+    $allIcaosToFetch = [System.Collections.Generic.HashSet[string]]::new()
+
+    foreach ($src in $AtcSources) {
+        $allIcaosToFetch.Add($src.ICAO) | Out-Null
+
+        if (-not [string]::IsNullOrWhiteSpace($src.NearbyICAOs)) {
+            $fbs = $src.NearbyICAOs -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+            $icaoToFallbacks[$src.ICAO] = $fbs
+            foreach ($fb in $fbs) {
+                $allIcaosToFetch.Add($fb) | Out-Null
+            }
+        }
     }
 
-    $port = 49152
-    $listener = New-Object System.Net.HttpListener
-    $maxRetries = 10
+    $icaoArray = @($allIcaosToFetch)
 
-    while ($maxRetries -gt 0) {
+    for ($i = 0; $i -lt $icaoArray.Count; $i += 50) {
+        $chunkEnd = [math]::Min($i + 49, $icaoArray.Count - 1)
+        $chunk = $icaoArray[$i..$chunkEnd] -join ','
+
         try {
-            $listener.Prefixes.Clear()
-            $listener.Prefixes.Add("http://127.0.0.1:$port/")
-            $listener.Start()
-            break
+            $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 10
+
+            foreach ($item in $wxData) {
+                if ($item.icaoId) {
+                    $weatherMap[$item.icaoId] = @{
+                        fcat  = if ($item.fltcat) { $item.fltcat } else { "UNK" }
+                        wdir  = if ($null -ne $item.wdir) { $item.wdir } else { "null" }
+                        wspd  = if ($null -ne $item.wspd) { $item.wspd } else { 0 }
+                        rawOb = if ($item.rawOb) { ConvertTo-JsSafeString $item.rawOb } else { "METAR Unavailable" }
+                    }
+                }
+            }
         }
         catch {
-            $port++
-            $maxRetries--
+            Write-Verbose "NOAA fetch failed for chunk: $_"
         }
     }
 
-    if (-not $listener.IsListening) {
-        Write-Warning "Could not start local web server. Port is blocked."
-        return $null
+    $missingPrimaries = $AtcSources.ICAO | Sort-Object -Unique | Where-Object {
+        $missing = -not $weatherMap.ContainsKey($_)
+
+        if ($missing -and $icaoToFallbacks.ContainsKey($_)) {
+            $hasWorkingFallback = $false
+            foreach ($fb in $icaoToFallbacks[$_]) {
+                if ($weatherMap.ContainsKey($fb)) {
+                    $hasWorkingFallback = $true
+                    break
+                }
+            }
+            $missing = -not $hasWorkingFallback
+        }
+
+        $missing
     }
+
+    if ($missingPrimaries.Count -gt 0 -and $missingPrimaries.Count -lt 150) {
+        Write-Host "Fetching VATSIM alternative METARs for $($missingPrimaries.Count) stations..." -ForegroundColor DarkCyan
+
+        foreach ($mIcao in $missingPrimaries) {
+            try {
+                $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+                $vRaw = $vRes.Content.Trim()
+
+                if ($vRaw -match "\b$mIcao\b") {
+                    $fcat = "VFR"
+                    if ($vRaw -match "\bM?1/4SM|\bM?1/2SM|\bM?3/4SM") { $fcat = "LIFR" }
+                    elseif ($vRaw -match "\b[1-2]SM|\b1 1/2SM|\b2 1/2SM") { $fcat = "IFR" }
+                    elseif ($vRaw -match "\b[3-5]SM") { $fcat = "MVFR" }
+
+                    if ($vRaw -match "(BKN|OVC|VV)(00[0-4])") { $fcat = "LIFR" }
+                    elseif ($vRaw -match "(BKN|OVC|VV)(00[5-9])") { if ($fcat -ne "LIFR") { $fcat = "IFR" } }
+                    elseif ($vRaw -match "(BKN|OVC|VV)(0[1-2]\d|030)") { if ($fcat -notin @("LIFR", "IFR")) { $fcat = "MVFR" } }
+
+                    $wdir = "null"
+                    $wspd = 0
+
+                    if ($vRaw -match "(?<wdir>\d{3}|VRB)(?<wspd>\d{2,3})(G\d{2,3})?KT") {
+                        if ($matches.wdir -match "\d{3}") { $wdir = [int]$matches.wdir }
+                        $wspd = [int]$matches.wspd
+                    }
+
+                    $weatherMap[$mIcao] = @{
+                        fcat  = $fcat
+                        wdir  = $wdir
+                        wspd  = $wspd
+                        rawOb = "[VATSIM] " + (ConvertTo-JsSafeString $vRaw)
+                    }
+                }
+            }
+            catch {}
+        }
+    }
+
+    if ($weatherMap.Count -eq 0) {
+        Write-Warning "Could not connect to weather services. Map will default to Offline/Unknown colors."
+    }
+
+    return @{
+        WeatherMap      = $weatherMap
+        IcaoToFallbacks = $icaoToFallbacks
+    }
+}
+
+Function ConvertTo-MapMarkers {
+    param(
+        [array]$AtcSources,
+        [array]$Favorites,
+        [hashtable]$WeatherMap,
+        [hashtable]$IcaoToFallbacks,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoWeather
+    )
 
     $mapData = @()
     $groupedSources = $AtcSources | Group-Object ICAO
-
     $defaultFcat = if ($NoWeather) { 'NONE' } else { 'UNK' }
 
     foreach ($group in $groupedSources) {
         $icaoCode = $group.Name
         $airportInfo = $script:AirportData.$icaoCode
 
-        if ($airportInfo -and $null -ne $airportInfo.lat -and $null -ne $airportInfo.lon) {
-            $airportName = $group.Group[0].'Airport Name' -replace "'", "\'" -replace '"', '\"'
-            $city = $group.Group[0].City -replace "'", "\'" -replace '"', '\"'
-            $country = $group.Group[0].Country -replace "'", "\'" -replace '"', '\"'
-            $hasWebcamGlobal = $false
+        if (-not $airportInfo -or $null -eq $airportInfo.lat -or $null -eq $airportInfo.lon) {
+            continue
+        }
 
-            $channelLinks = @()
-            foreach ($ch in $group.Group) {
-                $desc = $ch.'Channel Description'
-                $stream = $ch.'Stream URL'
-                $cam = $ch.'Webcam URL'
+        $hasWebcamGlobal = $false
+        $channelLinks = @()
 
-                if ($stream -match ".*/(?<feed>[^\.]+)\.pls") { $stream = "http://d.liveatc.net/$($matches['feed'])" }
-
-                $camIcon = ""
-                if (-not [string]::IsNullOrWhiteSpace($cam) -and $IncludeWebcamIfAvailable) {
-                    $camIcon = " 📷"
-                    $hasWebcamGlobal = $true
-                }
-
-                $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoCode', '$desc')`" class=`"channel-link`">$desc</a>$camIcon"
+        foreach ($ch in $group.Group) {
+            $camIcon = ""
+            if (-not [string]::IsNullOrWhiteSpace($ch.'Webcam URL') -and $IncludeWebcamIfAvailable) {
+                $camIcon = " 📷"
+                $hasWebcamGlobal = $true
             }
 
-            $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
-            if ($null -eq $favCount) { $favCount = 0 }
+            $icaoHtml = ConvertTo-HtmlSafeString $icaoCode
+            $descHtml = ConvertTo-HtmlSafeString $ch.'Channel Description'
 
-            # Map Weather Fallback Logic
-            $wx = $null
-            if ($weatherMap.ContainsKey($icaoCode)) {
-                $wx = $weatherMap[$icaoCode]
-            }
-            elseif ($icaoToFallbacks.ContainsKey($icaoCode)) {
-                $bestFb = $null
-                $minDist = [int]::MaxValue
+            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoHtml', '$descHtml')`" class=`"channel-link`">$descHtml</a>$camIcon"
+        }
 
-                foreach ($fb in $icaoToFallbacks[$icaoCode]) {
-                    if ($weatherMap.ContainsKey($fb)) {
-                        $fbInfo = $script:AirportData.$fb
-                        $dist = 0
-                        if ($airportInfo -and $fbInfo) {
-                            $dist = Get-DistanceKm -Lat1 $airportInfo.lat -Lon1 $airportInfo.lon -Lat2 $fbInfo.lat -Lon2 $fbInfo.lon
-                        }
-                        if ($dist -lt $minDist) {
-                            $minDist = $dist
-                            $bestFb = $fb
-                        }
+        $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
+        if ($null -eq $favCount) { $favCount = 0 }
+
+        $wx = $null
+        if ($WeatherMap.ContainsKey($icaoCode)) {
+            $wx = $WeatherMap[$icaoCode]
+        }
+        elseif ($IcaoToFallbacks.ContainsKey($icaoCode)) {
+            $bestFb = $null
+            $minDist = [int]::MaxValue
+
+            foreach ($fb in $IcaoToFallbacks[$icaoCode]) {
+                if ($WeatherMap.ContainsKey($fb)) {
+                    $fbInfo = $script:AirportData.$fb
+                    $dist = 0
+
+                    if ($airportInfo -and $fbInfo) {
+                        $dist = Get-DistanceKm -Lat1 $airportInfo.lat -Lon1 $airportInfo.lon -Lat2 $fbInfo.lat -Lon2 $fbInfo.lon
                     }
-                }
-                if ($bestFb) {
-                    $wxObj = $weatherMap[$bestFb]
-                    $wx = @{
-                        fcat  = $wxObj.fcat
-                        wdir  = $wxObj.wdir
-                        wspd  = $wxObj.wspd
-                        rawOb = "[Fallback $bestFb - $($minDist)km] " + $wxObj.rawOb
+
+                    if ($dist -lt $minDist) {
+                        $minDist = $dist
+                        $bestFb = $fb
                     }
                 }
             }
 
-            if (-not $wx) {
-                $wx = @{ fcat = $defaultFcat; wdir = 'null'; wspd = 0; rawOb = 'Weather Skipped or Unavailable' }
+            if ($bestFb) {
+                $wxObj = $WeatherMap[$bestFb]
+                $wx = @{
+                    fcat  = $wxObj.fcat
+                    wdir  = $wxObj.wdir
+                    wspd  = $wxObj.wspd
+                    rawOb = "[Fallback $bestFb - $($minDist)km] $($wxObj.rawOb)"
+                }
             }
+        }
 
-            $fCat = $wx.fcat
-            $rawDir = $wx.wdir
-            $wdir = if ($rawDir -match '^\d+$') { $rawDir } else { "null" }
-            $rawSpd = $wx.wspd
-            $wspd = if ($rawSpd -match '^\d+$') { $rawSpd } else { 0 }
-            $rawOb = $wx.rawOb
+        if (-not $wx) {
+            $wx = @{
+                fcat  = $defaultFcat
+                wdir  = 'null'
+                wspd  = 0
+                rawOb = 'Weather Skipped or Unavailable'
+            }
+        }
 
-            $descHtml = ($channelLinks -join "<br/>") -replace "'", "\'" -replace '"', '\"'
+        $rawDir = $wx.wdir
+        $wdir = if ($rawDir -match '^\d+$') { [int]$rawDir } else { $null }
 
-            $jsIsFav = if ($favCount -gt 0) { "true" } else { "false" }
-            $jsHasCam = if ($hasWebcamGlobal) { "true" } else { "false" }
+        $rawSpd = $wx.wspd
+        $wspd = if ($rawSpd -match '^\d+$') { [int]$rawSpd } else { 0 }
 
-            $mapData += "{ lat: $($airportInfo.lat), lon: $($airportInfo.lon), icao: '$icaoCode', name: '$airportName', city: '$city', country: '$country', desc: '$descHtml', isFav: $jsIsFav, favCount: $favCount, hasCam: $jsHasCam, fcat: '$fCat', wdir: $wdir, wspd: $wspd, rawOb: '$rawOb' }"
+        $mapData += [pscustomobject]@{
+            lat      = [double]$airportInfo.lat
+            lon      = [double]$airportInfo.lon
+            icao     = [string]$icaoCode
+            name     = [string]$group.Group[0].'Airport Name'
+            city     = [string]$group.Group[0].City
+            country  = [string]$group.Group[0].Country
+            desc     = [string]($channelLinks -join "<br/>")
+            isFav    = [bool]($favCount -gt 0)
+            favCount = [int]$favCount
+            hasCam   = [bool]$hasWebcamGlobal
+            fcat     = [string]$wx.fcat
+            wdir     = $wdir
+            wspd     = [int]$wspd
+            rawOb    = [string]$wx.rawOb
         }
     }
 
-    $jsArray = "[`n" + ($mapData -join ",`n") + "`n]"
+    return ($mapData | ConvertTo-Json -Depth 5 -Compress)
+}
+
+# Generates the HTML content for the ATC map, embedding the provided JavaScript array of markers, user location, and other settings, 
+# then saves it to a temporary file and opens it in the default web browser. 
+# It also listens for channel selection events from the map and returns the selected ICAO and channel description.
+Function New-ATCMapHtml {
+    param(
+        [string]$JsArray,
+        [string]$CsvName,
+        [object]$UserLocation,
+        [int]$Radius,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoWeather,
+        [switch]$Dark,
+        [int]$Port
+    )
+
     $userLat = if ($UserLocation) { $UserLocation.Latitude } else { 'null' }
     $userLon = if ($UserLocation) { $UserLocation.Longitude } else { 'null' }
     $userRad = if ($UserLocation -and $Radius) { $Radius * 1000 } else { 0 }
 
-    $csvName = Split-Path $CsvPath -Leaf
-
     $weatherLegendItems = if (-not $NoWeather) {
-        @"
+@"
         <label class="legend-item" title="Visual Flight Rules: Good visibility (>5 miles) and clear skies (>3,000ft ceiling). Pilots can fly by sight."><input type="checkbox" class="filter-cb" value="vfr" checked> <span class="legend-color color-vfr"></span> VFR (Clear)</label>
         <label class="legend-item" title="Marginal VFR: Fair visibility (3-5 miles) or medium ceiling (1,000-3,000ft)."><input type="checkbox" class="filter-cb" value="mvfr" checked> <span class="legend-color color-mvfr"></span> MVFR</label>
         <label class="legend-item" title="Instrument Flight Rules: Poor visibility (<3 miles) or low ceiling (<1,000ft). Flights must rely on instruments."><input type="checkbox" class="filter-cb" value="ifr" checked> <span class="legend-color color-ifr"></span> IFR/LIFR</label>
@@ -1261,7 +1404,7 @@ Function Select-ATCMap {
     $darkModeChecked = if ($Dark) { 'checked' } else { '' }
     $isDarkJs = if ($Dark) { 'true' } else { 'false' }
 
-    $htmlContent = @"
+    return @"
 <!DOCTYPE html>
 <html>
 <head>
@@ -1290,33 +1433,25 @@ Function Select-ATCMap {
             --divider: #333;
             --hover-color: #fff;
         }
-
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); overflow: hidden; transition: background-color 0.3s; }
         #map { height: 100%; width: 100%; z-index: 1; }
-
         #brand-overlay { position: absolute; top: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-primary); padding: 15px 25px; border-radius: 8px; border-left: 5px solid #e94560; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; backdrop-filter: blur(4px); transition: 0.3s;}
         #brand-overlay h1 { margin: 0 0 5px 0; font-size: 26px; font-weight: 800; letter-spacing: 1px; }
         #brand-overlay h1 span { color: #e94560; }
         #brand-overlay p { margin: 0; font-size: 13px; color: var(--text-secondary); }
         #brand-overlay .sub-text { font-size: 11px; opacity: 0.6; margin-top: 3px; font-style: italic; }
-
         #search-container { position: absolute; top: 20px; left: 60px; z-index: 1000; }
         #map-search { background: var(--overlay-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 10px 15px; border-radius: 20px; width: 280px; outline: none; backdrop-filter: blur(4px); font-size: 14px; transition: 0.3s;}
         #map-search::placeholder { color: var(--text-secondary); opacity: 0.8; }
-
         #legend-overlay { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-secondary); padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); backdrop-filter: blur(4px); font-size: 13px; transition: 0.3s; }
         .legend-section-title { margin-bottom:8px; font-weight:bold; color:var(--text-primary); border-bottom:1px solid var(--divider); padding-bottom:4px; padding-left:3px; cursor:default; }
-
         .legend-item { display: flex; align-items: center; margin-bottom: 8px; cursor: help; user-select: none; color: var(--text-secondary);}
         .legend-item:last-child { margin-bottom: 0; }
         .legend-item input { margin-right: 8px; accent-color: #e94560; cursor: pointer; }
         .legend-color { width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; box-shadow: 0 0 3px rgba(0,0,0,0.8); }
-
-        /* Credit Overlay Styling */
         #credit-overlay { position: absolute; bottom: 15px; left: 10px; z-index: 1000; background: var(--overlay-bg); color: var(--text-secondary); padding: 5px 10px; border-radius: 4px; backdrop-filter: blur(2px); font-size: 11px; pointer-events: auto; cursor: default; transition: 0.3s; }
         #credit-overlay a { color: #e94560; text-decoration: none; font-weight: bold; transition: 0.2s; }
         #credit-overlay a:hover { color: var(--text-primary); text-decoration: underline; }
-
         .color-vfr { background-color: #2ecc71; }
         .color-mvfr { background-color: #3498db; }
         .color-ifr { background-color: #e74c3c; }
@@ -1325,18 +1460,14 @@ Function Select-ATCMap {
         .color-green { background-color: #00ff00; }
         .color-unk { background-color: #95a5a6; }
         .color-blue { background-color: #2A81CB; }
-
         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--popup-bg); color: var(--text-primary); transition: background 0.3s, color 0.3s; }
         .leaflet-popup-content b { font-size: 14px; display: block; color: #e94560; padding-bottom: 4px;}
         .fav-star { color: #e94560; }
         .wind-arrow { pointer-events: none; }
-
         .metar-box { margin: 6px 0; padding: 6px; border-radius: 4px; font-family: monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; background: rgba(0,0,0,0.05); color: var(--text-secondary); transition: background 0.3s;}
         body.dark-mode .metar-box { background: rgba(0,0,0,0.5); }
-
         .channel-link { color: var(--text-secondary); text-decoration: none; transition: 0.2s; }
         .channel-link:hover { color: var(--hover-color); text-decoration: underline;}
-
         #starting-screen { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-color); z-index: 9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition: 0.3s;}
         .content-box { z-index: 10; background: var(--overlay-bg); padding: 40px; border-radius: 20px; border: 1px solid var(--border-color); backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.3); transition: 0.3s; }
         .content-box h1 { color: var(--text-primary); margin:0; font-size: 2.8em; letter-spacing: 2px; font-weight: 800; transition: color 0.3s; }
@@ -1354,7 +1485,7 @@ Function Select-ATCMap {
     <div id="brand-overlay">
         <h1>Lofi<span>ATC</span></h1>
         <p>Active LiveATC Sources</p>
-        <p class="sub-text">Loaded from: $csvName</p>
+        <p class="sub-text">Loaded from: $CsvName</p>
     </div>
 
     <div id="legend-overlay">
@@ -1383,21 +1514,33 @@ Function Select-ATCMap {
         <img class="bg-gif" src="https://camo.githubusercontent.com/417cf116a22b01c8cef61846f506abeed2f4dc0a641c488f5e027fbba151f245/68747470733a2f2f7668732e636861726d2e73682f7668732d314c4f785739597477416a3656346e3746664e5341682e676966">
     </div>
 
+    <script id="markers-data" type="application/json">$JsArray</script>
+
     <script>
+        window.onerror = function(msg, src, line, col, err) {
+            console.error('Map script error:', msg, 'at', src + ':' + line + ':' + col);
+            var brand = document.getElementById('brand-overlay');
+            if (brand) {
+                brand.insertAdjacentHTML('beforeend', '<p class="sub-text" style="color:#ff6b6b;">JS error: ' + String(msg) + '</p>');
+            }
+        };
+
         function playChannel(icao, desc) {
             document.getElementById('starting-screen').style.display = 'flex';
-            fetch('http://127.0.0.1:$port/?icao=' + encodeURIComponent(icao) + '&desc=' + encodeURIComponent(desc), { mode: 'no-cors' });
+            fetch('http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) + '&desc=' + encodeURIComponent(desc), { mode: 'no-cors' });
+        }
+
+        if (typeof L === 'undefined') {
+            throw new Error('Leaflet failed to load from CDN.');
         }
 
         var map = L.map('map').setView([20, 0], 2);
+        setTimeout(function() { map.invalidateSize(); }, 100);
 
         var isDarkInitial = $isDarkJs;
         var lightTileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
         var darkTileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-
-        var mapTileLayer = L.tileLayer(isDarkInitial ? darkTileUrl : lightTileUrl, {
-            maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO'
-        }).addTo(map);
+        var mapTileLayer = L.tileLayer(isDarkInitial ? darkTileUrl : lightTileUrl, { maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
 
         document.getElementById('toggle-theme').addEventListener('change', function(e) {
             if (e.target.checked) {
@@ -1435,9 +1578,8 @@ Function Select-ATCMap {
             else { map.removeLayer(weatherLayer); }
         });
 
-        var markersData = $jsArray;
+        var markersData = JSON.parse(document.getElementById('markers-data').textContent);
         var allMapItems = [];
-        var markersObj = {};
         var searchHighlightLayer = null;
 
         markersData.forEach(function(m) {
@@ -1475,13 +1617,10 @@ Function Select-ATCMap {
             }
 
             allMapItems.push({ data: m, layer: dot, wind: windArrow, cat: primaryCat });
-            markersObj[m.icao.toUpperCase()] = dot;
-
             dot.addTo(map);
             if (windArrow) windArrow.addTo(map);
         });
 
-        // Theme sync for wind arrows
         document.getElementById('toggle-theme').addEventListener('change', function(e) {
             var isDark = e.target.checked;
             allMapItems.forEach(function(item) {
@@ -1578,7 +1717,10 @@ Function Select-ATCMap {
             }
         });
 
-        var uLat = $userLat; var uLon = $userLon; var uRad = $userRad;
+        var uLat = $userLat;
+        var uLon = $userLon;
+        var uRad = $userRad;
+
         if (uLat !== null && uLon !== null) {
             L.circleMarker([uLat, uLon], { radius: 6, color: '#00ff00', fillColor: '#00ff00', fillOpacity: 1, weight: 2, interactive: false }).addTo(map).bindPopup("<b>📍 Your Location</b>");
             L.circle([uLat, uLon], { radius: uRad, color: '#00ff00', weight: 1, fillOpacity: 0.05, dashArray: '5, 5', interactive: false }).addTo(map);
@@ -1588,36 +1730,72 @@ Function Select-ATCMap {
 </body>
 </html>
 "@
+}
 
-    $tempMapFile = Join-Path $env:TEMP "lofiatc_map.html"
-    Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
+Function Start-ATCMapServer {
+    param(
+        [int]$StartPort = 49152,
+        [int]$MaxRetries = 10
+    )
 
-    if ($script:OnWindows) { Start-Process $tempMapFile }
-    elseif ($IsMacOS) { & open $tempMapFile }
-    else { & xdg-open $tempMapFile }
+    $port = $StartPort
+    $listener = New-Object System.Net.HttpListener
+
+    while ($MaxRetries -gt 0) {
+        try {
+            $listener.Prefixes.Clear()
+            $listener.Prefixes.Add("http://127.0.0.1:$port/")
+            $listener.Start()
+
+            return @{
+                Listener = $listener
+                Port     = $port
+            }
+        }
+        catch {
+            $port++
+            $MaxRetries--
+        }
+    }
+
+    throw "Could not start local web server. Port is blocked."
+}
+
+# Listens for incoming HTTP requests from the ATC map, waiting for a user to click on a channel. 
+# It returns the selected ICAO code and channel description as a hashtable. The function also handles timeout and cancellation via 'Q' key press.
+Function Select-ATCFromMap {
+    param(
+        [System.Net.HttpListener]$Listener,
+        [int]$TimeoutSeconds = 300
+    )
 
     Write-Host "`nMap opened in your browser! Click a channel on the map to start streaming." -ForegroundColor Green
     Write-Host "Waiting for selection... (Press 'Q' in this window to cancel and use the terminal)" -ForegroundColor Yellow
 
     $selection = $null
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 
     try {
-        while ($true) {
-            $contextTask = $listener.BeginGetContext($null, $null)
+        while ((Get-Date) -lt $deadline) {
+            $contextTask = $Listener.BeginGetContext($null, $null)
 
             while (-not $contextTask.IsCompleted) {
                 Start-Sleep -Milliseconds 100
+
+                if ((Get-Date) -ge $deadline) {
+                    throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
+                }
+
                 if ([console]::KeyAvailable) {
                     $key = [console]::ReadKey($true)
                     if ($key.Key.ToString() -eq 'Q') {
-                        Write-Host "`nMap selection cancelled." -ForegroundColor Red
-                        return $null
+                        throw [System.OperationCanceledException]::new("Map selection cancelled.")
                     }
                 }
             }
 
             try {
-                $context = $listener.EndGetContext($contextTask)
+                $context = $Listener.EndGetContext($contextTask)
                 $req = $context.Request
                 $res = $context.Response
 
@@ -1631,7 +1809,7 @@ Function Select-ATCMap {
                     $res.OutputStream.Close()
 
                     Write-Host "`nSelection received from map: $($selection.ICAO)" -ForegroundColor Green
-                    break
+                    return $selection
                 }
                 else {
                     $res.StatusCode = 200
@@ -1640,14 +1818,14 @@ Function Select-ATCMap {
             }
             catch {}
         }
+
+        throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
     }
     finally {
         Start-Sleep -Milliseconds 250
-        $listener.Stop()
-        $listener.Close()
+        $Listener.Stop()
+        $Listener.Close()
     }
-
-    return $selection
 }
 
 # Allow unit tests to dot-source this script without running the interactive main flow.
