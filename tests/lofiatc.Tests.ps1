@@ -42,6 +42,10 @@ Describe 'lofiatc.ps1 helper functions' {
     }
 
     Context 'Resolve-Player' {
+        BeforeEach {
+            $script:OnWindows = $false
+        }
+
         It 'returns the explicitly requested player' {
             Resolve-Player -explicitPlayer 'MPV' | Should -Be 'MPV'
         }
@@ -63,6 +67,48 @@ Describe 'lofiatc.ps1 helper functions' {
             } -ParameterFilter { $Name -eq 'vlc' }
 
             Resolve-Player -explicitPlayer '' | Should -Be 'VLC'
+        }
+
+        It 'uses the detected Windows default app when it exists in PATH' {
+            $script:OnWindows = $true
+
+            Mock Get-DefaultAppForMP4 { 'vlc' }
+            Mock Get-Command {
+                [pscustomobject]@{ Path = 'C:\Program Files\VideoLAN\VLC\vlc.exe' }
+            } -ParameterFilter { $Name -eq 'vlc.exe' }
+
+            Resolve-Player -explicitPlayer '' | Should -Be 'VLC'
+        }
+
+        It 'falls back to MPV first on Windows when the default app is unavailable' {
+            $script:OnWindows = $true
+
+            Mock Get-DefaultAppForMP4 { 'some-other-app' }
+
+            Mock Get-Command {
+                [pscustomobject]@{ Path = 'C:\mpv\mpv.com' }
+            } -ParameterFilter { $Name -eq 'mpv.com' }
+
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'vlc.exe' }
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'PotPlayerMini64.exe' }
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpc-hc64.exe' }
+
+            Resolve-Player -explicitPlayer '' | Should -Be 'MPV'
+        }
+
+        It 'falls back through VLC, Potplayer, then MPC-HC on Windows' {
+            $script:OnWindows = $true
+
+            Mock Get-DefaultAppForMP4 { $null }
+
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpv.com' }
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'vlc.exe' }
+            Mock Get-Command {
+                [pscustomobject]@{ Path = 'C:\PotPlayer\PotPlayerMini64.exe' }
+            } -ParameterFilter { $Name -eq 'PotPlayerMini64.exe' }
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpc-hc64.exe' }
+
+            Resolve-Player -explicitPlayer '' | Should -Be 'Potplayer'
         }
     }
 
@@ -110,6 +156,75 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'LoadConfig precedence' {
+        BeforeEach {
+            $script:configPath = Join-Path $TestDrive 'config.json'
+            @'
+{
+  "Player": "VLC",
+  "OpenRadar": true,
+  "ATCVolume": 70,
+  "LofiVolume": 45,
+  "ICAO": "klax"
+}
+'@ | Set-Content -Path $script:configPath -Encoding UTF8
+        }
+
+        It 'loads values from config when not explicitly provided' {
+            $config = Get-Content -Path $script:configPath -Raw | ConvertFrom-Json
+            $dummyBoundParameters = @{}
+
+            $Player = $null
+            $OpenRadar = $false
+            $ATCVolume = 65
+            $LofiVolume = 50
+            $ICAO = $null
+
+            foreach ($prop in $config.PSObject.Properties) {
+                $name = $prop.Name
+                if (-not $dummyBoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne '') {
+                    Set-Variable -Name $name -Value $prop.Value -Scope Local
+                }
+            }
+
+            $Player | Should -Be 'VLC'
+            $OpenRadar | Should -BeTrue
+            $ATCVolume | Should -Be 70
+            $LofiVolume | Should -Be 45
+            $ICAO | Should -Be 'klax'
+        }
+
+        It 'keeps CLI values when both config and explicit values exist' {
+            $config = Get-Content -Path $script:configPath -Raw | ConvertFrom-Json
+
+            $Player = 'MPV'
+            $OpenRadar = $false
+            $ATCVolume = 20
+            $LofiVolume = 10
+            $ICAO = 'RJTT'
+            $dummyBoundParameters = @{
+                Player     = $true
+                OpenRadar  = $true
+                ATCVolume  = $true
+                LofiVolume = $true
+                ICAO       = $true
+            }
+
+            foreach ($prop in $config.PSObject.Properties) {
+                $name = $prop.Name
+                if (-not $dummyBoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne '') {
+                    Set-Variable -Name $name -Value $prop.Value -Scope Local
+                }
+            }
+
+            $Player | Should -Be 'MPV'
+            $OpenRadar | Should -BeFalse
+            $ATCVolume | Should -Be 20
+            $LofiVolume | Should -Be 10
+            $ICAO | Should -Be 'RJTT'
+        }
+    }
+
     Context 'Favorites persistence' {
         BeforeEach {
             $script:testDrivePath = Join-Path $TestDrive 'favorites.json'
@@ -148,9 +263,25 @@ Describe 'lofiatc.ps1 helper functions' {
 
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 3
         }
+
+        It 'returns an empty array for malformed JSON' {
+            '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+
+            @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+        }
+
+        It 'returns an empty array when JSON is valid but not a favorites array' {
+            '"hello"' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+
+            @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+        }
     }
 
     Context 'Get-VLCVolumeArg' {
+        BeforeEach {
+            $script:OnWindows = $false
+        }
+
         It 'returns rc/stdin settings on non-Windows platforms' {
             $result = Get-VLCVolumeArg -volume 50
 
@@ -161,6 +292,7 @@ Describe 'lofiatc.ps1 helper functions' {
 
         It 'forces zero volume when NoAudio is set' {
             $result = Get-VLCVolumeArg -volume 90 -NoAudio
+
             $result.Value | Should -Be 0
         }
     }
@@ -212,6 +344,100 @@ Describe 'lofiatc.ps1 helper functions' {
             $results.Count | Should -Be 2
             $results[0].ICAO | Should -Be 'KLAX'
             $results[1].ICAO | Should -Be 'KSFO'
+        }
+    }
+
+    Context 'Get-MapWeatherData' {
+        It 'returns empty weather structures and skips web requests when NoWeather is set' {
+            $sources = @(
+                [pscustomobject]@{ ICAO = 'KLAX'; NearbyICAOs = 'KSNA;KBUR' },
+                [pscustomobject]@{ ICAO = 'RJTT'; NearbyICAOs = '' }
+            )
+
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+            Mock Invoke-WebRequest { throw 'Should not be called' }
+
+            $result = Get-MapWeatherData -AtcSources $sources -NoWeather
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.WeatherMap.Count | Should -Be 0
+            $result.IcaoToFallbacks.Count | Should -Be 0
+
+            Should -Not -Invoke Invoke-RestMethod
+            Should -Not -Invoke Invoke-WebRequest
+        }
+    }
+
+    Context 'Get-AirportInfo remote failure behavior' {
+        BeforeEach {
+            $script:AirportData = $null
+        }
+
+        It 'returns null when remote airport database fetch fails' {
+            Mock Invoke-RestMethod { throw 'network failure' }
+            Mock Write-Error {}
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result | Should -Be $null
+        }
+
+        It 'returns airport info from cached data without remote fetch' {
+            $script:AirportData = [pscustomobject]@{
+                KLAX = [pscustomobject]@{
+                    icao = 'KLAX'
+                    name = 'Los Angeles International'
+                    tz   = 'America/Los_Angeles'
+                    lat  = 33.9416
+                    lon  = -118.4085
+                }
+            }
+
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.icao | Should -Be 'KLAX'
+            Should -Not -Invoke Invoke-RestMethod
+        }
+    }
+
+    Context 'Select-ATCFromMap cancellation path' {
+        It 'throws OperationCanceledException when Q is pressed' {
+            $server = Start-ATCMapServer -StartPort 59999 -MaxRetries 20
+            $listener = $server.Listener
+
+            Mock Start-Sleep {}
+            Mock Write-Host {}
+            Mock Test-ConsoleKeyAvailable { $true }
+            Mock Read-ConsoleKey {
+                [pscustomobject]@{ Key = 'Q' }
+            }
+
+            try {
+                $thrown = $null
+
+                try {
+                    Select-ATCFromMap -Listener $listener -TimeoutSeconds 5
+                }
+                catch {
+                    $thrown = $_.Exception
+                }
+
+                $thrown | Should -Not -BeNullOrEmpty
+
+                $allTypes = @(
+                    $thrown.GetType().FullName
+                    if ($thrown.InnerException) { $thrown.InnerException.GetType().FullName }
+                )
+
+                $allTypes | Should -Contain 'System.OperationCanceledException'
+            }
+            finally {
+                try { $listener.Stop() } catch {}
+                try { $listener.Close() } catch {}
+            }
         }
     }
 
