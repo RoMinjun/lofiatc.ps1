@@ -168,10 +168,12 @@ $script:IanaToWindowsMap = @{
     "Pacific/Honolulu"               = "Hawaiian Standard Time"
 }
 
+# Function to check if a console key is available without blocking
 Function Test-ConsoleKeyAvailable {
     return [console]::KeyAvailable
 }
 
+# Function to read a key from the console, with an option to intercept (not display) the key press
 Function Read-ConsoleKey {
     param([switch]$Intercept)
     return [console]::ReadKey($Intercept)
@@ -422,23 +424,6 @@ Function Import-ATCSource {
     return Import-Csv -Path $csvPath
 }
 
-# Functions to manage favorites
-# Function Get-Favorite {
-#     param([string]$path)
-
-#     if (Test-Path $path) {
-#         try {
-#             $data = Get-Content -Path $path -Raw | ConvertFrom-Json
-#             foreach ($f in $data) {
-#                 if (-not $f.PSObject.Properties['Count']) { $f | Add-Member -Name Count -Value 1 -MemberType NoteProperty }
-#                 if (-not $f.PSObject.Properties['LastUsed']) { $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty }
-#             }
-#             return $data
-#         }
-#         catch { return @() }
-#     }
-#     else { return @() }
-# }
 Function Get-Favorite {
     param([string]$path)
 
@@ -2012,7 +1997,15 @@ try {
             $match = $icaoMatches | Where-Object { $_.'Channel Description' -eq $chanClean } | Select-Object -First 1
         }
 
-        $selectedATC = @{ StreamUrl = $match.'Stream URL'; WebcamUrl = $match.'Webcam URL'; AirportInfo = $match }
+        if (-not $match) {
+            throw "No matching ATC channel found for ICAO $ICAO."
+        }
+
+        $selectedATC = @{
+            StreamUrl   = $match.'Stream URL'
+            WebcamUrl   = $match.'Webcam URL'
+            AirportInfo = $match
+        }
     }
 
     # If no ICAO was specified or selected, allow user to select based on favorites, random selection, or manual navigation through continents/countries/states
@@ -2051,6 +2044,11 @@ try {
                 }
             }
         }
+    }
+
+    # Final check to ensure a valid ATC stream was selected before proceeding
+    if (-not $selectedATC -or -not $selectedATC.AirportInfo) {
+        throw "No ATC stream was selected."
     }
 
     $selectedATCUrl = $selectedATC.StreamUrl

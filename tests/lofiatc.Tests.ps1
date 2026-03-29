@@ -375,8 +375,9 @@ Describe 'lofiatc.ps1 helper functions' {
 
         It 'returns null when remote airport database fetch fails' {
             Mock Invoke-RestMethod { throw 'network failure' }
+            Mock Write-Error {}
 
-            $result = & { Get-AirportInfo -ICAO 'KLAX' } 2>$null
+            $result = Get-AirportInfo -ICAO 'KLAX'
 
             $result | Should -Be $null
         }
