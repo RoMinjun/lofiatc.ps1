@@ -88,6 +88,7 @@ param (
     [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
     [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa", "Asian", "Medieval")]
     [string]$LofiGenre,
+    [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,
     [switch]$LoadConfig,
     [switch]$SaveConfig,
@@ -165,6 +166,15 @@ $script:IanaToWindowsMap = @{
     "America/Los_Angeles"            = "Pacific Standard Time"
     "America/Anchorage"              = "Alaskan Standard Time"
     "Pacific/Honolulu"               = "Hawaiian Standard Time"
+}
+
+Function Test-ConsoleKeyAvailable {
+    return [console]::KeyAvailable
+}
+
+Function Read-ConsoleKey {
+    param([switch]$Intercept)
+    return [console]::ReadKey($Intercept)
 }
 
 # Function to check the default application for .mp4
@@ -413,21 +423,61 @@ Function Import-ATCSource {
 }
 
 # Functions to manage favorites
+# Function Get-Favorite {
+#     param([string]$path)
+
+#     if (Test-Path $path) {
+#         try {
+#             $data = Get-Content -Path $path -Raw | ConvertFrom-Json
+#             foreach ($f in $data) {
+#                 if (-not $f.PSObject.Properties['Count']) { $f | Add-Member -Name Count -Value 1 -MemberType NoteProperty }
+#                 if (-not $f.PSObject.Properties['LastUsed']) { $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty }
+#             }
+#             return $data
+#         }
+#         catch { return @() }
+#     }
+#     else { return @() }
+# }
 Function Get-Favorite {
     param([string]$path)
 
-    if (Test-Path $path) {
-        try {
-            $data = Get-Content -Path $path -Raw | ConvertFrom-Json
-            foreach ($f in $data) {
-                if (-not $f.PSObject.Properties['Count']) { $f | Add-Member -Name Count -Value 1 -MemberType NoteProperty }
-                if (-not $f.PSObject.Properties['LastUsed']) { $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty }
-            }
-            return $data
-        }
-        catch { return @() }
+    if (-not (Test-Path $path)) {
+        return @()
     }
-    else { return @() }
+
+    try {
+        $data = Get-Content -Path $path -Raw | ConvertFrom-Json
+    }
+    catch {
+        return @()
+    }
+
+    if ($null -eq $data) {
+        return @()
+    }
+
+    $items = @($data)
+
+    if ($items.Count -eq 1 -and $items[0] -is [string]) {
+        return @()
+    }
+
+    foreach ($f in $items) {
+        if (-not $f.PSObject.Properties['ICAO'] -or -not $f.PSObject.Properties['Channel']) {
+            return @()
+        }
+
+        if (-not $f.PSObject.Properties['Count']) {
+            $f | Add-Member -Name Count -Value 1 -MemberType NoteProperty
+        }
+
+        if (-not $f.PSObject.Properties['LastUsed']) {
+            $f | Add-Member -Name LastUsed -Value (Get-Date) -MemberType NoteProperty
+        }
+    }
+
+    return $items
 }
 
 # Function to save favorites back to the JSON file
@@ -1056,26 +1106,6 @@ Function Select-ATCMap {
 
     $tempMapFile = Join-Path $env:TEMP ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
-    # try {
-    #     Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
-
-    #     if ($script:OnWindows) {
-    #         Start-Process $tempMapFile
-    #     }
-    #     elseif ($IsMacOS) {
-    #         & open $tempMapFile
-    #     }
-    #     else {
-    #         & xdg-open $tempMapFile
-    #     }
-
-    #     return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
-    # }
-    # finally {
-    #     if (Test-Path $tempMapFile) {
-    #         Remove-Item $tempMapFile -Force -ErrorAction SilentlyContinue
-    #     }
-    # }
     try {
         Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
 
@@ -1786,8 +1816,8 @@ Function Select-ATCFromMap {
                     throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
                 }
 
-                if ([console]::KeyAvailable) {
-                    $key = [console]::ReadKey($true)
+                if (Test-ConsoleKeyAvailable) {
+                    $key = Read-ConsoleKey -Intercept
                     if ($key.Key.ToString() -eq 'Q') {
                         throw [System.OperationCanceledException]::new("Map selection cancelled.")
                     }
@@ -1856,6 +1886,14 @@ try {
             Write-Information "Loaded config from $ConfigPath"
         }
         else { Write-Warning "Config file not found at $ConfigPath" }
+    }
+
+    if ($ICAO) {
+        $ICAO = $ICAO.Trim().ToUpperInvariant()
+
+        if ($ICAO -notmatch '^[A-Z0-9]{4}$') {
+            throw "ICAO must be a 4-character airport code."
+        }
     }
 
     # Resolve player from parameters or config
