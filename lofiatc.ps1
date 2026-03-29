@@ -81,7 +81,9 @@ param (
     [switch]$UseFavorite,
     [ValidateSet("VLC", "MPV", "Potplayer", "MPC-HC")]
     [string]$Player,
+    [ValidateRange(0,100)]
     [int]$ATCVolume = 65,
+    [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
     [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa", "Asian", "Medieval")]
@@ -92,6 +94,7 @@ param (
     [string]$ConfigPath,
     [switch]$OpenRadar,
     [switch]$Nearby,
+    [ValidateRange(1,5000)]
     [int]$NearbyRadius = 500,
     [switch]$ShowMap,
     [switch]$NoWeather,
@@ -281,25 +284,31 @@ Function Get-IPLocation {
 
 # Function to determine the appropriate player
 Function Resolve-Player {
-    param ([string]$explicitPlayer)
+    param([string]$ExplicitPlayer)
 
-    if ($explicitPlayer) { return $explicitPlayer }
+    if ($ExplicitPlayer) { return $ExplicitPlayer }
 
-    if ($script:OnWindows) {
-        $defaultApp = Get-DefaultAppForMP4
-        switch ($defaultApp) {
-            "vlc.exe" { return "VLC" }
-            "mpv.exe" { return "MPV" }
-            "PotPlayerMini64.exe" { return "Potplayer" }
-            "mpc-hc64.exe" { return "MPC-HC" }
-            default { return "VLC" }
+    $candidates = if ($OnWindows) {
+        @(
+            @{ Name = "MPV"; Command = "mpv.com" }
+            @{ Name = "VLC"; Command = "vlc.exe" }
+            @{ Name = "Potplayer"; Command = "PotPlayerMini64.exe" }
+            @{ Name = "MPC-HC"; Command = "mpc-hc64.exe" }
+        )
+    } else {
+        @(
+            @{ Name = "MPV"; Command = "mpv" }
+            @{ Name = "VLC"; Command = "vlc" }
+        )
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Get-Command $candidate.Command -ErrorAction SilentlyContinue) {
+            return $candidate.Name
         }
     }
-    else {
-        if (Get-Command mpv -ErrorAction SilentlyContinue) { return "MPV" }
-        if (Get-Command vlc -ErrorAction SilentlyContinue) { return "VLC" }
-        return "MPV"
-    }
+
+    throw "No supported media player found in PATH."
 }
 
 # Function to resolve links correctly
@@ -477,7 +486,7 @@ Function Select-Item {
             if ($index -ge 0 -and $index -lt $items.Count) { return $items[$index].Trim() }
         }
 
-        Write-Error "Error: Invalid selection." -ForegroundColor Red
+        Write-Error "Error: Invalid selection."
         Start-Sleep -Seconds 1
     }
 }
