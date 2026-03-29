@@ -99,7 +99,8 @@ param (
     [int]$NearbyRadius = 500,
     [switch]$ShowMap,
     [switch]$NoWeather,
-    [switch]$Dark
+    [switch]$Dark,
+    [switch]$CheckDependencies
 )
 
 $LofiGenres = @{
@@ -1843,6 +1844,327 @@ Function Select-ATCFromMap {
     }
 }
 
+Function Add-DependencyResult {
+    param(
+        [string]$Name,
+        [bool]$Required,
+        [ValidateSet('OK', 'Missing', 'Warning')]
+        [string]$Status,
+        [string]$Details,
+        [string]$Category = 'Dependency'
+    )
+
+    [pscustomobject]@{
+        Name     = $Name
+        Required = $Required
+        Status   = $Status
+        Details  = $Details
+        Category = $Category
+    }
+}
+
+Function Test-CommandAvailable {
+    param([string]$CommandName)
+
+    $cmd = Get-Command $CommandName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cmd) {
+        return $null
+    }
+
+    if ($cmd.Path) {
+        return $cmd.Path
+    }
+
+    return $cmd.Name
+}
+
+Function Test-UrlReachable {
+    param(
+        [string]$Url,
+        [int]$TimeoutSec = 5
+    )
+
+    try {
+        $response = Invoke-WebRequest -Uri $Url -Method Get -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
+        return ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400)
+    }
+    catch {
+        return $false
+    }
+}
+
+Function Test-JsonFileReadable {
+    param(
+        [string]$Path,
+        [switch]$Optional
+    )
+
+    if (-not (Test-Path $Path)) {
+        return @{
+            Ok      = [bool]$Optional
+            Details = if ($Optional) { 'Not found; optional.' } else { 'File not found.' }
+            Status  = if ($Optional) { 'OK' } else { 'Missing' }
+        }
+    }
+
+    try {
+        $null = Get-Content -Path $Path -Raw | ConvertFrom-Json
+        return @{
+            Ok      = $true
+            Details = 'Exists and contains valid JSON.'
+            Status  = 'OK'
+        }
+    }
+    catch {
+        return @{
+            Ok      = $false
+            Details = "Exists but contains invalid JSON: $($_.Exception.Message)"
+            Status  = 'Missing'
+        }
+    }
+}
+
+Function Test-LofiATCDependencies {
+    param(
+        [string]$ScriptDir,
+        [string]$SelectedPlayer,
+        [switch]$UseFZF,
+        [switch]$ShowMap
+    )
+
+    $results = @()
+
+    $baseCsv = Join-Path $ScriptDir 'atc_sources.csv'
+    $liveCsv = Join-Path $ScriptDir 'liveatc_sources.csv'
+    $favoritesJson = Join-Path $ScriptDir 'favorites.json'
+    $configJson = Join-Path $ScriptDir 'config.json'
+
+    $hasCsv = (Test-Path $baseCsv) -or (Test-Path $liveCsv)
+    $results += Add-DependencyResult `
+        -Name 'ATC source CSV' `
+        -Required $true `
+        -Status $(if ($hasCsv) { 'OK' } else { 'Missing' }) `
+        -Details $(if ($hasCsv) { 'Found atc_sources.csv or liveatc_sources.csv.' } else { 'Neither atc_sources.csv nor liveatc_sources.csv exists.' })
+
+    $configCheck = Test-JsonFileReadable -Path $configJson -Optional
+    $results += Add-DependencyResult `
+        -Name 'config.json' `
+        -Required $false `
+        -Status $configCheck.Status `
+        -Details $configCheck.Details
+
+    if (Test-Path $favoritesJson) {
+        $favoritesCheck = Test-JsonFileReadable -Path $favoritesJson -Optional
+        $results += Add-DependencyResult `
+            -Name 'favorites.json' `
+            -Required $false `
+            -Status $favoritesCheck.Status `
+            -Details $favoritesCheck.Details
+    }
+    else {
+        $results += Add-DependencyResult `
+            -Name 'favorites.json' `
+            -Required $false `
+            -Status 'OK' `
+            -Details 'Not found; it will be created when needed.'
+    }
+
+    $playerCandidates = if ($script:OnWindows) {
+        @(
+            @{ Name = 'MPV'; Command = 'mpv.com' }
+            @{ Name = 'VLC'; Command = 'vlc.exe' }
+            @{ Name = 'Potplayer'; Command = 'PotPlayerMini64.exe' }
+            @{ Name = 'MPC-HC'; Command = 'mpc-hc64.exe' }
+        )
+    }
+    else {
+        @(
+            @{ Name = 'MPV'; Command = 'mpv' }
+            @{ Name = 'VLC'; Command = 'vlc' }
+        )
+    }
+
+    if ($SelectedPlayer) {
+        $selectedCommand = switch ($SelectedPlayer) {
+            'VLC'       { if ($script:OnWindows) { 'vlc.exe' } else { 'vlc' } }
+            'MPV'       { if ($script:OnWindows) { 'mpv.com' } else { 'mpv' } }
+            'Potplayer' { 'PotPlayerMini64.exe' }
+            'MPC-HC'    { 'mpc-hc64.exe' }
+            default     { $null }
+        }
+
+        $selectedPath = if ($selectedCommand) { Test-CommandAvailable -CommandName $selectedCommand } else { $null }
+
+        $results += Add-DependencyResult `
+            -Name "Player ($SelectedPlayer)" `
+            -Required $true `
+            -Status $(if ($selectedPath) { 'OK' } else { 'Missing' }) `
+            -Details $(if ($selectedPath) { $selectedPath } else { "$SelectedPlayer not found in PATH." })
+    }
+    else {
+        $anyPlayerFound = $false
+
+        foreach ($candidate in $playerCandidates) {
+            $playerPath = Test-CommandAvailable -CommandName $candidate.Command
+            if ($playerPath) {
+                $anyPlayerFound = $true
+            }
+
+            $results += Add-DependencyResult `
+                -Name "Player candidate: $($candidate.Name)" `
+                -Required $false `
+                -Status $(if ($playerPath) { 'OK' } else { 'Warning' }) `
+                -Details $(if ($playerPath) { $playerPath } else { 'Not found in PATH.' })
+        }
+
+        $results += Add-DependencyResult `
+            -Name 'At least one supported player available' `
+            -Required $true `
+            -Status $(if ($anyPlayerFound) { 'OK' } else { 'Missing' }) `
+            -Details $(if ($anyPlayerFound) { 'One or more supported players found.' } else { 'No supported players found in PATH.' })
+    }
+
+    $fzfPath = Test-CommandAvailable -CommandName 'fzf'
+    $results += Add-DependencyResult `
+        -Name 'fzf' `
+        -Required ([bool]$UseFZF) `
+        -Status $(if ($UseFZF) {
+            if ($fzfPath) { 'OK' } else { 'Missing' }
+        } else {
+            if ($fzfPath) { 'OK' } else { 'Warning' }
+        }) `
+        -Details $(if ($UseFZF) {
+            if ($fzfPath) { $fzfPath } else { 'fzf not found in PATH.' }
+        } else {
+            if ($fzfPath) { "$fzfPath (installed)" } else { 'Not installed; only needed with -UseFZF.' }
+        })
+
+    $ytdlpPath = Test-CommandAvailable -CommandName 'yt-dlp'
+    $youtubeDlPath = Test-CommandAvailable -CommandName 'youtube-dl'
+
+    $results += Add-DependencyResult `
+        -Name 'yt-dlp' `
+        -Required $false `
+        -Status $(if ($ytdlpPath) { 'OK' } else { 'Warning' }) `
+        -Details $(if ($ytdlpPath) { $ytdlpPath } else { 'Not found; used for reliable YouTube URL resolution.' }) `
+        -Category 'Optional Tool'
+
+    $results += Add-DependencyResult `
+        -Name 'youtube-dl' `
+        -Required $false `
+        -Status $(if ($youtubeDlPath) { 'OK' } else { 'Warning' }) `
+        -Details $(if ($youtubeDlPath) { $youtubeDlPath } else { 'Not found; fallback for YouTube URL resolution.' }) `
+        -Category 'Optional Tool'
+
+    if ($IsLinux) {
+        $curlPath = Test-CommandAvailable -CommandName 'curl'
+        $xdgOpenPath = Test-CommandAvailable -CommandName 'xdg-open'
+
+        $results += Add-DependencyResult `
+            -Name 'curl' `
+            -Required $false `
+            -Status $(if ($curlPath) { 'OK' } else { 'Warning' }) `
+            -Details $(if ($curlPath) { $curlPath } else { 'Not found; only used by the current Linux LiveATC resolution path.' }) `
+            -Category 'Optional Tool'
+
+        $results += Add-DependencyResult `
+            -Name 'xdg-open' `
+            -Required ([bool]$ShowMap) `
+            -Status $(if ($ShowMap) {
+                if ($xdgOpenPath) { 'OK' } else { 'Missing' }
+            } else {
+                if ($xdgOpenPath) { 'OK' } else { 'Warning' }
+            }) `
+            -Details $(if ($ShowMap) {
+                if ($xdgOpenPath) { $xdgOpenPath } else { 'xdg-open not found in PATH.' }
+            } else {
+                if ($xdgOpenPath) { "$xdgOpenPath (installed)" } else { 'Not installed; only needed with -ShowMap.' }
+            })
+    }
+    elseif ($IsMacOS) {
+        $openPath = Test-CommandAvailable -CommandName 'open'
+
+        $results += Add-DependencyResult `
+            -Name 'open' `
+            -Required ([bool]$ShowMap) `
+            -Status $(if ($ShowMap) {
+                if ($openPath) { 'OK' } else { 'Missing' }
+            } else {
+                if ($openPath) { 'OK' } else { 'Warning' }
+            }) `
+            -Details $(if ($ShowMap) {
+                if ($openPath) { $openPath } else { 'open command not found.' }
+            } else {
+                if ($openPath) { "$openPath (installed)" } else { 'Not installed; only needed with -ShowMap.' }
+            })
+    }
+    elseif ($script:OnWindows) {
+        $results += Add-DependencyResult `
+            -Name 'Default browser opening' `
+            -Required ([bool]$ShowMap) `
+            -Status 'OK' `
+            -Details $(if ($ShowMap) { 'Uses Start-Process on Windows.' } else { 'Not requested.' })
+    }
+
+    $airportDbOk = Test-UrlReachable -Url 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json'
+    $results += Add-DependencyResult `
+        -Name 'Airport database service' `
+        -Required $false `
+        -Status $(if ($airportDbOk) { 'OK' } else { 'Warning' }) `
+        -Details 'Used for airport metadata.' `
+        -Category 'Network'
+
+    $noaaOk = Test-UrlReachable -Url 'https://aviationweather.gov/api/data/metar?ids=KLAX'
+    $results += Add-DependencyResult `
+        -Name 'NOAA METAR service' `
+        -Required $false `
+        -Status $(if ($noaaOk) { 'OK' } else { 'Warning' }) `
+        -Details 'Used for weather/METAR data.' `
+        -Category 'Network'
+
+    $vatsimOk = Test-UrlReachable -Url 'https://metar.vatsim.net/metar.php?id=KLAX'
+    $results += Add-DependencyResult `
+        -Name 'VATSIM METAR service' `
+        -Required $false `
+        -Status $(if ($vatsimOk) { 'OK' } else { 'Warning' }) `
+        -Details 'Fallback weather source.' `
+        -Category 'Network'
+
+    return $results
+}
+
+Function Write-DependencyReport {
+    param([array]$Results)
+
+    Write-Host '========================' -ForegroundColor Cyan
+    Write-Host 'LofiATC Dependency Check' -ForegroundColor Cyan
+    Write-Host '========================' -ForegroundColor Cyan
+
+    foreach ($result in $Results) {
+        $color = switch ($result.Status) {
+            'OK'      { 'Green' }
+            'Missing' { if ($result.Required) { 'Red' } else { 'Yellow' } }
+            'Warning' { 'Yellow' }
+            default   { 'White' }
+        }
+
+        $reqText = if ($result.Required) { 'Required' } else { 'Optional' }
+
+        Write-Host ("[{0}] {1} - {2}" -f $result.Status.ToUpperInvariant(), $result.Name, $reqText) -ForegroundColor $color
+        Write-Host ("    {0}" -f $result.Details)
+    }
+
+    $requiredFailures = @($Results | Where-Object { $_.Required -and $_.Status -eq 'Missing' })
+
+    Write-Host ''
+    if ($requiredFailures.Count -eq 0) {
+        Write-Host 'Dependency check passed.' -ForegroundColor Green
+    }
+    else {
+        Write-Host ("Dependency check failed. Missing required items: {0}" -f $requiredFailures.Count) -ForegroundColor Red
+    }
+}
+
 # Allow unit tests to dot-source this script without running the interactive main flow.
 if ($env:LOFIATC_TEST_MODE -eq '1') {
     if ($MyInvocation.InvocationName -ne '.') {
@@ -1879,6 +2201,23 @@ try {
         if ($ICAO -notmatch '^[A-Z0-9]{4}$') {
             throw "ICAO must be a 4-character airport code."
         }
+    }
+    
+    if ($CheckDependencies) {
+        $dependencyResults = Test-LofiATCDependencies `
+            -ScriptDir $scriptDir `
+            -SelectedPlayer $Player `
+            -UseFZF:$UseFZF `
+            -ShowMap:$ShowMap
+
+        Write-DependencyReport -Results $dependencyResults
+
+        $requiredFailures = @($dependencyResults | Where-Object { $_.Required -and $_.Status -eq 'Missing' })
+        if ($requiredFailures.Count -gt 0) {
+            exit 1
+        }
+
+        exit 0
     }
 
     # Resolve player from parameters or config
