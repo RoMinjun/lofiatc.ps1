@@ -1,0 +1,38 @@
+name: PowerShell Tests
+
+on:
+  push:
+    branches:
+      - main
+      - test
+      - feature/**
+      - enhancement/**
+    paths:
+      - 'lofiatc.ps1'
+      - 'tests/lofiatc.Tests.ps1'
+
+  pull_request:
+    paths:
+      - 'lofiatc.ps1'
+      - 'tests/lofiatc.Tests.ps1'
+
+    
+jobs:
+  pester-test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v5
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -Force
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          $env:LOFIATC_TEST_MODE = '1'
+          Invoke-Pester ./tests/lofiatc.Tests.ps1 -CI
