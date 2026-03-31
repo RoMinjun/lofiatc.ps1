@@ -1214,7 +1214,7 @@ Function Select-ATCMap {
         -Dark:$Dark `
         -Port $port
 
-    $tempMapFile = Join-Path $env:TEMP ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
+    $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
     try {
         Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
@@ -1418,17 +1418,19 @@ Function ConvertTo-MapMarkers {
         $hasWebcamGlobal = $false
         $channelLinks = @()
 
-        foreach ($ch in $group.Group) {
+        for ($i = 0; $i -lt $group.Group.Count; $i++) {
+            $ch = $group.Group[$i]
+
             $camIcon = ""
             if (-not [string]::IsNullOrWhiteSpace($ch.'Webcam URL') -and $IncludeWebcamIfAvailable) {
-                $camIcon = " 📷"
+                $camIcon = " $camera"
                 $hasWebcamGlobal = $true
             }
 
-            $icaoHtml = ConvertTo-HtmlSafeString $icaoCode
+            $icaoJs = ConvertTo-JsSafeString $icaoCode
             $descHtml = ConvertTo-HtmlSafeString $ch.'Channel Description'
 
-            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoHtml', '$descHtml')`" class=`"channel-link`">$descHtml</a>$camIcon"
+            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoJs', $i)`" class=`"channel-link`">$descHtml</a>$camIcon"
         }
 
         $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
@@ -1665,9 +1667,13 @@ Function New-ATCMapHtml {
             }
         };
 
-        function playChannel(icao, desc) {
+        function playChannel(icao, channelIndex) {
             document.getElementById('starting-screen').style.display = 'flex';
-            fetch('http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) + '&desc=' + encodeURIComponent(desc), { mode: 'no-cors' });
+            fetch(
+                'http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) +
+                '&channelIndex=' + encodeURIComponent(channelIndex),
+                { mode: 'no-cors' }
+            );
         }
 
         if (typeof L === 'undefined') {
@@ -1949,9 +1955,16 @@ Function Select-ATCFromMap {
                 $res = $context.Response
 
                 if ($null -ne $req.QueryString["icao"]) {
+                    $channelIndexRaw = $req.QueryString["channelIndex"]
+                    $channelIndex = $null
+
+                    if ($null -ne $channelIndexRaw -and $channelIndexRaw -match '^\d+$') {
+                        $channelIndex = [int]$channelIndexRaw
+                    }
+
                     $selection = @{
-                        ICAO    = $req.QueryString["icao"]
-                        Channel = $req.QueryString["desc"]
+                        ICAO         = $req.QueryString["icao"]
+                        ChannelIndex = $channelIndex
                     }
 
                     $res.StatusCode = 200
@@ -1959,10 +1972,6 @@ Function Select-ATCFromMap {
 
                     Write-Host "`nSelection received from map: $($selection.ICAO)" -ForegroundColor Green
                     return $selection
-                }
-                else {
-                    $res.StatusCode = 200
-                    $res.OutputStream.Close()
                 }
             }
             catch {}
@@ -2498,14 +2507,14 @@ try {
     }
 
     # If -ShowMap is specified, open the interactive map and allow selection from there
-    $mapSelectedChannel = $null
+    $mapSelectedChannelIndex = $null
 
     if ($ShowMap) {
         $mapSelection = Select-ATCMap -AtcSources $atcSources -Favorites $favorites -CsvPath $csvPath -UserLocation $currentUserLocation -Radius $NearbyRadius -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable -NoWeather:$NoWeather -Dark:$Dark
 
         if ($mapSelection -and $mapSelection.ICAO) {
             $ICAO = $mapSelection.ICAO
-            $mapSelectedChannel = $mapSelection.Channel
+            $mapSelectedChannelIndex = $mapSelection.ChannelIndex
         }
     }
 
@@ -2517,8 +2526,14 @@ try {
             throw "No ATC stream found for ICAO $ICAO."
         }
 
-        if ($mapSelectedChannel) {
-            $match = $icaoMatches | Where-Object { $_.'Channel Description' -eq $mapSelectedChannel } | Select-Object -First 1
+        if ($null -ne $mapSelectedChannelIndex) {
+            $icaoMatches = @($icaoMatches)
+
+            if ($mapSelectedChannelIndex -lt 0 -or $mapSelectedChannelIndex -ge $icaoMatches.Count) {
+                throw "Invalid channel index returned from map for ICAO $ICAO."
+            }
+
+            $match = $icaoMatches[$mapSelectedChannelIndex]
         }
         elseif ($icaoMatches.Count -eq 1 -or $RandomATC) {
             $match = if ($RandomATC -and $icaoMatches.Count -gt 1) { Get-Random -InputObject $icaoMatches } else { $icaoMatches[0] }
