@@ -76,6 +76,9 @@ Initializes the HTML Map in Dark Mode.
 
 .PARAMETER CheckDependencies
 Checks required files, player availability, optional tools, and network dependencies, then prints a dependency report and exits.
+
+.PARAMETER KeepOpen
+When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
 #>
 
 [CmdletBinding()]
@@ -108,7 +111,9 @@ param (
     [switch]$ShowMap,
     [switch]$NoWeather,
     [switch]$Dark,
-    [switch]$CheckDependencies
+    [switch]$CheckDependencies,
+    [Alias("Persistent")]
+    [switch]$KeepOpen
 )
 
 $LofiGenres = @{
@@ -176,6 +181,11 @@ $script:IanaToWindowsMap = @{
     "America/Anchorage"              = "Alaskan Standard Time"
     "Pacific/Honolulu"               = "Hawaiian Standard Time"
 }
+
+$script:CurrentATCProcess = $null
+$script:CurrentWebcamProcess = $null
+$script:CurrentMapSelection = $null
+$script:CurrentLofiProcess = $null
 
 # Function to check if a console key is available without blocking
 Function Test-ConsoleKeyAvailable {
@@ -950,7 +960,7 @@ Function Write-Welcome {
     $airplane = Get-Emoji 0x2708 -VS16; $location = Get-Emoji 0x1F4CD; $earth = Get-Emoji 0x1F30D; $departure = Get-Emoji 0x1F6EB; $clock = Get-Emoji 0x23F0
     $weather = Get-Emoji 0x1F326 -VS16; $wind = Get-Emoji 0x1F32C -VS16; $eye = Get-Emoji 0x1F441 -VS16; $cloud = Get-Emoji 0x2601 -VS16; $thermometer = Get-Emoji 0x1F321 -VS16
     $droplet = Get-Emoji 0x1F4A7; $barometer = Get-Emoji 0x1F4CF; $note = Get-Emoji 0x1F4DD; $sunrise = Get-Emoji 0x1F305; $sunset = Get-Emoji 0x1F304
-    $antenna = Get-Emoji 0x1F4E1; $mic = Get-Emoji 0x1F5E3 -VS16; $headphones = Get-Emoji 0x1F3A7; $camera = Get-Emoji 0x1F3A5; $link = Get-Emoji 0x1F517
+    $antenna = Get-Emoji 0x1F4E1; $mic = Get-Emoji 0x1F5E3 -VS16; $headphones = Get-Emoji 0x1F3A7; $script:camera = Get-Emoji 0x1F3A5; $link = Get-Emoji 0x1F517
     $hourglass = Get-Emoji 0x23F3; $radar = Get-Emoji 0x1F4E1
 
     $fallbacks = if ($airportInfo.NearbyICAOs) { $airportInfo.NearbyICAOs -split ';' } else { @() }
@@ -987,7 +997,7 @@ Function Write-Welcome {
     if ($OpenRadar -or -not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
         Write-Output "$link External Links:"
         if ($OpenRadar) { Write-Output "    $radar Radar:  https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)" }
-        if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) { Write-Output "    $camera Webcam: $($airportInfo.'Webcam URL')" }
+        if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) { Write-Output "    $script:camera Webcam: $($airportInfo.'Webcam URL')" }
         Write-Output ""
     }
 
@@ -1076,6 +1086,207 @@ Function Start-Player {
     else { Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null }
 }
 
+# Function to start a media player process and return the process object for later management
+# with support for different players and argument configurations
+Function Start-PlayerProcess {
+    [CmdletBinding()]
+    param (
+        [string]$Url,
+        [string]$Player,
+        [switch]$NoVideo,
+        [switch]$NoAudio,
+        [switch]$BasicArgs,
+        [int]$Volume = 100
+    )
+
+    $Url = Resolve-StreamUrl $Url
+
+    $playerArgs = switch ($Player) {
+        "VLC" {
+            $vlcArgs = "`"$Url`""
+            if ($NoVideo) { $vlcArgs += " --no-video" }
+
+            if ($script:OnWindows) {
+                $vol = if ($NoAudio) { 0 } else { $Volume }
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$NoAudio) --no-volume-save --quiet"
+                $vlcArgs
+            }
+            else {
+                if ($NoAudio) { $vlcArgs += " --no-audio" }
+                $vlcArgs += " --quiet"
+                $vlcArgs
+            }
+        }
+        "MPV" {
+            $mpvArgs = "`"$Url`""
+            if ($NoVideo) { $mpvArgs += " --no-video" }
+            if ($NoAudio) { $mpvArgs += " --no-audio" }
+            if ($BasicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no" }
+            $mpvArgs += " --volume=$Volume"
+            $mpvArgs
+        }
+        "Potplayer" {
+            $potArgs = "`"$Url`""
+            if ($NoAudio) { $potArgs += " /volume=0" }
+            if ($BasicArgs) { $potArgs += " /new" }
+            $potArgs += " /volume=$Volume"
+            $potArgs
+        }
+        "MPC-HC" {
+            $mpcArgs = "`"$Url`""
+            if ($NoAudio) { $mpcArgs += " /mute" }
+            if ($BasicArgs) { $mpcArgs += " /new" }
+            $mpcArgs += " /volume $Volume"
+            $mpcArgs
+        }
+        default {
+            throw "Unsupported player: $Player"
+        }
+    }
+
+    $playerPath = Test-Player -player $Player
+
+    if ($Player -eq 'VLC' -and -not $script:OnWindows) {
+        $volSetting = Get-VLCVolumeArg -volume $Volume -NoAudio:$NoAudio
+        $psi = New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName = $playerPath
+        $psi.Arguments = "$($volSetting.Prepend) $playerArgs"
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $proc = [Diagnostics.Process]::Start($psi)
+        $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
+        return $proc
+    }
+
+    return Start-Process -FilePath $playerPath -ArgumentList $playerArgs -PassThru
+}
+
+# Function to stop a media player process gracefully
+# with error handling to avoid issues if the process has already exited or cannot be stopped
+Function Stop-ManagedProcess {
+    param(
+        [System.Diagnostics.Process]$Process
+    )
+
+    if ($null -eq $Process) {
+        return
+    }
+
+    try {
+        if (-not $Process.HasExited) {
+            Stop-Process -Id $Process.Id -Force -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-Verbose "Failed to stop process cleanly: $_"
+    }
+}
+
+# Function to check if a media player process is still running, with error handling to account
+# for cases where the process may have already exited or is not accessible
+Function Test-ManagedProcessAlive {
+    param(
+        [System.Diagnostics.Process]$Process
+    )
+
+    if ($null -eq $Process) {
+        return $false
+    }
+
+    try {
+        return -not $Process.HasExited
+    }
+    catch {
+        return $false
+    }
+}
+
+# Function to handle the selection of an ATC stream from the interactive map
+# starting the appropriate media player processes for the ATC audio
+# and webcam (if available and selected), and returning the details of the selected stream
+Function Invoke-MapChannelSelection {
+    param(
+        [hashtable]$Selection,
+        [array]$AtcSources,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
+    )
+
+    if (-not $Selection -or -not $Selection.ICAO) {
+        throw "Invalid map selection."
+    }
+
+    $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $Selection.ICAO })
+    if ($icaoMatches.Count -eq 0) {
+        throw "No ATC stream found for ICAO $($Selection.ICAO)."
+    }
+
+    if ($null -eq $Selection.ChannelIndex -or $Selection.ChannelIndex -lt 0 -or $Selection.ChannelIndex -ge $icaoMatches.Count) {
+        throw "Invalid channel index returned from map for ICAO $($Selection.ICAO)."
+    }
+
+    $match = $icaoMatches[$Selection.ChannelIndex]
+
+    Stop-ManagedProcess -Process $script:CurrentATCProcess
+    $script:CurrentATCProcess = $null
+
+    Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+    $script:CurrentWebcamProcess = $null
+
+    $script:CurrentATCProcess = Start-PlayerProcess `
+        -Url $match.'Stream URL' `
+        -Player $Player `
+        -NoVideo `
+        -BasicArgs `
+        -Volume $ATCVolume
+
+    if ($IncludeWebcamIfAvailable -and -not [string]::IsNullOrWhiteSpace($match.'Webcam URL')) {
+        $script:CurrentWebcamProcess = Start-PlayerProcess `
+            -Url $match.'Webcam URL' `
+            -Player $Player `
+            -NoAudio `
+            -BasicArgs
+    }
+
+    if (-not $NoLofiMusic) {
+        $lofiAlive = Test-ManagedProcessAlive -Process $script:CurrentLofiProcess
+
+        if (-not $lofiAlive) {
+            $script:CurrentLofiProcess = if ($PlayLofiGirlVideo) {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -BasicArgs `
+                    -Volume $LofiVolume
+            }
+            else {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -NoVideo `
+                    -BasicArgs `
+                    -Volume $LofiVolume
+            }
+        }
+    }
+
+    $script:CurrentMapSelection = $match
+
+    return @{
+        ICAO    = $match.ICAO
+        Channel = $match.'Channel Description'
+        Airport = $match.'Airport Name'
+        Webcam  = [bool](-not [string]::IsNullOrWhiteSpace($match.'Webcam URL'))
+        Lofi    = [bool](-not $NoLofiMusic)
+    }
+}
+
 # Function to get a list of nearby airports within a specified radius
 Function Get-NearbyAirports {
     param ([object]$UserLocation, [array]$AtcSources, [int]$Radius)
@@ -1123,8 +1334,8 @@ Function Remove-StaleATCMapFiles {
     }
 }
 
-# Function to select an ATC stream using an interactive map interface, showing nearby airports within a specified radius and their weather conditions
-# with options to include webcams and customize the display
+# Function to generate and display an interactive ATC map based on the provided sources
+# user location, and preferences, and handle the selection of an ATC stream from the map
 Function Select-ATCMap {
     param (
         [array]$AtcSources,
@@ -1134,7 +1345,14 @@ Function Select-ATCMap {
         [int]$Radius,
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoWeather,
-        [switch]$Dark
+        [switch]$Dark,
+        [switch]$KeepOpen,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -1167,30 +1385,39 @@ Function Select-ATCMap {
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
         -NoWeather:$NoWeather `
         -Dark:$Dark `
-        -Port $port
+        -Port $port `
+        -KeepOpen:$KeepOpen
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
-    try {
-        Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
+    Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
 
-        if ($script:OnWindows) {
-            Start-Process $tempMapFile
-        }
-        elseif ($IsMacOS) {
-            & open $tempMapFile
-        }
-        else {
-            & xdg-open $tempMapFile
-        }
+    if ($script:OnWindows) {
+        Start-Process $tempMapFile
+    }
+    elseif ($IsMacOS) {
+        & open $tempMapFile
+    }
+    else {
+        & xdg-open $tempMapFile
+    }
 
-        return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
+    if ($KeepOpen) {
+        Start-PersistentATCMapSession `
+            -Listener $listener `
+            -AtcSources $AtcSources `
+            -Player $Player `
+            -ATCVolume $ATCVolume `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+            -NoLofiMusic:$NoLofiMusic `
+            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -LofiMusicUrl $LofiMusicUrl `
+            -LofiVolume $LofiVolume
+
+        return $null
     }
-    finally {
-        # Intentionally do not delete immediately.
-        # Some browsers open the file asynchronously and may not finish reading it
-        # before this PowerShell process exits the function.
-    }
+
+    return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
 }
 
 # Converts a string to be safely embedded in JavaScript code by escaping special characters.
@@ -1378,7 +1605,7 @@ Function ConvertTo-MapMarkers {
 
             $camIcon = ""
             if (-not [string]::IsNullOrWhiteSpace($ch.'Webcam URL') -and $IncludeWebcamIfAvailable) {
-                $camIcon = " $camera"
+                $camIcon = " 📷"
                 $hasWebcamGlobal = $true
             }
 
@@ -1474,7 +1701,8 @@ Function New-ATCMapHtml {
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoWeather,
         [switch]$Dark,
-        [int]$Port
+        [int]$Port,
+        [switch]$KeepOpen
     )
 
     $userLat = if ($UserLocation) { $UserLocation.Latitude } else { 'null' }
@@ -1500,6 +1728,7 @@ Function New-ATCMapHtml {
     $darkModeClass = if ($Dark) { ' class="dark-mode"' } else { '' }
     $darkModeChecked = if ($Dark) { 'checked' } else { '' }
     $isDarkJs = if ($Dark) { 'true' } else { 'false' }
+    $keepOpenJs = if ($KeepOpen) { 'true' } else { 'false' }
 
     return @"
 <!DOCTYPE html>
@@ -1529,6 +1758,31 @@ Function New-ATCMapHtml {
             --popup-bg: rgba(22, 33, 62, 0.95);
             --divider: #333;
             --hover-color: #fff;
+        }
+        #toast {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-10px);
+            z-index: 2000;
+            background: rgba(20, 20, 30, 0.92);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            max-width: 70%;
+            text-align: center;
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        #toast.error {
+            background: rgba(180, 50, 50, 0.95);
         }
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); overflow: hidden; transition: background-color 0.3s; }
         #map { height: 100%; width: 100%; z-index: 1; }
@@ -1601,6 +1855,7 @@ Function New-ATCMapHtml {
     <div id="credit-overlay">made with <span style="color: #e94560;">&#x2764;</span> by <a href="https://github.com/RoMinjun" target="_blank">RoMinjun</a></div>
 
     <div id="map"></div>
+    <div id="toast"></div>
 
     <div id="starting-screen">
         <div class="content-box">
@@ -1622,13 +1877,50 @@ Function New-ATCMapHtml {
             }
         };
 
+        function showToast(message, isError) {
+            var toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = isError ? 'show error' : 'show';
+
+            clearTimeout(window.__lofiatcToastTimer);
+            window.__lofiatcToastTimer = setTimeout(function() {
+                toast.className = '';
+            }, 2400);
+        }
+
         function playChannel(icao, channelIndex) {
-            document.getElementById('starting-screen').style.display = 'flex';
+            var keepOpen = $keepOpenJs;
+
+            if (!keepOpen) {
+                document.getElementById('starting-screen').style.display = 'flex';
+            }
+
             fetch(
                 'http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) +
                 '&channelIndex=' + encodeURIComponent(channelIndex),
-                { mode: 'no-cors' }
-            );
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (!keepOpen) {
+                    return;
+                }
+
+                if (data && data.ok) {
+                    showToast(data.message || 'Now monitoring the selected channel.', false);
+                } else {
+                    showToast((data && data.message) || 'Could not switch channel.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Failed to send channel selection', err);
+
+                if (keepOpen) {
+                    showToast('Could not reach the local LofiATC session.', true);
+                }
+            });
         }
 
         if (typeof L === 'undefined') {
@@ -1938,6 +2230,130 @@ Function Select-ATCFromMap {
         Start-Sleep -Milliseconds 250
         $Listener.Stop()
         $Listener.Close()
+    }
+}
+
+# Function to start a persistent session that continues to listen for map channel selections 
+# until the user cancels (via 'Q' key or closing the window). Each time a selection is made
+# it invokes the channel selection logic and updates the currently playing ATC stream accordingly.
+Function Start-PersistentATCMapSession {
+    param(
+        [System.Net.HttpListener]$Listener,
+        [array]$AtcSources,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
+    )
+
+    $canPollConsole = Test-InteractiveConsoleAvailable
+
+    Write-Host "`nMap opened in your browser! Click channels to switch ATC live." -ForegroundColor Green
+    if ($canPollConsole) {
+        Write-Host "Persistent map mode active. Press 'Q' in this window to quit." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Persistent map mode active. Close this PowerShell window to stop." -ForegroundColor Yellow
+    }
+
+    try {
+        while ($true) {
+            $contextTask = $Listener.BeginGetContext($null, $null)
+
+            while (-not $contextTask.IsCompleted) {
+                Start-Sleep -Milliseconds 100
+
+                if ($canPollConsole -and (Test-ConsoleKeyAvailable)) {
+                    $key = Read-ConsoleKey -Intercept
+                    if ($key.Key.ToString() -eq 'Q') {
+                        throw [System.OperationCanceledException]::new("Persistent map session cancelled.")
+                    }
+                }
+            }
+
+            try {
+                $context = $Listener.EndGetContext($contextTask)
+                $req = $context.Request
+                $res = $context.Response
+
+                $payload = @{
+                    ok      = $true
+                    message = "Tuned to $($started.ICAO) — $($started.Channel)"
+                }
+
+                if ($null -ne $req.QueryString["icao"]) {
+                    $channelIndexRaw = $req.QueryString["channelIndex"]
+                    $channelIndex = $null
+
+                    if ($null -ne $channelIndexRaw -and $channelIndexRaw -match '^\d+$') {
+                        $channelIndex = [int]$channelIndexRaw
+                    }
+
+                    $selection = @{
+                        ICAO         = $req.QueryString["icao"]
+                        ChannelIndex = $channelIndex
+                    }
+
+                    try {
+                        $started = Invoke-MapChannelSelection `
+                            -Selection $selection `
+                            -AtcSources $AtcSources `
+                            -Player $Player `
+                            -ATCVolume $ATCVolume `
+                            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+                            -NoLofiMusic:$NoLofiMusic `
+                            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                            -LofiMusicUrl $LofiMusicUrl `
+                            -LofiVolume $LofiVolume
+
+                        $payload = @{
+                            ok      = $true
+                            message = "Now monitoring $($started.ICAO) — $($started.Channel)"
+                        }
+
+                        Write-Host "Switched to $($started.ICAO) — $($started.Channel)" -ForegroundColor Green
+                    }
+                    catch {
+                        $payload = @{
+                            ok      = $false
+                            message = $_.Exception.Message
+                        }
+
+                        Write-Warning $_.Exception.Message
+                    }
+                }
+
+                $json = $payload | ConvertTo-Json -Compress
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+
+                $res.StatusCode = 200
+                $res.ContentType = 'application/json; charset=utf-8'
+                $res.ContentEncoding = [System.Text.Encoding]::UTF8
+                $res.ContentLength64 = $buffer.Length
+
+                $res.Headers['Access-Control-Allow-Origin'] = '*'
+                $res.Headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                $res.Headers['Access-Control-Allow-Headers'] = '*'
+                $res.Headers['Cache-Control'] = 'no-store'
+
+                $res.OutputStream.Write($buffer, 0, $buffer.Length)
+                $res.OutputStream.Close()
+            }
+            catch {
+                Write-Verbose "Listener request handling error: $_"
+            }
+        }
+    }
+    finally {
+        Stop-ManagedProcess -Process $script:CurrentATCProcess
+        Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+        Stop-ManagedProcess -Process $script:CurrentLofiProcess
+
+        try { $Listener.Stop() } catch {}
+        try { $Listener.Close() } catch {}
     }
 }
 
@@ -2398,7 +2814,26 @@ try {
     $mapSelectedChannelIndex = $null
 
     if ($ShowMap) {
-        $mapSelection = Select-ATCMap -AtcSources $atcSources -Favorites $favorites -CsvPath $csvPath -UserLocation $currentUserLocation -Radius $NearbyRadius -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable -NoWeather:$NoWeather -Dark:$Dark
+        $mapSelection = Select-ATCMap `
+            -AtcSources $atcSources `
+            -Favorites $favorites `
+            -CsvPath $csvPath `
+            -UserLocation $currentUserLocation `
+            -Radius $NearbyRadius `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+            -NoWeather:$NoWeather `
+            -Dark:$Dark `
+            -KeepOpen:$KeepOpen `
+            -Player $Player `
+            -ATCVolume $ATCVolume `
+            -NoLofiMusic:$NoLofiMusic `
+            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -LofiMusicUrl $lofiMusicUrl `
+            -LofiVolume $LofiVolume
+
+        if ($KeepOpen) {
+            exit 0
+        }
 
         if ($mapSelection -and $mapSelection.ICAO) {
             $ICAO = $mapSelection.ICAO
