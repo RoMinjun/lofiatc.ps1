@@ -121,7 +121,7 @@ Describe 'lofiatc.ps1 helper functions' {
             ConvertTo-NauticalMiles -Kilometers 18.52 -Decimals 1 | Should -Be 10
         }
 
-        It 'treats null input as zero because the parameter is typed as double' {
+        It 'coerces null input to zero because the parameter is typed as double' {
             ConvertTo-NauticalMiles -Kilometers $null | Should -Be 0
         }
     }
@@ -277,6 +277,114 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Import-ATCSource validation' {
+        BeforeEach {
+            $script:csvPath = Join-Path $TestDrive 'atc_sources.csv'
+        }
+
+        It 'loads a CSV when required columns exist' {
+            @'
+ICAO,Channel Description,Stream URL,Webcam URL,NearbyICAOs
+KLAX,Tower,http://example.com/stream,,KSNA;KBUR
+'@ | Set-Content -Path $script:csvPath -Encoding UTF8
+
+            $result = Import-ATCSource -csvPath $script:csvPath
+            $result.Count | Should -Be 1
+            $result[0].ICAO | Should -Be 'KLAX'
+        }
+
+        It 'throws when required columns are missing' {
+            @'
+ICAO,Stream URL
+KLAX,http://example.com/stream
+'@ | Set-Content -Path $script:csvPath -Encoding UTF8
+
+            { Import-ATCSource -csvPath $script:csvPath } | Should -Throw '*missing required column*'
+        }
+    }
+
+    Context 'Import-ATCSource recommended columns' {
+        BeforeEach {
+            $script:csvPath = Join-Path $TestDrive 'atc_sources_recommended.csv'
+        }
+
+        It 'does not throw when only recommended columns are missing' {
+            @'
+ICAO,Channel Description,Stream URL
+KLAX,Tower,http://example.com/stream
+'@ | Set-Content -Path $script:csvPath -Encoding UTF8
+
+            { Import-ATCSource -csvPath $script:csvPath } | Should -Not -Throw
+        }
+
+        It 'throws when the CSV is empty' {
+            '' | Set-Content -Path $script:csvPath -Encoding UTF8
+
+            { Import-ATCSource -csvPath $script:csvPath } | Should -Throw '*empty*'
+        }
+    }
+
+    Context 'Test-JsonFileReadable' {
+        BeforeEach {
+            $script:jsonPath = Join-Path $TestDrive 'sample.json'
+        }
+
+        It 'returns OK for an optional missing file' {
+            $result = Test-JsonFileReadable -Path $script:jsonPath -Optional
+
+            $result.Ok | Should -BeTrue
+            $result.Status | Should -Be 'OK'
+        }
+
+        It 'returns Missing for invalid JSON' {
+            '{bad-json' | Set-Content -Path $script:jsonPath -Encoding UTF8
+
+            $result = Test-JsonFileReadable -Path $script:jsonPath
+
+            $result.Ok | Should -BeFalse
+            $result.Status | Should -Be 'Missing'
+        }
+
+        It 'returns OK for valid JSON' {
+            '{"hello":"world"}' | Set-Content -Path $script:jsonPath -Encoding UTF8
+
+            $result = Test-JsonFileReadable -Path $script:jsonPath
+
+            $result.Ok | Should -BeTrue
+            $result.Status | Should -Be 'OK'
+        }
+    }
+
+    Context 'Test-LofiATCDependencies' {
+        BeforeEach {
+            $script:scriptDir = Join-Path $TestDrive 'repo'
+            New-Item -ItemType Directory -Path $script:scriptDir -Force | Out-Null
+
+            'ICAO,Channel Description,Stream URL' | Set-Content -Path (Join-Path $script:scriptDir 'atc_sources.csv') -Encoding UTF8
+
+            Mock Test-UrlReachable { $true }
+        }
+
+        It 'treats fzf as required only when UseFZF is set' {
+            Mock Test-CommandAvailable {
+                switch ($CommandName) {
+                    'mpv' { '/usr/bin/mpv' }
+                    'fzf' { $null }
+                    default { $null }
+                }
+            }
+
+            $withoutFzf = Test-LofiATCDependencies -ScriptDir $script:scriptDir -UseFZF:$false -ShowMap:$false
+            $withFzf = Test-LofiATCDependencies -ScriptDir $script:scriptDir -UseFZF:$true -ShowMap:$false
+
+            ($withoutFzf | Where-Object Name -eq 'fzf').Required | Should -BeFalse
+            ($withoutFzf | Where-Object Name -eq 'fzf').Status | Should -Be 'Warning'
+
+            ($withFzf | Where-Object Name -eq 'fzf').Required | Should -BeTrue
+            ($withFzf | Where-Object Name -eq 'fzf').Status | Should -Be 'Missing'
+        }
+    }
+
     Context 'Get-VLCVolumeArg' {
         BeforeEach {
             $script:OnWindows = $false
@@ -347,6 +455,51 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Get-IPLocation' {
+        It 'returns a normalized object from the HTTPS provider payload' {
+            Mock Invoke-RestMethod {
+                [pscustomobject]@{
+                    latitude     = 33.9416
+                    longitude    = -118.4085
+                    city         = 'Los Angeles'
+                    country_name = 'United States'
+                }
+            }
+            Mock Write-Host {}
+
+            $result = Get-IPLocation
+
+            $result | Should -Not -BeNullOrEmpty
+            $result.Latitude | Should -Be 33.9416
+            $result.Longitude | Should -Be -118.4085
+            $result.City | Should -Be 'Los Angeles'
+            $result.Country | Should -Be 'United States'
+            $result.Source | Should -Be 'IP'
+        }
+
+        It 'returns null when the provider call fails' {
+            Mock Invoke-RestMethod { throw 'timeout' }
+            Mock Write-Error {}
+
+            $result = Get-IPLocation
+
+            $result | Should -Be $null
+        }
+
+        It 'returns null when the payload has no coordinates' {
+            Mock Invoke-RestMethod {
+                [pscustomobject]@{
+                    city         = 'Los Angeles'
+                    country_name = 'United States'
+                }
+            }
+
+            $result = Get-IPLocation
+
+            $result | Should -Be $null
+        }
+    }
+
     Context 'Get-MapWeatherData' {
         It 'returns empty weather structures and skips web requests when NoWeather is set' {
             $sources = @(
@@ -410,6 +563,7 @@ Describe 'lofiatc.ps1 helper functions' {
 
             Mock Start-Sleep {}
             Mock Write-Host {}
+            Mock Test-InteractiveConsoleAvailable { $true }
             Mock Test-ConsoleKeyAvailable { $true }
             Mock Read-ConsoleKey {
                 [pscustomobject]@{ Key = 'Q' }
@@ -438,6 +592,106 @@ Describe 'lofiatc.ps1 helper functions' {
                 try { $listener.Stop() } catch {}
                 try { $listener.Close() } catch {}
             }
+        }
+    }
+
+    Context 'Select-ATCFromMap non-interactive host path' {
+        It 'times out cleanly when console cancellation is unavailable' {
+            $server = Start-ATCMapServer -StartPort 59998 -MaxRetries 20
+            $listener = $server.Listener
+
+            Mock Write-Host {}
+            Mock Test-InteractiveConsoleAvailable { $false }
+            Mock Start-Sleep {}
+
+            try {
+                { Select-ATCFromMap -Listener $listener -TimeoutSeconds 0 } | Should -Throw '*Timed out waiting for a map selection*'
+            }
+            finally {
+                try { $listener.Stop() } catch {}
+                try { $listener.Close() } catch {}
+            }
+        }
+    }
+
+    Context 'Remove-StaleATCMapFiles' {
+        It 'removes only old LofiATC temp map files' {
+            $oldFile = Join-Path $TestDrive 'lofiatc_map_old.html'
+            $newFile = Join-Path $TestDrive 'lofiatc_map_new.html'
+            $otherFile = Join-Path $TestDrive 'something_else.html'
+
+            'old' | Set-Content -Path $oldFile -Encoding UTF8
+            'new' | Set-Content -Path $newFile -Encoding UTF8
+            'other' | Set-Content -Path $otherFile -Encoding UTF8
+
+            (Get-Item $oldFile).LastWriteTime = (Get-Date).AddHours(-30)
+            (Get-Item $newFile).LastWriteTime = (Get-Date).AddHours(-1)
+
+            Mock Get-ChildItem {
+                @(
+                    Get-Item $oldFile
+                    Get-Item $newFile
+                )
+            }
+
+            Remove-StaleATCMapFiles -MaxAgeHours 24
+
+            Test-Path $oldFile | Should -BeFalse
+            Test-Path $newFile | Should -BeTrue
+            Test-Path $otherFile | Should -BeTrue
+        }
+    }
+
+    Context 'Get-METAR-TAF fallback ICAO' {
+        BeforeEach {
+            $script:AirportData = [pscustomobject]@{
+                KLAX = [pscustomobject]@{
+                    icao = 'KLAX'
+                    lat  = 33.9416
+                    lon  = -118.4085
+                }
+                KSNA = [pscustomobject]@{
+                    icao = 'KSNA'
+                    lat  = 33.6757
+                    lon  = -117.8678
+                }
+            }
+        }
+
+        It 'uses a fallback ICAO when the primary source is unavailable' {
+            Mock Invoke-WebRequest {
+                param($Uri)
+
+                if ($Uri -like '*ids=KLAX*') {
+                    [pscustomobject]@{ Content = 'no metar here' }
+                }
+                elseif ($Uri -like '*id=KLAX*') {
+                    throw 'primary failed'
+                }
+                elseif ($Uri -like '*ids=KSNA*') {
+                    [pscustomobject]@{ Content = 'KSNA 121650Z 18012KT 9999 FEW020 18/12 Q1013' }
+                }
+                else {
+                    throw "Unexpected URI: $Uri"
+                }
+            }
+
+            $result = Get-METAR-TAF -ICAO 'KLAX' -FallbackICAOs @('KSNA')
+
+            $result.ICAO | Should -Be 'KSNA'
+            $result.Report | Should -Match '^KSNA '
+            $result.DistanceKm | Should -BeGreaterThan 0
+            $result.DistanceNm | Should -BeGreaterThan 0
+        }
+
+        It 'returns the unavailable object when all sources fail' {
+            Mock Invoke-WebRequest { throw 'network failed' }
+            Mock Write-Error {}
+
+            $result = Get-METAR-TAF -ICAO 'KLAX' -FallbackICAOs @('KSNA')
+
+            $result.ICAO | Should -Be 'KLAX'
+            $result.Report | Should -Be 'METAR/TAF data unavailable.'
         }
     }
 

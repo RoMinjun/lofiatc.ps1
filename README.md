@@ -327,10 +327,10 @@ Download the [FlareSolverr binary from GitHub](https://github.com/FlareSolverr/F
 <br>
 
 ## Player Selection
-When `-Player` is not specified, the script tries to find an installed player.
-
-- **Windows:** checks for mpv, vlc, PotPlayer, and MPC-HC (if available).  
-- **macOS/Linux:** prefers **mpv**, then **vlc**.
+If `-Player` is not specified, the script auto-detects a supported player.
+- On **Windows**, it first checks the default app for `.mp4` and uses it if it is supported and available in `PATH`.
+- If no supported default app is available, it falls back to the first supported installed player.
+- On **non-Windows systems**, it prefers **MPV** first, then **VLC**.
 
 Force a specific player any time:
 ```powershell

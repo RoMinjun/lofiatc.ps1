@@ -19,7 +19,7 @@ if (-not $icaoList -or $icaoList.Count -eq 0) {
     exit 1
 }
 
-# --- NEW: Function to check if FlareSolverr is alive ---
+# Check if FlareSolverr is alive
 Function Test-FlareSolverrConnection {
     $baseUrl = "http://localhost:8191/"
     try {
