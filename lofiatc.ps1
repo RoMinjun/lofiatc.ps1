@@ -291,33 +291,6 @@ Function Get-CurrentCoordinates {
 }
 
 # Helper function for IP-based fallback
-# Function Get-IPLocation {
-#     try {
-#         $uri = "http://ip-api.com/json/?fields=status,message,lat,lon,city,country"
-#         Write-Verbose "Attempting IP-based geolocation fallback..."
-#         $location = Invoke-RestMethod -Uri $uri -UseBasicParsing -TimeoutSec 5
-
-#         if ($location.status -eq 'success' -and $location.lat -and $location.lon) {
-#             Write-Host "Using approximate location based on IP: $($location.city), $($location.country)." -ForegroundColor Yellow
-#             return [pscustomobject]@{
-#                 Latitude  = $location.lat
-#                 Longitude = $location.lon
-#                 City      = $location.city
-#                 Country   = $location.country
-#                 Source    = 'IP'
-#             }
-#         }
-#         else {
-#             Write-Verbose "IP-based geolocation failed: $($location.message)"
-#             return $null
-#         }
-#     }
-#     catch {
-#         Write-Error "Failed to get location from IP API. $_"
-#         return $null
-#     }
-# }
-# Helper function for IP-based fallback
 Function Get-IPLocation {
     try {
         $uri = "https://ipapi.co/json/"
@@ -464,16 +437,6 @@ Function Test-Player {
     return $fullPath
 }
 
-# Function to load the ATC sources from the CSV file
-# Function Import-ATCSource {
-#     param ([string]$csvPath)
-
-#     if (-not (Test-Path $csvPath)) {
-#         throw "The ATC sources CSV file ($csvPath) was not found. Please create it before running the script."
-#     }
-
-#     return Import-Csv -Path $csvPath
-# }
 # Function to load the ATC sources from the CSV file
 Function Import-ATCSource {
     param ([string]$csvPath)
@@ -788,14 +751,6 @@ Function Get-DistanceKm {
     $c = 2 * [math]::Atan2([math]::Sqrt($a), [math]::Sqrt(1 - $a))
     return [math]::Round(6371 * $c)
 }
-
-# # Function to convert a distance in kilometers to nautical miles, with optional rounding to a specified number of decimal places
-# Function ConvertTo-NauticalMiles {
-#     param([double]$Kilometers, [int]$Decimals = 0)
-#     if ($null -eq $Kilometers) { return $null }
-#     $nm = $Kilometers / 1.852
-#     return [math]::Round($nm, $Decimals)
-# }
 
 # Function to convert a distance in kilometers to nautical miles, with optional rounding to a specified number of decimal places
 Function ConvertTo-NauticalMiles {
@@ -1985,73 +1940,6 @@ Function Select-ATCFromMap {
         $Listener.Close()
     }
 }
-
-# Listens for incoming HTTP requests from the ATC map, waiting for a user to click on a channel. 
-# It returns the selected ICAO code and channel description as a hashtable. The function also handles timeout and cancellation via 'Q' key press.
-# Function Select-ATCFromMap {
-#     param(
-#         [System.Net.HttpListener]$Listener,
-#         [int]$TimeoutSeconds = 300
-#     )
-
-#     Write-Host "`nMap opened in your browser! Click a channel on the map to start streaming." -ForegroundColor Green
-#     Write-Host "Waiting for selection... (Press 'Q' in this window to cancel and use the terminal)" -ForegroundColor Yellow
-
-#     $selection = $null
-#     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-
-#     try {
-#         while ((Get-Date) -lt $deadline) {
-#             $contextTask = $Listener.BeginGetContext($null, $null)
-
-#             while (-not $contextTask.IsCompleted) {
-#                 Start-Sleep -Milliseconds 100
-
-#                 if ((Get-Date) -ge $deadline) {
-#                     throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
-#                 }
-
-#                 if (Test-ConsoleKeyAvailable) {
-#                     $key = Read-ConsoleKey -Intercept
-#                     if ($key.Key.ToString() -eq 'Q') {
-#                         throw [System.OperationCanceledException]::new("Map selection cancelled.")
-#                     }
-#                 }
-#             }
-
-#             try {
-#                 $context = $Listener.EndGetContext($contextTask)
-#                 $req = $context.Request
-#                 $res = $context.Response
-
-#                 if ($null -ne $req.QueryString["icao"]) {
-#                     $selection = @{
-#                         ICAO    = $req.QueryString["icao"]
-#                         Channel = $req.QueryString["desc"]
-#                     }
-
-#                     $res.StatusCode = 200
-#                     $res.OutputStream.Close()
-
-#                     Write-Host "`nSelection received from map: $($selection.ICAO)" -ForegroundColor Green
-#                     return $selection
-#                 }
-#                 else {
-#                     $res.StatusCode = 200
-#                     $res.OutputStream.Close()
-#                 }
-#             }
-#             catch {}
-#         }
-
-#         throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
-#     }
-#     finally {
-#         Start-Sleep -Milliseconds 250
-#         $Listener.Stop()
-#         $Listener.Close()
-#     }
-# }
 
 Function Add-DependencyResult {
     param(
