@@ -424,6 +424,15 @@ You can safely delete the repo folder. Optional user files created:
 
 <br>
 
+## License
+The source code in this repository is licensed under the MIT License. See
+[LICENSE](./LICENSE).
+
+## Third-Party Notice
+This project may reference third-party services and content, including
+LiveATC.net. Such third-party content is not covered by this repository's
+license. See [NOTICE](./NOTICE).
+
 ## Contributing
 PRs welcome! Popular contributions:
 - New/updated ATC sources. Please add to `atc_sources.csv`, let the script update the rest.
