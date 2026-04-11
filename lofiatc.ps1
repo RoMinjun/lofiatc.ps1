@@ -380,7 +380,7 @@ Function Resolve-Player {
                     'vlc.exe'
                 }
                 'MPV' {
-                    'mpv.com'
+                    'mpv.exe'
                 }
                 'Potplayer' {
                     'PotPlayerMini64.exe'
@@ -400,7 +400,7 @@ Function Resolve-Player {
         @(
             @{ 
                 Name = "MPV"
-                Command = "mpv.com"
+                Command = "mpv.exe"
             }
             @{
                 Name = "VLC"
@@ -507,7 +507,7 @@ Function Test-Player {
         }
         "MPV" {
             if ($script:OnWindows) {
-                "mpv.com" 
+                "mpv.exe" 
             }
             else {
                 "mpv"
@@ -2301,6 +2301,69 @@ Function New-ATCMapHtml {
             --divider: #333;
             --hover-color: #fff;
         }
+        .radar-controls {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--divider);
+        }
+        .radar-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;    
+        }
+        .radar-btn {
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .radar-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .radar-status {
+            margin-top: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-height: 14px;
+        }
+        #radar-timeline {
+            width: 100%;
+            margin-top: 8px;
+            accent-color: #e94560;
+        }
+        .radar-scale {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .radar-fade-layer {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .radar-btn,
+        #radar-timeline {
+            transition: transform 0.15s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .radar-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+        }
+
+        .radar-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        #radar-status {
+            transition: opacity 0.2s ease;
+        }
         #toast {
             position: absolute;
             top: 80px;
@@ -2385,11 +2448,25 @@ Function New-ATCMapHtml {
         <div class="legend-section-title">Map Filters</div>
         $weatherLegendItems
         $webcamLegendItem
-        <label class="legend-item" title="Airports saved to your favorites. They grow larger the more you listen!"><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorite</label>
+        <div class="radar-controls">
+            <label class="legend-item" title="Toggle RainViewer precipitation overlay with up to 1 hour of radar history.">
+                <input type="checkbox" id="toggle-weather"> Weather Radar
+            </label>
+            <div class="radar-toolbar">
+                <button type="button" id="radar-back" class="radar-btn" title="Go 10 minutes earlier">◀ Older</button>
+                <button type="button" id="radar-live" class="radar-btn" title="Jump to latest radar frame">Live</button>
+                <button type="button" id="radar-forward" class="radar-btn" title="Go 10 minutes later">Newer ▶</button>
+            </div>
+            <input type="range" id="radar-timeline" min="0" max="0" step="1" value="0" disabled>
+            <div class="radar-scale">
+                <span>-1h</span>
+                <span>Now</span>
+            </div>
+            <div id="radar-status" class="radar-status">Radar history unavailable</div>
+        </div>
         $locationLegendItem
 
         <div class="legend-section-title" style="margin-top:10px;">Overlays</div>
-        <label class="legend-item" title="Toggle live RainViewer precipitation overlay. Updates every 10 mins."><input type="checkbox" id="toggle-weather"> Weather Radar</label>
         $windToggle
         <label class="legend-item" title="Toggle Dark/Light Mode"><input type="checkbox" id="toggle-theme" $darkModeChecked> Dark Mode</label>
     </div>
@@ -2491,27 +2568,236 @@ Function New-ATCMapHtml {
         setInterval(function() { terminatorLayer.setTime(); }, 60000);
 
         var weatherLayer = null;
-        function updateRadar() {
-            fetch('https://api.rainviewer.com/public/weather-maps.json').then(res => res.json()).then(data => {
-                var latest = data.radar.past[data.radar.past.length - 1].path;
-                var newLayer = L.tileLayer(data.host + latest + '/256/{z}/{x}/{y}/2/1_1.png', {
-                    opacity: 0.5, zIndex: 10, maxNativeZoom: 12, maxZoom: 18
-                });
-                var isChecked = document.getElementById('toggle-weather').checked;
-                if (weatherLayer && map.hasLayer(weatherLayer)) { map.removeLayer(weatherLayer); }
-                weatherLayer = newLayer;
-                if (isChecked) { weatherLayer.addTo(map); }
-            }).catch(e => console.log('Weather radar fetch failed.'));
+        var radarFrames = [];
+        var radarFrameIndex = -1;
+        var radarHost = '';
+        var radarPalette = '2';
+        var radarSmooth = '1';
+        var radarSnow = '1';
+
+        function formatRadarFrameTime(frame) {
+            if (!frame || !frame.time) return 'Radar history unavailable';
+
+            var dt = new Date(frame.time * 1000);
+            var now = new Date();
+            var diffMinutes = Math.max(0, Math.round((now.getTime() - dt.getTime()) / 60000));
+
+            if (diffMinutes <= 2) return 'Radar: Live';
+            return 'Radar: ' + diffMinutes + ' min ago';
         }
 
-        updateRadar();
-        setInterval(updateRadar, 600000);
+        function updateRadarControls() {
+            var timeline = document.getElementById('radar-timeline');
+            var backBtn = document.getElementById('radar-back');
+            var forwardBtn = document.getElementById('radar-forward');
+            var liveBtn = document.getElementById('radar-live');
+            var status = document.getElementById('radar-status');
+
+            var hasFrames = radarFrames.length > 0 && radarFrameIndex >= 0;
+            timeline.disabled = !hasFrames;
+            backBtn.disabled = !hasFrames || radarFrameIndex <= 0;
+            forwardBtn.disabled = !hasFrames || radarFrameIndex >= radarFrames.length - 1;
+            liveBtn.disabled = !hasFrames || radarFrameIndex === radarFrames.length - 1;
+
+            if (!hasFrames) {
+                timeline.min = 0;
+                timeline.max = 0;
+                timeline.value = 0;
+                status.textContent = 'Radar history unavailable';
+                return;
+            }
+
+            timeline.min = 0;
+            timeline.max = radarFrames.length - 1;
+            timeline.value = radarFrameIndex;
+            status.textContent = formatRadarFrameTime(radarFrames[radarFrameIndex]);
+        }
+
+        function buildRadarTileLayer(frame) {
+            return L.tileLayer(
+                radarHost + frame.path + '/256/{z}/{x}/{y}/' + radarPalette + '/' + radarSmooth + '_' + radarSnow + '.png',
+                {
+                    opacity: 0.5,
+                    zIndex: 10,
+                    maxNativeZoom: 14,
+                    maxZoom: 18,
+                    updateWhenZooming: false,
+                    updateWhenIdle: true,
+                    keepBuffer: 4,
+                    crossOrigin: true,
+                    className: 'radar-fade-layer'
+                }
+            );
+        }
+
+        function renderRadarFrame() {
+            if (!radarFrames.length || radarFrameIndex < 0 || radarFrameIndex >= radarFrames.length) {
+                updateRadarControls();
+                return;
+            }
+
+            var frame = radarFrames[radarFrameIndex];
+            var nextLayer = buildRadarTileLayer(frame);
+            var isChecked = document.getElementById('toggle-weather').checked;
+            var previousLayer = weatherLayer;
+
+            weatherLayer = nextLayer;
+            updateRadarControls();
+
+            if (!isChecked) {
+                return;
+            }
+
+            nextLayer.once('load', function() {
+                if (!document.getElementById('toggle-weather').checked) {
+                    return;
+                }
+
+                if (!map.hasLayer(nextLayer)) {
+                    nextLayer.addTo(map);
+                }
+
+                var nextContainer = nextLayer.getContainer && nextLayer.getContainer();
+                if (nextContainer) {
+                    nextContainer.style.opacity = '0';
+                    requestAnimationFrame(function() {
+                        requestAnimationFrame(function() {
+                            nextContainer.style.opacity = '0.5';
+                        });
+                    });
+                }
+
+                if (previousLayer && previousLayer !== nextLayer && map.hasLayer(previousLayer)) {
+                    var previousContainer = previousLayer.getContainer && previousLayer.getContainer();
+
+                    if (previousContainer) {
+                        previousContainer.style.opacity = '0';
+                        setTimeout(function() {
+                            if (map.hasLayer(previousLayer)) {
+                                map.removeLayer(previousLayer);
+                            }
+                        }, 300);
+                    } else {
+                        map.removeLayer(previousLayer);
+                    }
+                }
+            });
+
+            nextLayer.on('tileerror', function() {
+                console.log('Radar tile failed to load for this frame.');
+            });
+
+            nextLayer.addTo(map);
+        }
+
+        function setRadarFrame(index) {
+            if (!radarFrames.length) return;
+            radarFrameIndex = Math.max(0, Math.min(index, radarFrames.length - 1));
+            renderRadarFrame();
+        }
+
+        function loadRadarFrames() {
+            var previousFrameTime = null;
+            if (radarFrames.length && radarFrameIndex >= 0 && radarFrames[radarFrameIndex]) {
+                previousFrameTime = radarFrames[radarFrameIndex].time;
+            }
+
+            fetch('https://api.rainviewer.com/public/weather-maps.json')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var pastFrames = (data && data.radar && data.radar.past) ? data.radar.past : [];
+                    radarHost = data && data.host ? data.host : '';
+
+                    if (!pastFrames.length || !radarHost) {
+                        radarFrames = [];
+                        radarFrameIndex = -1;
+                        if (weatherLayer && map.hasLayer(weatherLayer)) {
+                            map.removeLayer(weatherLayer);
+                        }
+                        weatherLayer = null;
+                        updateRadarControls();
+                        return;
+                    }
+
+                    radarFrames = pastFrames.slice(-6); // ~1 hour at 10-minute cadence
+
+                    if (previousFrameTime) {
+                        var preservedIndex = radarFrames.findIndex(function(f) { return f.time === previousFrameTime; });
+                        radarFrameIndex = preservedIndex >= 0 ? preservedIndex : radarFrames.length - 1;
+                    } else {
+                        radarFrameIndex = radarFrames.length - 1;
+                    }
+
+                    renderRadarFrame();
+                })
+                .catch(function() {
+                    console.log('Weather radar fetch failed.');
+                    radarFrames = [];
+                    radarFrameIndex = -1;
+                    updateRadarControls();
+                });
+        }
 
         document.getElementById('toggle-weather').addEventListener('change', function(e) {
             if (!weatherLayer) return;
-            if (e.target.checked) { map.addLayer(weatherLayer); }
-            else { map.removeLayer(weatherLayer); }
+
+            var container = weatherLayer.getContainer && weatherLayer.getContainer();
+
+            if (e.target.checked) {
+                if (!map.hasLayer(weatherLayer)) {
+                    weatherLayer.addTo(map);
+                    container = weatherLayer.getContainer && weatherLayer.getContainer();
+                    if (container) {
+                        container.classList.add('radar-fade-layer');
+                        container.style.opacity = '0';
+                        requestAnimationFrame(function() {
+                            requestAnimationFrame(function() {
+                                container.style.opacity = '0.5';
+                            });
+                        });
+                    }
+                } else if (container) {
+                    container.style.opacity = '0.5';
+                }
+            } else {
+                if (container) {
+                    container.style.opacity = '0';
+                    setTimeout(function() {
+                        if (map.hasLayer(weatherLayer) && !document.getElementById('toggle-weather').checked) {
+                            map.removeLayer(weatherLayer);
+                        }
+                    }, 450);
+                } else if (map.hasLayer(weatherLayer)) {
+                    map.removeLayer(weatherLayer);
+                }
+            }
         });
+
+        document.getElementById('radar-back').addEventListener('click', function() {
+            setRadarFrame(radarFrameIndex - 1);
+        });
+
+        document.getElementById('radar-forward').addEventListener('click', function() {
+            setRadarFrame(radarFrameIndex + 1);
+        });
+
+        document.getElementById('radar-live').addEventListener('click', function() {
+            setRadarFrame(radarFrames.length - 1);
+        });
+
+        var radarScrubTimer = null;
+
+        document.getElementById('radar-timeline').addEventListener('input', function(e) {
+            var value = parseInt(e.target.value, 10);
+
+            clearTimeout(radarScrubTimer);
+            radarScrubTimer = setTimeout(function() {
+                setRadarFrame(value);
+            }, 10);
+        });
+
+        loadRadarFrames();
+        setInterval(loadRadarFrames, 600000);
 
         var markersData = JSON.parse(document.getElementById('markers-data').textContent);
         var allMapItems = [];
@@ -2823,7 +3109,7 @@ Function Start-PersistentATCMapSession {
 
                 $payload = @{
                     ok      = $true
-                    message = "Tuned to $($started.ICAO) — $($started.Channel)"
+                    message = "Ready"
                 }
 
                 if ($null -ne $req.QueryString["icao"]) {
@@ -3026,7 +3312,7 @@ Function Test-LofiATCDependencies {
 
     $playerCandidates = if ($script:OnWindows) {
         @(
-            @{ Name = 'MPV'; Command = 'mpv.com' }
+            @{ Name = 'MPV'; Command = 'mpv.exe' }
             @{ Name = 'VLC'; Command = 'vlc.exe' }
             @{ Name = 'Potplayer'; Command = 'PotPlayerMini64.exe' }
             @{ Name = 'MPC-HC'; Command = 'mpc-hc64.exe' }
@@ -3042,7 +3328,7 @@ Function Test-LofiATCDependencies {
     if ($SelectedPlayer) {
         $selectedCommand = switch ($SelectedPlayer) {
             'VLC'       { if ($script:OnWindows) { 'vlc.exe' } else { 'vlc' } }
-            'MPV'       { if ($script:OnWindows) { 'mpv.com' } else { 'mpv' } }
+            'MPV'       { if ($script:OnWindows) { 'mpv.exe' } else { 'mpv' } }
             'Potplayer' { 'PotPlayerMini64.exe' }
             'MPC-HC'    { 'mpc-hc64.exe' }
             default     { $null }
