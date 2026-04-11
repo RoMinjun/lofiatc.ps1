@@ -1,7 +1,11 @@
+param(
+  [string]
+  $flaresolverrUrl = "http://localhost:8191/v1"
+)
+
 $missingCsv        = ".\missing_from_metars.csv"
 $atcSourcesCsv     = "..\atc_sources.csv"
 $liveAtcSourcesCsv = "..\liveatc_sources.csv"
-$flaresolverrUrl   = "http://localhost:8191/v1"
 
 function Get-MetarFallbackValue {
     param(
