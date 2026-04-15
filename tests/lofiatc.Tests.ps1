@@ -86,8 +86,8 @@ Describe 'lofiatc.ps1 helper functions' {
             Mock Get-DefaultAppForMP4 { 'some-other-app' }
 
             Mock Get-Command {
-                [pscustomobject]@{ Path = 'C:\mpv\mpv.com' }
-            } -ParameterFilter { $Name -eq 'mpv.com' }
+                [pscustomobject]@{ Path = 'C:\mpv\mpv.exe' }
+            } -ParameterFilter { $Name -eq 'mpv.exe' }
 
             Mock Get-Command { $null } -ParameterFilter { $Name -eq 'vlc.exe' }
             Mock Get-Command { $null } -ParameterFilter { $Name -eq 'PotPlayerMini64.exe' }
@@ -101,7 +101,7 @@ Describe 'lofiatc.ps1 helper functions' {
 
             Mock Get-DefaultAppForMP4 { $null }
 
-            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpv.com' }
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpv.exe' }
             Mock Get-Command { $null } -ParameterFilter { $Name -eq 'vlc.exe' }
             Mock Get-Command {
                 [pscustomobject]@{ Path = 'C:\PotPlayer\PotPlayerMini64.exe' }
