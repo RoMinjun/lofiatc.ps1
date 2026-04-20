@@ -5,3 +5,4 @@ favorites.json
 config.json
 tools/*.csv*
 *.bak
+*.env
