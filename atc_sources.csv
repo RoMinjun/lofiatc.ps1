@@ -1952,6 +1952,7 @@
 "North America","United States","Rochester","New York","Greater Rochester International Airport","KROC","ROC","KROC Del/Gnd/Twr","https://www.liveatc.net/play/kroc_s.pls","",""
 "North America","United States","Schenectady","New York","Schenectady County Airport","KSCH","SCH","KSCH Ground","https://www.liveatc.net/play/kalb2_ksch_gnd.pls","",""
 "North America","United States","Schenectady","New York","Schenectady County Airport","KSCH","SCH","KSCH Tower","https://www.liveatc.net/play/kalb2_ksch_twr.pls","",""
+"North America","United States","Shirley","New York","Brookhaven Airport","KHWV","HWV","KHWV CTAF","https://www.liveatc.net/play/khwv_ctaf.pls","",""
 "North America","United States","Syracuse","New York","Syracuse Hancock International Airport","KSYR","SYR","KSYR App/Dep","https://www.liveatc.net/play/ksyr_app.pls","",""
 "North America","United States","Syracuse","New York","Syracuse Hancock International Airport","KSYR","SYR","KSYR ATIS","https://www.liveatc.net/play/ksyr_atis.pls","",""
 "North America","United States","Syracuse","New York","Syracuse Hancock International Airport","KSYR","SYR","KSYR Clearance Delivery","https://www.liveatc.net/play/ksyr_del.pls","",""
@@ -2780,4 +2781,3 @@
 "South America","Uruguay","Punta del Este","","Capitan Corbeta C A Curbelo International Airport","SULS","PDP","SULS Tower","https://www.liveatc.net/play/suls2_twr.pls","",""
 "South America","Uruguay","Salto","","Nueva Hesperides International Airport","SUSO","STY","SUSO Tower/Ramp","https://www.liveatc.net/play/suso1.pls","",""
 "South America","Venezuela","Ciudad Guayana","","Manuel Carlos Piar Guayana Airport","SVPR","PZO","SVPR Twr/App/FIR","https://www.liveatc.net/play/svpr2.pls","","SVBC"
-"North America","United States","Shirley","New York","Brookhaven Airport","KHWV","HWV","KHWV CTAF","https://www.liveatc.net/play/khwv_ctaf.pls","",""
