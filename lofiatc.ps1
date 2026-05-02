@@ -76,6 +76,9 @@ Initializes the HTML Map in Dark Mode.
 
 .PARAMETER CheckDependencies
 Checks required files, player availability, optional tools, and network dependencies, then prints a dependency report and exits.
+
+.PARAMETER KeepOpen
+When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
 #>
 
 [CmdletBinding()]
@@ -108,7 +111,9 @@ param (
     [switch]$ShowMap,
     [switch]$NoWeather,
     [switch]$Dark,
-    [switch]$CheckDependencies
+    [switch]$CheckDependencies,
+    [Alias("Persistent")]
+    [switch]$KeepOpen
 )
 
 $LofiGenres = @{
@@ -177,6 +182,11 @@ $script:IanaToWindowsMap = @{
     "Pacific/Honolulu"               = "Hawaiian Standard Time"
 }
 
+$script:CurrentATCProcess = $null
+$script:CurrentWebcamProcess = $null
+$script:CurrentMapSelection = $null
+$script:CurrentLofiProcess = $null
+
 # Function to check if a console key is available without blocking
 Function Test-ConsoleKeyAvailable {
     return [console]::KeyAvailable
@@ -199,7 +209,9 @@ Function Test-InteractiveConsoleAvailable {
 
 # Function to read a key from the console, with an option to intercept (not display) the key press
 Function Read-ConsoleKey {
-    param([switch]$Intercept)
+    param(
+        [switch]$Intercept
+    )
     return [console]::ReadKey($Intercept)
 }
 
@@ -216,13 +228,22 @@ Function Get-DefaultAppForMP4 {
             if (Test-Path $keyPath) {
                 $progID = (Get-ItemProperty -Path $keyPath -ErrorAction Stop).'(default)'
             }
-            else { return $null }
+            else {
+                return $null
+            }
         }
 
-        if ($progID -like "Applications\*") { return $progID -replace "Applications\\", "" }
-        else { return $progID }
+        if ($progID -like "Applications\*") {
+            return $progID -replace "Applications\\"
+            ""
+        }
+        else {
+            return $progID
+        }
     }
-    catch { return $null }
+    catch {
+        return $null
+    }
 }
 
 # Main function to get user's location
@@ -253,8 +274,12 @@ Function Get-CurrentCoordinates {
             $timeoutSeconds = 10
 
             while ($GeoWatcher.Status -eq 'Initializing') {
-                if ($GeoWatcher.Permission -eq 'Denied') { break }
-                if (((Get-Date) - $startTime).TotalSeconds -ge $timeoutSeconds) { break }
+                if ($GeoWatcher.Permission -eq 'Denied') {
+                    break
+                }
+                if (((Get-Date) - $startTime).TotalSeconds -ge $timeoutSeconds) {
+                    break
+                }
                 Start-Sleep -Milliseconds 100
             }
 
@@ -320,7 +345,9 @@ Function Get-IPLocation {
 
 # Function to determine the appropriate player based on user input, system defaults, and availability in PATH
 Function Resolve-Player {
-    param([string]$ExplicitPlayer)
+    param(
+        [string]$ExplicitPlayer
+    )
 
     if ($ExplicitPlayer) {
         return $ExplicitPlayer
@@ -332,19 +359,35 @@ Function Resolve-Player {
 
         if ($defaultApp) {
             switch -Regex ($defaultApp.ToLower()) {
-                'vlc'              { $preferredPlayer = 'VLC' }
-                'mpv'              { $preferredPlayer = 'MPV' }
-                'potplayer|daum'   { $preferredPlayer = 'Potplayer' }
-                'mpc|mpc-hc'       { $preferredPlayer = 'MPC-HC' }
+                'vlc' {
+                    $preferredPlayer = 'VLC'
+                }
+                'mpv' {
+                    $preferredPlayer = 'MPV'
+                }
+                'potplayer|daum' {
+                    $preferredPlayer = 'Potplayer'
+                }
+                'mpc|mpc-hc' {
+                    $preferredPlayer = 'MPC-HC'
+                }
             }
         }
 
         if ($preferredPlayer) {
             $preferredCommand = switch ($preferredPlayer) {
-                'VLC'       { 'vlc.exe' }
-                'MPV'       { 'mpv.com' }
-                'Potplayer' { 'PotPlayerMini64.exe' }
-                'MPC-HC'    { 'mpc-hc64.exe' }
+                'VLC' {
+                    'vlc.exe'
+                }
+                'MPV' {
+                    'mpv.exe'
+                }
+                'Potplayer' {
+                    'PotPlayerMini64.exe'
+                }
+                'MPC-HC' {
+                    'mpc-hc64.exe'
+                }
             }
 
             if (Get-Command $preferredCommand -ErrorAction SilentlyContinue) {
@@ -355,16 +398,34 @@ Function Resolve-Player {
 
     $candidates = if ($script:OnWindows) {
         @(
-            @{ Name = "MPV"; Command = "mpv.com" }
-            @{ Name = "VLC"; Command = "vlc.exe" }
-            @{ Name = "Potplayer"; Command = "PotPlayerMini64.exe" }
-            @{ Name = "MPC-HC"; Command = "mpc-hc64.exe" }
+            @{ 
+                Name = "MPV"
+                Command = "mpv.exe"
+            }
+            @{
+                Name = "VLC"
+                Command = "vlc.exe"
+            }
+            @{
+                Name = "Potplayer"
+                Command = "PotPlayerMini64.exe"
+            }
+            @{
+                Name = "MPC-HC"
+                Command = "mpc-hc64.exe"
+            }
         )
     }
     else {
         @(
-            @{ Name = "MPV"; Command = "mpv" }
-            @{ Name = "VLC"; Command = "vlc" }
+            @{
+                Name = "MPV"
+                Command = "mpv"
+            }
+            @{
+                Name = "VLC"
+                Command = "vlc"
+            }
         )
     }
 
@@ -391,9 +452,13 @@ Function Resolve-StreamUrl {
             elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
                 $resolved = youtube-dl -g --no-warnings --skip-download -- $url 2>$null
             }
-            if ($resolved) { $resolvedUrl = ($resolved -join '') }
+            if ($resolved) {
+                $resolvedUrl = ($resolved -join '')
+            }
         }
-        catch { Write-Warning "Failed to resolve YouTube URL with yt-dlp/youtube-dl. Falling back to original URL." }
+        catch {
+            Write-Warning "Failed to resolve YouTube URL with yt-dlp/youtube-dl. Falling back to original URL."
+        }
     }
     elseif ($url -match '\.pls(\?|$)') {
         try {
@@ -401,17 +466,25 @@ Function Resolve-StreamUrl {
                 $feedName = $matches['feed']
                 $resolvedUrl = "http://d.liveatc.net/$feedName"
             }
-            else { Write-Warning "Could not parse feed name from the provided PLS URL. Falling back to original" }
+            else {
+                Write-Warning "Could not parse feed name from the provided PLS URL. Falling back to original"
+            }
         }
-        catch { Write-Warning "Failed to resolve PLS URL. Falling back to original URL." }
+        catch {
+            Write-Warning "Failed to resolve PLS URL. Falling back to original URL."
+        }
     }
     elseif (($script:IsLinux -or $IsLinux) -and $url -match 'liveatc\.net') {
         try {
             $m3u = curl -sL -- $url
             $streamLine = $m3u -split "`n" | Where-Object { $_ -and ($_ -notmatch '^#') } | Select-Object -First 1
-            if ($streamLine) { $resolvedUrl = $streamLine }
+            if ($streamLine) {
+                $resolvedUrl = $streamLine
+            }
         }
-        catch { Write-Warning "Failed to resolve LiveATC M3U. Falling back to original URL." }
+        catch {
+            Write-Warning "Failed to resolve LiveATC M3U. Falling back to original URL."
+        }
     }
 
     return $resolvedUrl
@@ -419,14 +492,36 @@ Function Resolve-StreamUrl {
 
 # Function to check if the selected player is available
 Function Test-Player {
-    param ([string]$player)
+    param (
+        [string]$player
+    )
 
     $command = switch ($player) {
-        "VLC"       { if ($script:OnWindows) { "vlc.exe" } else { "vlc" } }
-        "MPV"       { if ($script:OnWindows) { "mpv.com" } else { "mpv" } }
-        "Potplayer" { "PotPlayerMini64.exe" }
-        "MPC-HC"    { "mpc-hc64.exe" }
-        default     { throw "Unsupported player: $player" }
+        "VLC" { 
+            if ($script:OnWindows) {
+                "vlc.exe"
+            } 
+            else {
+                "vlc"
+            }
+        }
+        "MPV" {
+            if ($script:OnWindows) {
+                "mpv.exe" 
+            }
+            else {
+                "mpv"
+            }
+        }
+        "Potplayer" {
+            "PotPlayerMini64.exe"
+        }
+        "MPC-HC" {
+            "mpc-hc64.exe"
+        }
+        default {
+            throw "Unsupported player: $player"
+        }
     }
 
     $fullPath = Get-Command $command -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Path
@@ -439,7 +534,9 @@ Function Test-Player {
 
 # Function to load the ATC sources from the CSV file
 Function Import-ATCSource {
-    param ([string]$csvPath)
+    param (
+        [string]$csvPath
+    )
 
     if (-not (Test-Path $csvPath)) {
         throw "The ATC sources CSV file ($csvPath) was not found. Please create it before running the script."
@@ -560,14 +657,24 @@ Function Open-Radar {
     param([string]$ICAO)
 
     $url = "https://beta.flightaware.com/live/airport/$ICAO"
-    if ($script:OnWindows) { Start-Process $url }
-    elseif ($IsMacOS) { & open $url }
-    else { & xdg-open $url }
+    if ($script:OnWindows) { 
+        Start-Process $url
+    }
+    elseif ($IsMacOS) {
+        & open $url
+    }
+    else {
+        & xdg-open $url
+    }
 }
 
 # Select a favorite ATC stream from the favorites list, showing play counts and channel info, and return the stream details if selected
 Function Select-FavoriteATC {
-    param([array]$favorites, [array]$atcSources, [switch]$UseFZF)
+    param(
+        [array]$favorites,
+        [array]$atcSources,
+        [switch]$UseFZF
+    )
 
     $favEntries = foreach ($fav in $favorites) {
         $entry = $atcSources | Where-Object { $_.ICAO -eq $fav.ICAO -and $_.'Channel Description' -eq $fav.Channel } | Select-Object -First 1
@@ -579,9 +686,16 @@ Function Select-FavoriteATC {
         }
     }
 
-    if (-not $favEntries -or $favEntries.Count -eq 0) { return $null }
+    if (-not $favEntries -or $favEntries.Count -eq 0) {
+        return $null 
+    }
+
     $labels = $favEntries.Display
-    $sel = if ($UseFZF) { Select-ItemFZF -prompt 'Select a favorite' -items $labels } else { Select-Item -prompt 'Select a favorite:' -items $labels }
+    $sel = if ($UseFZF) { 
+        Select-ItemFZF -prompt 'Select a favorite' -items $labels
+    } else { 
+        Select-Item -prompt 'Select a favorite:' -items $labels
+    }
     if ($sel) {
         $fav = $favEntries | Where-Object { $_.Display -eq $sel }
         return @{
@@ -590,22 +704,33 @@ Function Select-FavoriteATC {
             AirportInfo = $fav.Entry
         }
     }
-    else { return $null }
+    else { 
+        return $null
+    }
 }
 
 # Generic function to display a list of items and prompt the user to select one, with optional back navigation
 Function Select-Item {
-    param ([string]$prompt, [array]$items, [switch]$AllowBack)
+    param (
+        [string]$prompt,
+        [array]$items,
+        [switch]$AllowBack)
 
     while ($true) {
         Clear-Host
         Write-Host $prompt -ForegroundColor Yellow
         $i = 1
-        foreach ($item in $items) { Write-Host "$i. $item"; $i++ }
-        if ($AllowBack) { Write-Host "0. Go Back" }
+        foreach ($item in $items) {
+            Write-Host "$i. $item"; $i++ 
+        }
+        if ($AllowBack) {
+            Write-Host "0. Go Back" 
+        }
 
         $userChoice = Read-Host "Enter the number of your choice"
-        if ($AllowBack -and $userChoice -eq '0') { return $null }
+        if ($AllowBack -and $userChoice -eq '0') {
+            return $null 
+        }
 
         if ($userChoice -match '^\d+$') {
             $index = [int]$userChoice - 1
@@ -636,7 +761,12 @@ Function Select-ItemFZF {
 # Function to select an ATC stream based on continent, country, and optionally state/province, 
 # with support for webcam availability indication and channel selection if multiple channels exist for the same airport
 Function Select-ATCStream {
-    param ([array]$atcSources, [string]$continent, [string]$country, [string]$state)
+    param (
+        [array]$atcSources, 
+        [string]$continent, 
+        [string]$country, 
+        [string]$state
+    )
 
     while ($true) {
         Clear-Host
@@ -651,7 +781,10 @@ Function Select-ATCStream {
             )
         }
 
-        if ($choices.Count -eq 0) { Write-Error "No ATC streams available for the selected country."; return $null }
+        if ($choices.Count -eq 0) { 
+            Write-Error "No ATC streams available for the selected country."
+            return $null 
+        }
 
         $airports = $choices | Group-Object -Property City, 'Airport Name' | ForEach-Object {
             $city = $_.Group[0].City
@@ -662,7 +795,9 @@ Function Select-ATCStream {
         } | Sort-Object
 
         $airportSel = Select-Item -prompt "Select an airport from ${country}:" -items $airports -AllowBack
-        if ($null -eq $airportSel) { return $null }
+        if ($null -eq $airportSel) {
+            return $null
+        }
 
         $airportChoices = $choices | Where-Object {
             "[{0}] {1}" -f $_.City, $_.'Airport Name' -eq ($airportSel -replace '\s\[Webcam available\]', '')
@@ -680,7 +815,9 @@ Function Select-ATCStream {
                 $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
                 $selected = $airportChoices | Where-Object { $_.'Channel Description' -eq $chanClean }
             }
-            else { $selected = $airportChoices[0] }
+            else { 
+                $selected = $airportChoices[0]
+            }
 
             if ($selected) {
                 return @{
@@ -695,7 +832,9 @@ Function Select-ATCStream {
 
 # Function to select an ATC stream using fzf for filtering, showing webcam availability and channel info in the selection list
 Function Select-ATCStreamFZF {
-    param ([array]$atcSources)
+    param (
+        [array]$atcSources
+    )
 
     Clear-Host
 
@@ -731,7 +870,9 @@ Function Select-ATCStreamFZF {
 
 # Function to select a random ATC stream from the list of sources, optionally filtered by ICAO code if specified, and return the stream details
 Function Get-RandomATCStream {
-    param ([array]$atcSources)
+    param (
+        [array]$atcSources
+    )
     $randomIndex = Get-Random -Minimum 0 -Maximum $atcSources.Count
     $selectedStream = $atcSources[$randomIndex]
     return @{
@@ -743,7 +884,13 @@ Function Get-RandomATCStream {
 
 # Function to calculate the distance in kilometers between two sets of latitude and longitude coordinates using the Haversine formula
 Function Get-DistanceKm {
-    param ([double]$Lat1, [double]$Lon1, [double]$Lat2, [double]$Lon2)
+    param (
+        [double]$Lat1,
+        [double]$Lon1,
+        [double]$Lat2,
+        [double]$Lon2
+    )
+
     $rad = [math]::PI / 180
     $dLat = ($Lat2 - $Lat1) * $rad
     $dLon = ($Lon2 - $Lon1) * $rad
@@ -754,7 +901,10 @@ Function Get-DistanceKm {
 
 # Function to convert a distance in kilometers to nautical miles, with optional rounding to a specified number of decimal places
 Function ConvertTo-NauticalMiles {
-    param([double]$Kilometers, [int]$Decimals = 0)
+    param(
+        [double]$Kilometers,
+        [int]$Decimals = 0
+    )
 
     $nm = $Kilometers / 1.852
     return [math]::Round($nm, $Decimals)
@@ -762,12 +912,20 @@ Function ConvertTo-NauticalMiles {
 
 # Function to fetch METAR and TAF data for a given ICAO code, with fallback options
 Function Get-METAR-TAF {
-    param ([string]$ICAO, [string[]]$FallbackICAOs)
+    param (
+        [string]$ICAO,
+        [string[]]$FallbackICAOs
+    )
 
     $icaoList = @($ICAO)
-    if ($FallbackICAOs) { $icaoList += $FallbackICAOs }
+    if ($FallbackICAOs) {
+        $icaoList += $FallbackICAOs
+    }
 
-    $raw = $null; $used = $ICAO; $source = $null; $sourceUrl = $null
+    $raw = $null
+    $used = $ICAO
+    $source = $null
+    $sourceUrl = $null
 
     foreach ($code in $icaoList) {
         $url = "https://aviationweather.gov/api/data/metar?ids=$code"
@@ -778,9 +936,13 @@ Function Get-METAR-TAF {
                 $used = $code; $source = 'NOAA'; $sourceUrl = 'https://aviationweather.gov'
                 break
             }
-            else { Write-Verbose ("NOAA METAR invalid for {0}: {1}" -f $code, $raw) }
+            else {
+                Write-Verbose ("NOAA METAR invalid for {0}: {1}" -f $code, $raw)
+            }
         }
-        catch { Write-Verbose ("NOAA METAR fetch failed for {0}: {1}" -f $code, $_) }
+        catch {
+            Write-Verbose ("NOAA METAR fetch failed for {0}: {1}" -f $code, $_) 
+        }
 
         try {
             $vatsimUrl = "https://metar.vatsim.net/metar.php?id=$code"
@@ -790,9 +952,13 @@ Function Get-METAR-TAF {
                 $used = $code; $source = 'VATSIM'; $sourceUrl = 'https://metar.vatsim.net'
                 break
             }
-            else { Write-Verbose ("VATSIM METAR invalid for {0}: {1}" -f $code, $raw) }
+            else {
+                Write-Verbose ("VATSIM METAR invalid for {0}: {1}" -f $code, $raw)
+            }
         }
-        catch { Write-Verbose ("VATSIM METAR fetch failed for {0}: {1}" -f $code, $_) }
+        catch {
+            Write-Verbose ("VATSIM METAR fetch failed for {0}: {1}" -f $code, $_)
+        }
     }
 
     if (-not $raw) {
@@ -803,42 +969,109 @@ Function Get-METAR-TAF {
     $distance = if ($used -ne $ICAO) {
         $orig = Get-AirportInfo -ICAO $ICAO
         $alt = Get-AirportInfo -ICAO $used
-        if ($orig -and $alt) { Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon } else { $null }
+        if ($orig -and $alt) {
+            Get-DistanceKm -Lat1 $orig.lat -Lon1 $orig.lon -Lat2 $alt.lat -Lon2 $alt.lon
+        }
+        else {
+            $null
+        }
     }
-    else { 0 }
+    else {
+        0
+    }
 
-    $distanceNm = if ($null -ne $distance) { ConvertTo-NauticalMiles -Kilometers $distance -Decimals 0 } else { $null }
+    $distanceNm = if ($null -ne $distance) {
+        ConvertTo-NauticalMiles -Kilometers $distance -Decimals 0 
+    } 
+    else {
+        $null
+    }
 
-    return [pscustomobject]@{ Report = $raw; ICAO = $used; DistanceKm = $distance; DistanceNm = $distanceNm; Source = $source; SourceUrl = $sourceUrl }
+    return [pscustomobject]@{ 
+        Report = $raw
+        ICAO = $used
+        DistanceKm = $distance
+        DistanceNm = $distanceNm
+        Source = $source
+        SourceUrl = $sourceUrl 
+    }
 }
 
 # Function to decode METAR string into a structured object
 Function ConvertFrom-METAR {
-    param ([string]$metar)
+    param (
+        [string]$metar
+    )
+
     $decoded = @{}
 
     if ($metar -match "(?<windDir>\d{3})(?<windSpeed>\d{2})(G(?<gustSpeed>\d{2}))?KT") {
-        $decoded["Wind"] = if ($matches.gustSpeed) { "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots" }
-        else { "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots" }
+        $decoded["Wind"] = if ($matches.gustSpeed) { 
+            "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots, gusting to $([int]$matches.gustSpeed) knots" 
+        }
+        else {
+            "$([int]$matches.windDir)$([char]176) at $([int]$matches.windSpeed) knots"
+        }
     }
 
-    if ($metar -match "(?<visibility>9999)") { $decoded["Visibility"] = "10+ km (Unlimited)" }
-    elseif ($metar -match "\b(?<visibility>\d{4})\b") { $decoded["Visibility"] = "$([int]$matches.visibility / 1000) km" }
-    elseif ($metar -match "(?<visibility>\d+SM)") { $decoded["Visibility"] = "$([math]::Round([double]($matches.visibility -replace 'SM','') * 1.60934, 3)) km" }
-    else { $decoded["Visibility"] = "Unavailable" }
+    if ($metar -match "(?<visibility>9999)") {
+        $decoded["Visibility"] = "10+ km (Unlimited)" 
+    }
+    elseif ($metar -match "\b(?<visibility>\d{4})\b") {
+        $decoded["Visibility"] = "$([int]$matches.visibility / 1000) km"
+    }
+    elseif ($metar -match "(?<visibility>\d+SM)") {
+        $decoded["Visibility"] = "$([math]::Round([double]($matches.visibility -replace 'SM','') * 1.60934, 3)) km"
+    }
+    else {
+        $decoded["Visibility"] = "Unavailable"
+    }
 
-    if ($metar -match "VV(?<vv>\d{3})") { $decoded["Ceiling"] = "Vertical Visibility at $([int]$matches.vv * 100) ft" }
+    if ($metar -match "VV(?<vv>\d{3})") {
+        $decoded["Ceiling"] = "Vertical Visibility at $([int]$matches.vv * 100) ft"
+    }
     elseif ($metar -match "(?<clouds>BKN|OVC|SCT|FEW)(?<ceiling>\d{3})") {
         $cloudType = switch ($matches.clouds) {
-            "BKN" { "Broken" } "OVC" { "Overcast" } "SCT" { "Scattered" } "FEW" { "Few" } default { $matches.clouds }
+            "BKN" {
+                "Broken"
+            } 
+            "OVC" {
+                "Overcast"
+            } 
+            "SCT" {
+                "Scattered"
+            } 
+            "FEW" {
+                "Few"
+            } 
+            default { 
+                $matches.clouds
+            }
         }
         $decoded["Ceiling"] = "$cloudType at $([int]$matches.ceiling * 100) ft"
     }
-    else { $decoded["Ceiling"] = "Unavailable" }
+    else {
+        $decoded["Ceiling"] = "Unavailable"
+    }
 
     if ($metar -match "(?<temp>-?\d{1,2})/(?<dew>-?\d{1,2}|M\d{1,2})") {
-        $temperature = if ($matches.temp -eq "-00") { "0$([char]176)C" } else { "$([int]$matches.temp)$([char]176)C" }
-        $dewPoint = if ($matches.dew -eq "-00") { "0$([char]176)C" } elseif ($matches.dew -like "M*") { "-$([int]($matches.dew.Trim('M')))$([char]176)C" } else { "$([int]$matches.dew)$([char]176)C" }
+        $temperature = if ($matches.temp -eq "-00") {
+            "0$([char]176)C"
+        } 
+        else {
+            "$([int]$matches.temp)$([char]176)C"
+        }
+
+        $dewPoint = if ($matches.dew -eq "-00") {
+            "0$([char]176)C"
+        }
+        elseif ($matches.dew -like "M*") {
+            "-$([int]($matches.dew.Trim('M')))$([char]176)C"
+        }
+        else {
+            "$([int]$matches.dew)$([char]176)C"
+        }
+
         $decoded["Temperature"] = $temperature
         $decoded["DewPoint"] = $dewPoint
     }
@@ -846,35 +1079,58 @@ Function ConvertFrom-METAR {
         $decoded["Temperature"] = "Unavailable"; $decoded["DewPoint"] = "Unavailable"
     }
 
-    if ($metar -match "Q(?<pressureHPA>\d{4})") { $decoded["Pressure"] = "$([int]$matches.pressureHPA) hPa" }
+    if ($metar -match "Q(?<pressureHPA>\d{4})") {
+        $decoded["Pressure"] = "$([int]$matches.pressureHPA) hPa"
+    }
     elseif ($metar -match "A(?<pressureINHG>\d{4})") {
         $pressureHPA = [double]($matches.pressureINHG / 100) * 33.8639
         $decoded["Pressure"] = "$([math]::Round($pressureHPA, 1)) hPa"
     }
-    else { $decoded["Pressure"] = "Unavailable" }
+    else {
+        $decoded["Pressure"] = "Unavailable"
+    }
 
     return [PSCustomObject]$decoded
 }
 
 # Function to convert an IANA timezone ID to a .NET TimeZoneInfo object, with fallback mapping for common timezones
 Function ConvertTo-TimeZoneInfo {
-    param([string]$IanaId)
-    try { return [System.TimeZoneInfo]::FindSystemTimeZoneById($IanaId) }
+    param(
+        [string]$IanaId
+    )
+
+    try {
+        return [System.TimeZoneInfo]::FindSystemTimeZoneById($IanaId)
+    }
     catch {
-        if ($script:IanaToWindowsMap.ContainsKey($IanaId)) { return [System.TimeZoneInfo]::FindSystemTimeZoneById($script:IanaToWindowsMap[$IanaId]) }
-        else { throw "Timezone ID '$IanaId' not recognized" }
+        if ($script:IanaToWindowsMap.ContainsKey($IanaId)) {
+            return [System.TimeZoneInfo]::FindSystemTimeZoneById($script:IanaToWindowsMap[$IanaId])
+        }
+        else {
+            throw "Timezone ID '$IanaId' not recognized"
+        }
     }
 }
 
 # Function to fetch airport information from a cached dataset, loading it from a remote source if not already loaded, and return the info for a given ICAO code
 Function Get-AirportInfo {
-    param([string]$ICAO)
+    param(
+        [string]$ICAO
+    )
+
     if (-not $script:AirportData) {
-        try { $script:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get }
-        catch { Write-Error "Failed to load airport database. Exception: $_"; return $null }
+        try {
+            $script:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
+        }
+        catch {
+            Write-Error "Failed to load airport database. Exception: $_"; return $null
+        }
     }
     $info = $script:AirportData.$ICAO
-    if (-not $info) { Write-Error "Airport info not found for $ICAO." }
+    if (-not $info) {
+        Write-Error "Airport info not found for $ICAO."
+    }
+
     return $info
 }
 
@@ -883,21 +1139,31 @@ Function Get-AirportDateTime {
     param ([string]$ICAO)
     try {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
-        if (-not $airportInfo -or -not $airportInfo.tz) { throw "Timezone not found" }
+        if (-not $airportInfo -or -not $airportInfo.tz) {
+            throw "Timezone not found"
+        }
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $airportInfo.tz
         $local = [System.TimeZoneInfo]::ConvertTimeFromUtc([datetime]::UtcNow, $tzInfo)
         return "$($local.ToString('dd MMMM yyyy HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)) LT"
     }
-    catch { Write-Error "Date and time not found for $ICAO. Exception: $_"; return "Date/time data unavailable" }
+    catch {
+        Write-Error "Date and time not found for $ICAO. Exception: $_"; return "Date/time data unavailable"
+    }
 }
 
 # Function to get the sunrise and sunset times for an airport based on its ICAO code, using the airport's geographic coordinates and timezone information
 Function Get-AirportSunriseSunset {
-    param ([string]$ICAO)
+    param (
+        [string]$ICAO
+    )
+
     try {
         $airportInfo = Get-AirportInfo -ICAO $ICAO
         $lat = $airportInfo.lat; $lon = $airportInfo.lon; $tz = $airportInfo.tz
-        if (-not ($lat -and $lon -and $tz)) { throw "Missing data" }
+        if (-not ($lat -and $lon -and $tz)) {
+            throw "Missing data"
+        }
+
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
 
@@ -916,7 +1182,10 @@ Function Get-AirportSunriseSunset {
 
 # Function to determine how long ago the METAR report was updated based on the timestamp in the METAR string, handling time zone and date rollovers correctly
 Function Get-METAR-LastUpdatedTime {
-    param ([string]$ICAO, [string[]]$FallbackICAOs)
+    param (
+        [string]$ICAO,
+        [string[]]$FallbackICAOs
+    )
     try {
         $metarInfo = Get-METAR-TAF -ICAO $ICAO -FallbackICAOs $FallbackICAOs
         if ($metarInfo.Report -match '\b(?<ts>\d{6})Z\b') {
@@ -924,36 +1193,91 @@ Function Get-METAR-LastUpdatedTime {
             $day = [int]$ts.Substring(0, 2); $hour = [int]$ts.Substring(2, 2); $min = [int]$ts.Substring(4, 2)
             $now = (Get-Date).ToUniversalTime()
             $year = $now.Year; $month = $now.Month
-            if ($day -gt $now.Day) { $prev = $now.AddMonths(-1); $year = $prev.Year; $month = $prev.Month }
+
+            if ($day -gt $now.Day) {
+                $prev = $now.AddMonths(-1)
+                $year = $prev.Year
+                $month = $prev.Month
+            }
+
             $obs = New-Object DateTime($year, $month, $day, $hour, $min, 0, [System.DateTimeKind]::Utc)
             $diff = $now - $obs
-            if ($diff.TotalHours -ge 1) { return "{0:N0} hours" -f [math]::Floor($diff.TotalHours) }
-            else { return "{0:N0} minutes" -f [math]::Floor($diff.TotalMinutes) }
+            if ($diff.TotalHours -ge 1) {
+                return "{0:N0} hours" -f [math]::Floor($diff.TotalHours)
+            }
+            else {
+                return "{0:N0} minutes" -f [math]::Floor($diff.TotalMinutes)
+            }
         }
-        else { throw 'Time code not found' }
+        else {
+            throw 'Time code not found'
+        }
     }
-    catch { Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"; return "Last updated time unavailable." }
+    catch {
+        Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"
+        return "Last updated time unavailable."
+    }
 }
 
 # Function to display a welcome message with airport information
 Function Write-Welcome {
-    param ([object]$airportInfo, [switch]$OpenRadar)
+    param (
+        [object]$airportInfo,
+        [switch]$OpenRadar
+    )
 
     try {
         $utf8 = New-Object System.Text.UTF8Encoding $false
         [Console]::OutputEncoding = $utf8; $OutputEncoding = $utf8
     }
-    catch { Write-Verbose "[$($MyInvocation.MyCommand.Name)] $($_.Exception.Message)"; return }
+    catch {
+        Write-Verbose "[$($MyInvocation.MyCommand.Name)] $($_.Exception.Message)"
+        return 
+    }
 
-    function Get-Emoji { param([int]$CodePoint, [switch]$VS16) $s = [System.Char]::ConvertFromUtf32($CodePoint); if ($VS16) { $s += [char]0xFE0F }; return $s }
+    function Get-Emoji {
+        param(
+            [int]$CodePoint,
+            [switch]$VS16
+        )
 
-    $airplane = Get-Emoji 0x2708 -VS16; $location = Get-Emoji 0x1F4CD; $earth = Get-Emoji 0x1F30D; $departure = Get-Emoji 0x1F6EB; $clock = Get-Emoji 0x23F0
-    $weather = Get-Emoji 0x1F326 -VS16; $wind = Get-Emoji 0x1F32C -VS16; $eye = Get-Emoji 0x1F441 -VS16; $cloud = Get-Emoji 0x2601 -VS16; $thermometer = Get-Emoji 0x1F321 -VS16
-    $droplet = Get-Emoji 0x1F4A7; $barometer = Get-Emoji 0x1F4CF; $note = Get-Emoji 0x1F4DD; $sunrise = Get-Emoji 0x1F305; $sunset = Get-Emoji 0x1F304
-    $antenna = Get-Emoji 0x1F4E1; $mic = Get-Emoji 0x1F5E3 -VS16; $headphones = Get-Emoji 0x1F3A7; $camera = Get-Emoji 0x1F3A5; $link = Get-Emoji 0x1F517
-    $hourglass = Get-Emoji 0x23F3; $radar = Get-Emoji 0x1F4E1
+        $s = [System.Char]::ConvertFromUtf32($CodePoint)
+        if ($VS16) {
+            $s += [char]0xFE0F
+        }
+        return $s
+    }
 
-    $fallbacks = if ($airportInfo.NearbyICAOs) { $airportInfo.NearbyICAOs -split ';' } else { @() }
+    $airplane = Get-Emoji 0x2708 -VS16
+    $location = Get-Emoji 0x1F4CD
+    $earth = Get-Emoji 0x1F30D
+    $departure = Get-Emoji 0x1F6EB
+    $clock = Get-Emoji 0x23F0
+    $weather = Get-Emoji 0x1F326 -VS16
+    $wind = Get-Emoji 0x1F32C -VS16
+    $eye = Get-Emoji 0x1F441 -VS16
+    $cloud = Get-Emoji 0x2601 -VS16
+    $thermometer = Get-Emoji 0x1F321 -VS16
+    $droplet = Get-Emoji 0x1F4A7
+    $barometer = Get-Emoji 0x1F4CF
+    $note = Get-Emoji 0x1F4DD
+    $sunrise = Get-Emoji 0x1F305
+    $sunset = Get-Emoji 0x1F304
+    $antenna = Get-Emoji 0x1F4E1
+    $mic = Get-Emoji 0x1F5E3 -VS16
+    $headphones = Get-Emoji 0x1F3A7
+    $script:camera = Get-Emoji 0x1F3A5
+    $link = Get-Emoji 0x1F517
+    $hourglass = Get-Emoji 0x23F3
+    $radar = Get-Emoji 0x1F4E1
+
+    $fallbacks = if ($airportInfo.NearbyICAOs) {
+        $airportInfo.NearbyICAOs -split ';' 
+    }
+    else {
+        @()
+    }
+
     $metarInfo = Get-METAR-TAF -ICAO $airportInfo.ICAO -FallbackICAOs $Fallbacks
     $decodedMetar = ConvertFrom-METAR -metar $metarInfo.Report
     $airportDateTime = Get-AirportDateTime -ICAO $airportInfo.ICAO
@@ -986,17 +1310,38 @@ Function Write-Welcome {
 
     if ($OpenRadar -or -not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
         Write-Output "$link External Links:"
-        if ($OpenRadar) { Write-Output "    $radar Radar:  https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)" }
-        if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) { Write-Output "    $camera Webcam: $($airportInfo.'Webcam URL')" }
+        if ($OpenRadar) {
+            Write-Output "    $radar Radar:  https://beta.flightaware.com/live/airport/$($airportInfo.ICAO)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($airportInfo.'Webcam URL')) {
+            Write-Output "    $script:camera Webcam: $($airportInfo.'Webcam URL')"
+        }
         Write-Output ""
     }
 
-    $sourceName = if ($metarInfo.Source) { $metarInfo.Source } else { 'Unknown source' }
-    $sourceUrl = if ($metarInfo.SourceUrl) { " ($($metarInfo.SourceUrl))" } else { '' }
+    $sourceName = if ($metarInfo.Source) {
+        $metarInfo.Source
+    } 
+    else {
+        'Unknown source'
+    }
+
+    $sourceUrl = if ($metarInfo.SourceUrl) {
+        " ($($metarInfo.SourceUrl))"
+    }
+    else {
+        ''
+    }
+
     Write-Output "$link Data Source: METAR data retrieved from $sourceName$sourceUrl"
 
     if ($metarInfo.ICAO -ne $airportInfo.ICAO -and $metarInfo.DistanceKm) {
-        $distNmText = if ($metarInfo.DistanceNm) { "/$($metarInfo.DistanceNm)nm" } else { "" }
+        $distNmText = if ($metarInfo.DistanceNm) {
+            "/$($metarInfo.DistanceNm)nm" 
+        }
+        else {
+            ""
+        }
         Write-Output "    $radar Using fallback METAR from $($metarInfo.ICAO) ($($metarInfo.DistanceKm)km$distNmText away)"
     }
     Write-Output "    $hourglass Last Updated: $lastUpdatedTime ago`n"
@@ -1004,48 +1349,94 @@ Function Write-Welcome {
 
 # Function to get the appropriate VLC volume argument based on the operating system and audio module
 Function Get-VLCVolumeArg {
-    param ([int]$volume, [switch]$NoAudio)
+    param (
+        [int]$volume,
+        [switch]$NoAudio
+    )
+
     if ($script:OnWindows) {
         $vlcConfigPath = Join-Path $env:APPDATA "vlc\vlcrc"; $module = $null
         if (Test-Path $vlcConfigPath) {
             try {
                 $line = Get-Content -Path $vlcConfigPath | Where-Object { $_ -match '^\s*aout\s*=' -and $_ -notmatch '^\s*#' } | Select-Object -First 1
-                if ($line) { $module = ($line -split "=")[1].Trim().ToLower() }
+                if ($line) {
+                    $module = ($line -split "=")[1].Trim().ToLower()
+                }
             }
-            catch { Write-Error ("[{0}] {1}" -f $MyInvocation.MyCommand.Name, $_.Exception.Message); return }
+            catch {
+                Write-Error ("[{0}] {1}" -f $MyInvocation.MyCommand.Name, $_.Exception.Message)
+                return
+            }
         }
         $v = [math]::Round([double]$volume / 100, 2)
         switch -Regex ($module) {
-            'mmdevice|wasapi' { return "--aout=wasapi --mmdevice-volume=$v" }
-            'waveout' { return "--aout=waveout --waveout-volume=$v" }
-            default { return "--aout=directx --directx-volume=$v" }
+            'mmdevice|wasapi' { 
+                return "--aout=wasapi --mmdevice-volume=$v" 
+            }
+            'waveout' {
+                return "--aout=waveout --waveout-volume=$v"
+            }
+            default {
+                return "--aout=directx --directx-volume=$v"
+            }
         }
     }
     else {
         $pct = [math]::Max(0, [math]::Min(100, $volume))
-        $vlcVol = if ($NoAudio) { 0 } else { [int][math]::Round($pct * 2.56) }
-        return [PSCustomObject]@{ Mode = 'RCStdin'; Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1 --quiet'; Value = $vlcVol }
+        $vlcVol = if ($NoAudio) {
+            0
+        } 
+        else {
+            [int][math]::Round($pct * 2.56)
+        }
+        return [PSCustomObject]@{
+            Mode = 'RCStdin'
+            Prepend = ' --intf qt --extraintf rc --rc-fake-tty --verbose=-1 --quiet'
+            Value = $vlcVol
+        }
     }
 }
 
 # Function to start a media player with the specified URL and arguments
 Function Start-Player {
-    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Low')]
-    param ([string]$url, [string]$player, [switch]$noVideo, [switch]$noAudio, [switch]$basicArgs, [int]$volume = 100)
+    [CmdletBinding(
+        SupportsShouldProcess = $true,
+        ConfirmImpact = 'Low'
+    )]
+
+    param (
+        [string]$url,
+        [string]$player,
+        [switch]$noVideo,
+        [switch]$noAudio,
+        [switch]$basicArgs,
+        [int]$volume = 100
+    )
 
     $url = Resolve-StreamUrl $url
-    if (-not $PSCmdlet.ShouldProcess("$player -> $url", 'Start media player')) { return }
+    if (-not $PSCmdlet.ShouldProcess("$player -> $url", 'Start media player')) {
+        return
+    }
 
     $playerArgs = switch ($player) {
         "VLC" {
-            $vlcArgs = "`"$url`""; if ($noVideo) { $vlcArgs += " --no-video" }
+            $vlcArgs = "`"$url`""; if ($noVideo) {
+                $vlcArgs += " --no-video"
+            }
             if ($script:OnWindows) {
-                $vol = if ($noAudio) { 0 } else { $volume }
+                $vol = if ($noAudio) {
+                    0
+                } 
+                else {
+                    $volume
+                }
                 $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$noAudio) --no-volume-save --quiet"
                 $vlcArgs
             }
             else {
-                if ($noAudio) { $vlcArgs += " --no-audio" }
+                if ($noAudio) {
+                    $vlcArgs += " --no-audio"
+                }
                 $vlcArgs += " --quiet"; $volSetting = Get-VLCVolumeArg -volume $volume -NoAudio:$noAudio
                 $playerPath = Test-Player -player "VLC"
                 $psi = New-Object Diagnostics.ProcessStartInfo
@@ -1057,31 +1448,297 @@ Function Start-Player {
             }
         }
         "MPV" {
-            $mpvArgs = "`"$url`""; if ($noVideo) { $mpvArgs += " --no-video" }; if ($noAudio) { $mpvArgs += " --no-audio" }
-            if ($basicArgs) { $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no" }
+            $mpvArgs = "`"$url`""
+            if ($noVideo) {
+                $mpvArgs += " --no-video"
+            }
+            
+            if ($noAudio) {
+                $mpvArgs += " --no-audio"
+            }
+
+            if ($basicArgs) {
+                $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no"
+            }
             $mpvArgs += " --volume=$volume"; $mpvArgs
         }
         "Potplayer" {
-            $potplayerArgs = "`"$url`""; if ($noAudio) { $potplayerArgs += " /volume=0" }
-            if ($basicArgs) { $potplayerArgs += " /new" }; $potplayerArgs += " /volume=$volume"; $potplayerArgs
+            $potplayerArgs = "`"$url`""
+            if ($noAudio) {
+                $potplayerArgs += " /volume=0"
+            }
+
+            if ($basicArgs) {
+                $potplayerArgs += " /new" 
+            }
+
+            $potplayerArgs += " /volume=$volume"; $potplayerArgs
         }
         "MPC-HC" {
-            $mpchcArgs = "`"$url`""; if ($noAudio) { $mpchcArgs += " /mute" }
-            if ($basicArgs) { $mpchcArgs += " /new" }; $mpchcArgs += " /volume $volume"; $mpchcArgs
+            $mpchcArgs = "`"$url`""
+            if ($noAudio) {
+                $mpchcArgs += " /mute"
+            }
+            if ($basicArgs) {
+                $mpchcArgs += " /new"
+            }
+
+            $mpchcArgs += " /volume $volume"
+            $mpchcArgs
         }
     }
 
     $playerPath = Test-Player -player $player
-    if ($IsLinux) { Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -RedirectStandardError '/dev/null' *> $null | Out-Null }
-    else { Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null }
+    if ($IsLinux) {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow -RedirectStandardError '/dev/null' *> $null | Out-Null
+    }
+    else {
+        Start-Process -FilePath $playerPath -ArgumentList $playerArgs -NoNewWindow *> $null | Out-Null
+    }
+}
+
+# Function to start a media player process and return the process object for later management
+# with support for different players and argument configurations
+Function Start-PlayerProcess {
+    [CmdletBinding()]
+    param (
+        [string]$Url,
+        [string]$Player,
+        [switch]$NoVideo,
+        [switch]$NoAudio,
+        [switch]$BasicArgs,
+        [int]$Volume = 100
+    )
+
+    $Url = Resolve-StreamUrl $Url
+
+    $playerArgs = switch ($Player) {
+        "VLC" {
+            $vlcArgs = "`"$Url`""
+            if ($NoVideo) {
+                $vlcArgs += " --no-video"
+            }
+
+            if ($script:OnWindows) {
+                $vol = if ($NoAudio) {
+                    0
+                } 
+                else {
+                    $Volume
+                }
+
+                $vlcArgs += " $(Get-VLCVolumeArg -volume $vol -NoAudio:$NoAudio) --no-volume-save --quiet"
+                $vlcArgs
+            }
+            else {
+                if ($NoAudio) {
+                    $vlcArgs += " --no-audio"
+                }
+
+                $vlcArgs += " --quiet"
+                $vlcArgs
+            }
+        }
+        "MPV" {
+            $mpvArgs = "`"$Url`""
+            if ($NoVideo) {
+                $mpvArgs += " --no-video"
+            }
+            if ($NoAudio) {
+                $mpvArgs += " --no-audio"
+            }
+            if ($BasicArgs) {
+                $mpvArgs += " --force-window=immediate --cache=yes --cache-pause=no --terminal=no"
+            }
+            $mpvArgs += " --volume=$Volume"
+            $mpvArgs
+        }
+        "Potplayer" {
+            $potArgs = "`"$Url`""
+            if ($NoAudio) {
+                $potArgs += " /volume=0"
+            }
+            if ($BasicArgs) {
+                $potArgs += " /new"
+            }
+            $potArgs += " /volume=$Volume"
+            $potArgs
+        }
+        "MPC-HC" {
+            $mpcArgs = "`"$Url`""
+            if ($NoAudio) {
+                $mpcArgs += " /mute"
+            }
+            if ($BasicArgs) {
+                $mpcArgs += " /new"
+            }
+
+            $mpcArgs += " /volume $Volume"
+            $mpcArgs
+        }
+        default {
+            throw "Unsupported player: $Player"
+        }
+    }
+
+    $playerPath = Test-Player -player $Player
+
+    if ($Player -eq 'VLC' -and -not $script:OnWindows) {
+        $volSetting = Get-VLCVolumeArg -volume $Volume -NoAudio:$NoAudio
+        $psi = New-Object Diagnostics.ProcessStartInfo
+        $psi.FileName = $playerPath
+        $psi.Arguments = "$($volSetting.Prepend) $playerArgs"
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardInput = $true
+        $psi.RedirectStandardOutput = $true
+        $proc = [Diagnostics.Process]::Start($psi)
+        $proc.StandardInput.WriteLine("volume $($volSetting.Value)")
+        return $proc
+    }
+
+    return Start-Process -FilePath $playerPath -ArgumentList $playerArgs -PassThru
+}
+
+# Function to stop a media player process gracefully
+# with error handling to avoid issues if the process has already exited or cannot be stopped
+Function Stop-ManagedProcess {
+    param(
+        [System.Diagnostics.Process]$Process
+    )
+
+    if ($null -eq $Process) {
+        return
+    }
+
+    try {
+        if (-not $Process.HasExited) {
+            Stop-Process -Id $Process.Id -Force -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-Verbose "Failed to stop process cleanly: $_"
+    }
+}
+
+# Function to check if a media player process is still running, with error handling to account
+# for cases where the process may have already exited or is not accessible
+Function Test-ManagedProcessAlive {
+    param(
+        [System.Diagnostics.Process]$Process
+    )
+
+    if ($null -eq $Process) {
+        return $false
+    }
+
+    try {
+        return -not $Process.HasExited
+    }
+    catch {
+        return $false
+    }
+}
+
+# Function to handle the selection of an ATC stream from the interactive map
+# starting the appropriate media player processes for the ATC audio
+# and webcam (if available and selected), and returning the details of the selected stream
+Function Invoke-MapChannelSelection {
+    param(
+        [hashtable]$Selection,
+        [array]$AtcSources,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
+    )
+
+    if (-not $Selection -or -not $Selection.ICAO) {
+        throw "Invalid map selection."
+    }
+
+    $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $Selection.ICAO })
+    if ($icaoMatches.Count -eq 0) {
+        throw "No ATC stream found for ICAO $($Selection.ICAO)."
+    }
+
+    if ($null -eq $Selection.ChannelIndex -or $Selection.ChannelIndex -lt 0 -or $Selection.ChannelIndex -ge $icaoMatches.Count) {
+        throw "Invalid channel index returned from map for ICAO $($Selection.ICAO)."
+    }
+
+    $match = $icaoMatches[$Selection.ChannelIndex]
+
+    Stop-ManagedProcess -Process $script:CurrentATCProcess
+    $script:CurrentATCProcess = $null
+
+    Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+    $script:CurrentWebcamProcess = $null
+
+    $script:CurrentATCProcess = Start-PlayerProcess `
+        -Url $match.'Stream URL' `
+        -Player $Player `
+        -NoVideo `
+        -BasicArgs `
+        -Volume $ATCVolume
+
+    if ($IncludeWebcamIfAvailable -and -not [string]::IsNullOrWhiteSpace($match.'Webcam URL')) {
+        $script:CurrentWebcamProcess = Start-PlayerProcess `
+            -Url $match.'Webcam URL' `
+            -Player $Player `
+            -NoAudio `
+            -BasicArgs
+    }
+
+    if (-not $NoLofiMusic) {
+        $lofiAlive = Test-ManagedProcessAlive -Process $script:CurrentLofiProcess
+
+        if (-not $lofiAlive) {
+            $script:CurrentLofiProcess = if ($PlayLofiGirlVideo) {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -BasicArgs `
+                    -Volume $LofiVolume
+            }
+            else {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -NoVideo `
+                    -BasicArgs `
+                    -Volume $LofiVolume
+            }
+        }
+    }
+
+    $script:CurrentMapSelection = $match
+
+    return @{
+        ICAO    = $match.ICAO
+        Channel = $match.'Channel Description'
+        Airport = $match.'Airport Name'
+        Webcam  = [bool](-not [string]::IsNullOrWhiteSpace($match.'Webcam URL'))
+        Lofi    = [bool](-not $NoLofiMusic)
+    }
 }
 
 # Function to get a list of nearby airports within a specified radius
 Function Get-NearbyAirports {
-    param ([object]$UserLocation, [array]$AtcSources, [int]$Radius)
+    param (
+        [object]$UserLocation,
+        [array]$AtcSources,
+        [int]$Radius
+    )
 
-    if (-not $script:AirportData) { Get-AirportInfo -ICAO "KLAX" | Out-Null }
-    $allAirports = $script:AirportData.PSObject.Properties | ForEach-Object { $_.Value }
+    if (-not $script:AirportData) {
+        Get-AirportInfo -ICAO "KLAX" | Out-Null
+    }
+
+    $allAirports = $script:AirportData.PSObject.Properties | ForEach-Object {
+        $_.Value
+    }
 
     $nearbyList = foreach ($airport in $allAirports) {
         if ($AtcSources.ICAO -contains $airport.icao) {
@@ -1123,8 +1780,8 @@ Function Remove-StaleATCMapFiles {
     }
 }
 
-# Function to select an ATC stream using an interactive map interface, showing nearby airports within a specified radius and their weather conditions
-# with options to include webcams and customize the display
+# Function to generate and display an interactive ATC map based on the provided sources
+# user location, and preferences, and handle the selection of an ATC stream from the map
 Function Select-ATCMap {
     param (
         [array]$AtcSources,
@@ -1134,7 +1791,14 @@ Function Select-ATCMap {
         [int]$Radius,
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoWeather,
-        [switch]$Dark
+        [switch]$Dark,
+        [switch]$KeepOpen,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -1167,30 +1831,39 @@ Function Select-ATCMap {
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
         -NoWeather:$NoWeather `
         -Dark:$Dark `
-        -Port $port
+        -Port $port `
+        -KeepOpen:$KeepOpen
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
-    try {
-        Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
+    Set-Content -Path $tempMapFile -Value $htmlContent -Encoding UTF8
 
-        if ($script:OnWindows) {
-            Start-Process $tempMapFile
-        }
-        elseif ($IsMacOS) {
-            & open $tempMapFile
-        }
-        else {
-            & xdg-open $tempMapFile
-        }
+    if ($script:OnWindows) {
+        Start-Process $tempMapFile
+    }
+    elseif ($IsMacOS) {
+        & open $tempMapFile
+    }
+    else {
+        & xdg-open $tempMapFile
+    }
 
-        return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
+    if ($KeepOpen) {
+        Start-PersistentATCMapSession `
+            -Listener $listener `
+            -AtcSources $AtcSources `
+            -Player $Player `
+            -ATCVolume $ATCVolume `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+            -NoLofiMusic:$NoLofiMusic `
+            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -LofiMusicUrl $LofiMusicUrl `
+            -LofiVolume $LofiVolume
+
+        return $null
     }
-    finally {
-        # Intentionally do not delete immediately.
-        # Some browsers open the file asynchronously and may not finish reading it
-        # before this PowerShell process exits the function.
-    }
+
+    return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
 }
 
 # Converts a string to be safely embedded in JavaScript code by escaping special characters.
@@ -1200,13 +1873,16 @@ Function ConvertTo-JsSafeString {
         [string]$Value
     )
 
-    if ($null -eq $Value) { return '' }
+    if ($null -eq $Value) {
+        return ''
+    }
 
     return ($Value -replace '\\', '\\\\' `
                    -replace "'", "\\'" `
                    -replace '"', '\"' `
                    -replace "`r", '' `
-                   -replace "`n", ' ')
+                   -replace "`n", ' '
+    )
 }
 
 # Converts a string to be safely embedded in HTML content by encoding special characters.
@@ -1216,7 +1892,9 @@ Function ConvertTo-HtmlSafeString {
         [string]$Value
     )
 
-    if ($null -eq $Value) { return '' }
+    if ($null -eq $Value) {
+        return ''
+    }
 
     return [System.Net.WebUtility]::HtmlEncode($Value)
 }
@@ -1310,19 +1988,37 @@ Function Get-MapWeatherData {
 
                 if ($vRaw -match "\b$mIcao\b") {
                     $fcat = "VFR"
-                    if ($vRaw -match "\bM?1/4SM|\bM?1/2SM|\bM?3/4SM") { $fcat = "LIFR" }
-                    elseif ($vRaw -match "\b[1-2]SM|\b1 1/2SM|\b2 1/2SM") { $fcat = "IFR" }
-                    elseif ($vRaw -match "\b[3-5]SM") { $fcat = "MVFR" }
+                    if ($vRaw -match "\bM?1/4SM|\bM?1/2SM|\bM?3/4SM") {
+                        $fcat = "LIFR"
+                    }
+                    elseif ($vRaw -match "\b[1-2]SM|\b1 1/2SM|\b2 1/2SM") {
+                        $fcat = "IFR"
+                    }
+                    elseif ($vRaw -match "\b[3-5]SM") {
+                        $fcat = "MVFR"
+                    }
 
-                    if ($vRaw -match "(BKN|OVC|VV)(00[0-4])") { $fcat = "LIFR" }
-                    elseif ($vRaw -match "(BKN|OVC|VV)(00[5-9])") { if ($fcat -ne "LIFR") { $fcat = "IFR" } }
-                    elseif ($vRaw -match "(BKN|OVC|VV)(0[1-2]\d|030)") { if ($fcat -notin @("LIFR", "IFR")) { $fcat = "MVFR" } }
+                    if ($vRaw -match "(BKN|OVC|VV)(00[0-4])") {
+                        $fcat = "LIFR"
+                    }
+                    elseif ($vRaw -match "(BKN|OVC|VV)(00[5-9])") {
+                        if ($fcat -ne "LIFR") {
+                            $fcat = "IFR"
+                        }
+                    }
+                    elseif ($vRaw -match "(BKN|OVC|VV)(0[1-2]\d|030)") {
+                        if ($fcat -notin @("LIFR", "IFR")) {
+                            $fcat = "MVFR"
+                        }
+                    }
 
                     $wdir = "null"
                     $wspd = 0
 
                     if ($vRaw -match "(?<wdir>\d{3}|VRB)(?<wspd>\d{2,3})(G\d{2,3})?KT") {
-                        if ($matches.wdir -match "\d{3}") { $wdir = [int]$matches.wdir }
+                        if ($matches.wdir -match "\d{3}") {
+                            $wdir = [int]$matches.wdir
+                        }
                         $wspd = [int]$matches.wspd
                     }
 
@@ -1360,7 +2056,12 @@ Function ConvertTo-MapMarkers {
 
     $mapData = @()
     $groupedSources = $AtcSources | Group-Object ICAO
-    $defaultFcat = if ($NoWeather) { 'NONE' } else { 'UNK' }
+    $defaultFcat = if ($NoWeather) {
+        'NONE'
+    } 
+    else {
+        'UNK'
+    }
 
     foreach ($group in $groupedSources) {
         $icaoCode = $group.Name
@@ -1378,7 +2079,7 @@ Function ConvertTo-MapMarkers {
 
             $camIcon = ""
             if (-not [string]::IsNullOrWhiteSpace($ch.'Webcam URL') -and $IncludeWebcamIfAvailable) {
-                $camIcon = " $camera"
+                $camIcon = " 📷"
                 $hasWebcamGlobal = $true
             }
 
@@ -1389,7 +2090,9 @@ Function ConvertTo-MapMarkers {
         }
 
         $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
-        if ($null -eq $favCount) { $favCount = 0 }
+        if ($null -eq $favCount) {
+            $favCount = 0
+        }
 
         $wx = $null
         if ($WeatherMap.ContainsKey($icaoCode)) {
@@ -1436,10 +2139,20 @@ Function ConvertTo-MapMarkers {
         }
 
         $rawDir = $wx.wdir
-        $wdir = if ($rawDir -match '^\d+$') { [int]$rawDir } else { $null }
+        $wdir = if ($rawDir -match '^\d+$') {
+            [int]$rawDir
+        }
+        else {
+            $null
+        }
 
         $rawSpd = $wx.wspd
-        $wspd = if ($rawSpd -match '^\d+$') { [int]$rawSpd } else { 0 }
+        $wspd = if ($rawSpd -match '^\d+$') {
+            [int]$rawSpd
+        }
+        else {
+            0
+        }
 
         $mapData += [pscustomobject]@{
             lat      = [double]$airportInfo.lat
@@ -1474,12 +2187,29 @@ Function New-ATCMapHtml {
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoWeather,
         [switch]$Dark,
-        [int]$Port
+        [int]$Port,
+        [switch]$KeepOpen
     )
 
-    $userLat = if ($UserLocation) { $UserLocation.Latitude } else { 'null' }
-    $userLon = if ($UserLocation) { $UserLocation.Longitude } else { 'null' }
-    $userRad = if ($UserLocation -and $Radius) { $Radius * 1000 } else { 0 }
+    $userLat = if ($UserLocation) {
+        $UserLocation.Latitude
+    } 
+    else {
+        'null'
+    }
+
+    $userLon = if ($UserLocation) {
+        $UserLocation.Longitude
+    }
+    else {
+        'null'
+    }
+    $userRad = if ($UserLocation -and $Radius) {
+        $Radius * 1000
+    }
+    else {
+        0
+    }
 
     $weatherLegendItems = if (-not $NoWeather) {
 @"
@@ -1493,13 +2223,54 @@ Function New-ATCMapHtml {
         '<label class="legend-item" title="Standard active ATC stream."><input type="checkbox" class="filter-cb" value="none" checked> <span class="legend-color color-blue"></span> Active ATC</label>'
     }
 
-    $windToggle = if (-not $NoWeather) { '<label class="legend-item" title="Toggle live wind direction arrows."><input type="checkbox" id="toggle-wind" checked> Wind Arrows</label>' } else { "" }
-    $webcamLegendItem = if ($IncludeWebcamIfAvailable) { '<label class="legend-item" title="This ATC feed includes a live webcam link."><input type="checkbox" class="filter-cb" value="cam" checked> <span class="legend-color color-purple"></span> Has Webcam</label>' } else { "" }
-    $locationLegendItem = if ($UserLocation) { '<div class="legend-item" title="Your current device or IP-based location." style="cursor:help; padding-left: 22px;"><span class="legend-color color-green"></span> Your Location</div>' } else { "" }
+    $windToggle = if (-not $NoWeather) {
+        '<label class="legend-item" title="Toggle live wind direction arrows."><input type="checkbox" id="toggle-wind" checked> Wind Arrows</label>'
+    }
+    else {
+        ""
+    }
 
-    $darkModeClass = if ($Dark) { ' class="dark-mode"' } else { '' }
-    $darkModeChecked = if ($Dark) { 'checked' } else { '' }
-    $isDarkJs = if ($Dark) { 'true' } else { 'false' }
+    $webcamLegendItem = if ($IncludeWebcamIfAvailable) {
+        '<label class="legend-item" title="This ATC feed includes a live webcam link."><input type="checkbox" class="filter-cb" value="cam" checked> <span class="legend-color color-purple"></span> Has Webcam</label>'
+    }
+    else {
+        ""
+    }
+
+    $locationLegendItem = if ($UserLocation) {
+        '<div class="legend-item" title="Your current device or IP-based location." style="cursor:help; padding-left: 22px;"><span class="legend-color color-green"></span> Your Location</div>'
+    }
+    else {
+        ""
+    }
+
+    $darkModeClass = if ($Dark) {
+        ' class="dark-mode"'
+    }
+    else {
+        ''
+    }
+
+    $darkModeChecked = if ($Dark) {
+        'checked'
+    } 
+    else {
+        ''
+    
+    }
+    $isDarkJs = if ($Dark) {
+        'true'
+    }
+    else {
+        'false'
+    }
+
+    $keepOpenJs = if ($KeepOpen) {
+        'true'
+    }
+    else {
+        'false'
+    }
 
     return @"
 <!DOCTYPE html>
@@ -1529,6 +2300,94 @@ Function New-ATCMapHtml {
             --popup-bg: rgba(22, 33, 62, 0.95);
             --divider: #333;
             --hover-color: #fff;
+        }
+        .radar-controls {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--divider);
+        }
+        .radar-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;    
+        }
+        .radar-btn {
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .radar-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+        .radar-status {
+            margin-top: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-height: 14px;
+        }
+        #radar-timeline {
+            width: 100%;
+            margin-top: 8px;
+            accent-color: #e94560;
+        }
+        .radar-scale {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+        .radar-fade-layer {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        .radar-btn,
+        #radar-timeline {
+            transition: transform 0.15s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .radar-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+        }
+
+        .radar-btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        #radar-status {
+            transition: opacity 0.2s ease;
+        }
+        #toast {
+            position: absolute;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-10px);
+            z-index: 2000;
+            background: rgba(20, 20, 30, 0.92);
+            color: #fff;
+            padding: 12px 18px;
+            border-radius: 10px;
+            font-size: 14px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+            max-width: 70%;
+            text-align: center;
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        #toast.error {
+            background: rgba(180, 50, 50, 0.95);
         }
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); overflow: hidden; transition: background-color 0.3s; }
         #map { height: 100%; width: 100%; z-index: 1; }
@@ -1589,11 +2448,25 @@ Function New-ATCMapHtml {
         <div class="legend-section-title">Map Filters</div>
         $weatherLegendItems
         $webcamLegendItem
-        <label class="legend-item" title="Airports saved to your favorites. They grow larger the more you listen!"><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorite</label>
+        <div class="radar-controls">
+            <label class="legend-item" title="Toggle RainViewer precipitation overlay with up to 1 hour of radar history.">
+                <input type="checkbox" id="toggle-weather"> Weather Radar
+            </label>
+            <div class="radar-toolbar">
+                <button type="button" id="radar-back" class="radar-btn" title="Go 10 minutes earlier">◀ Older</button>
+                <button type="button" id="radar-live" class="radar-btn" title="Jump to latest radar frame">Live</button>
+                <button type="button" id="radar-forward" class="radar-btn" title="Go 10 minutes later">Newer ▶</button>
+            </div>
+            <input type="range" id="radar-timeline" min="0" max="0" step="1" value="0" disabled>
+            <div class="radar-scale">
+                <span>-1h</span>
+                <span>Now</span>
+            </div>
+            <div id="radar-status" class="radar-status">Radar history unavailable</div>
+        </div>
         $locationLegendItem
 
         <div class="legend-section-title" style="margin-top:10px;">Overlays</div>
-        <label class="legend-item" title="Toggle live RainViewer precipitation overlay. Updates every 10 mins."><input type="checkbox" id="toggle-weather"> Weather Radar</label>
         $windToggle
         <label class="legend-item" title="Toggle Dark/Light Mode"><input type="checkbox" id="toggle-theme" $darkModeChecked> Dark Mode</label>
     </div>
@@ -1601,6 +2474,7 @@ Function New-ATCMapHtml {
     <div id="credit-overlay">made with <span style="color: #e94560;">&#x2764;</span> by <a href="https://github.com/RoMinjun" target="_blank">RoMinjun</a></div>
 
     <div id="map"></div>
+    <div id="toast"></div>
 
     <div id="starting-screen">
         <div class="content-box">
@@ -1622,13 +2496,50 @@ Function New-ATCMapHtml {
             }
         };
 
+        function showToast(message, isError) {
+            var toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = isError ? 'show error' : 'show';
+
+            clearTimeout(window.__lofiatcToastTimer);
+            window.__lofiatcToastTimer = setTimeout(function() {
+                toast.className = '';
+            }, 2400);
+        }
+
         function playChannel(icao, channelIndex) {
-            document.getElementById('starting-screen').style.display = 'flex';
+            var keepOpen = $keepOpenJs;
+
+            if (!keepOpen) {
+                document.getElementById('starting-screen').style.display = 'flex';
+            }
+
             fetch(
                 'http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) +
                 '&channelIndex=' + encodeURIComponent(channelIndex),
-                { mode: 'no-cors' }
-            );
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (!keepOpen) {
+                    return;
+                }
+
+                if (data && data.ok) {
+                    showToast(data.message || 'Now monitoring the selected channel.', false);
+                } else {
+                    showToast((data && data.message) || 'Could not switch channel.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Failed to send channel selection', err);
+
+                if (keepOpen) {
+                    showToast('Could not reach the local LofiATC session.', true);
+                }
+            });
         }
 
         if (typeof L === 'undefined') {
@@ -1657,27 +2568,236 @@ Function New-ATCMapHtml {
         setInterval(function() { terminatorLayer.setTime(); }, 60000);
 
         var weatherLayer = null;
-        function updateRadar() {
-            fetch('https://api.rainviewer.com/public/weather-maps.json').then(res => res.json()).then(data => {
-                var latest = data.radar.past[data.radar.past.length - 1].path;
-                var newLayer = L.tileLayer(data.host + latest + '/256/{z}/{x}/{y}/2/1_1.png', {
-                    opacity: 0.5, zIndex: 10, maxNativeZoom: 12, maxZoom: 18
-                });
-                var isChecked = document.getElementById('toggle-weather').checked;
-                if (weatherLayer && map.hasLayer(weatherLayer)) { map.removeLayer(weatherLayer); }
-                weatherLayer = newLayer;
-                if (isChecked) { weatherLayer.addTo(map); }
-            }).catch(e => console.log('Weather radar fetch failed.'));
+        var radarFrames = [];
+        var radarFrameIndex = -1;
+        var radarHost = '';
+        var radarPalette = '2';
+        var radarSmooth = '1';
+        var radarSnow = '1';
+
+        function formatRadarFrameTime(frame) {
+            if (!frame || !frame.time) return 'Radar history unavailable';
+
+            var dt = new Date(frame.time * 1000);
+            var now = new Date();
+            var diffMinutes = Math.max(0, Math.round((now.getTime() - dt.getTime()) / 60000));
+
+            if (diffMinutes <= 2) return 'Radar: Live';
+            return 'Radar: ' + diffMinutes + ' min ago';
         }
 
-        updateRadar();
-        setInterval(updateRadar, 600000);
+        function updateRadarControls() {
+            var timeline = document.getElementById('radar-timeline');
+            var backBtn = document.getElementById('radar-back');
+            var forwardBtn = document.getElementById('radar-forward');
+            var liveBtn = document.getElementById('radar-live');
+            var status = document.getElementById('radar-status');
+
+            var hasFrames = radarFrames.length > 0 && radarFrameIndex >= 0;
+            timeline.disabled = !hasFrames;
+            backBtn.disabled = !hasFrames || radarFrameIndex <= 0;
+            forwardBtn.disabled = !hasFrames || radarFrameIndex >= radarFrames.length - 1;
+            liveBtn.disabled = !hasFrames || radarFrameIndex === radarFrames.length - 1;
+
+            if (!hasFrames) {
+                timeline.min = 0;
+                timeline.max = 0;
+                timeline.value = 0;
+                status.textContent = 'Radar history unavailable';
+                return;
+            }
+
+            timeline.min = 0;
+            timeline.max = radarFrames.length - 1;
+            timeline.value = radarFrameIndex;
+            status.textContent = formatRadarFrameTime(radarFrames[radarFrameIndex]);
+        }
+
+        function buildRadarTileLayer(frame) {
+            return L.tileLayer(
+                radarHost + frame.path + '/256/{z}/{x}/{y}/' + radarPalette + '/' + radarSmooth + '_' + radarSnow + '.png',
+                {
+                    opacity: 0.5,
+                    zIndex: 10,
+                    maxNativeZoom: 14,
+                    maxZoom: 18,
+                    updateWhenZooming: false,
+                    updateWhenIdle: true,
+                    keepBuffer: 4,
+                    crossOrigin: true,
+                    className: 'radar-fade-layer'
+                }
+            );
+        }
+
+        function renderRadarFrame() {
+            if (!radarFrames.length || radarFrameIndex < 0 || radarFrameIndex >= radarFrames.length) {
+                updateRadarControls();
+                return;
+            }
+
+            var frame = radarFrames[radarFrameIndex];
+            var nextLayer = buildRadarTileLayer(frame);
+            var isChecked = document.getElementById('toggle-weather').checked;
+            var previousLayer = weatherLayer;
+
+            weatherLayer = nextLayer;
+            updateRadarControls();
+
+            if (!isChecked) {
+                return;
+            }
+
+            nextLayer.once('load', function() {
+                if (!document.getElementById('toggle-weather').checked) {
+                    return;
+                }
+
+                if (!map.hasLayer(nextLayer)) {
+                    nextLayer.addTo(map);
+                }
+
+                var nextContainer = nextLayer.getContainer && nextLayer.getContainer();
+                if (nextContainer) {
+                    nextContainer.style.opacity = '0';
+                    requestAnimationFrame(function() {
+                        requestAnimationFrame(function() {
+                            nextContainer.style.opacity = '0.5';
+                        });
+                    });
+                }
+
+                if (previousLayer && previousLayer !== nextLayer && map.hasLayer(previousLayer)) {
+                    var previousContainer = previousLayer.getContainer && previousLayer.getContainer();
+
+                    if (previousContainer) {
+                        previousContainer.style.opacity = '0';
+                        setTimeout(function() {
+                            if (map.hasLayer(previousLayer)) {
+                                map.removeLayer(previousLayer);
+                            }
+                        }, 300);
+                    } else {
+                        map.removeLayer(previousLayer);
+                    }
+                }
+            });
+
+            nextLayer.on('tileerror', function() {
+                console.log('Radar tile failed to load for this frame.');
+            });
+
+            nextLayer.addTo(map);
+        }
+
+        function setRadarFrame(index) {
+            if (!radarFrames.length) return;
+            radarFrameIndex = Math.max(0, Math.min(index, radarFrames.length - 1));
+            renderRadarFrame();
+        }
+
+        function loadRadarFrames() {
+            var previousFrameTime = null;
+            if (radarFrames.length && radarFrameIndex >= 0 && radarFrames[radarFrameIndex]) {
+                previousFrameTime = radarFrames[radarFrameIndex].time;
+            }
+
+            fetch('https://api.rainviewer.com/public/weather-maps.json')
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    var pastFrames = (data && data.radar && data.radar.past) ? data.radar.past : [];
+                    radarHost = data && data.host ? data.host : '';
+
+                    if (!pastFrames.length || !radarHost) {
+                        radarFrames = [];
+                        radarFrameIndex = -1;
+                        if (weatherLayer && map.hasLayer(weatherLayer)) {
+                            map.removeLayer(weatherLayer);
+                        }
+                        weatherLayer = null;
+                        updateRadarControls();
+                        return;
+                    }
+
+                    radarFrames = pastFrames.slice(-6); // ~1 hour at 10-minute cadence
+
+                    if (previousFrameTime) {
+                        var preservedIndex = radarFrames.findIndex(function(f) { return f.time === previousFrameTime; });
+                        radarFrameIndex = preservedIndex >= 0 ? preservedIndex : radarFrames.length - 1;
+                    } else {
+                        radarFrameIndex = radarFrames.length - 1;
+                    }
+
+                    renderRadarFrame();
+                })
+                .catch(function() {
+                    console.log('Weather radar fetch failed.');
+                    radarFrames = [];
+                    radarFrameIndex = -1;
+                    updateRadarControls();
+                });
+        }
 
         document.getElementById('toggle-weather').addEventListener('change', function(e) {
             if (!weatherLayer) return;
-            if (e.target.checked) { map.addLayer(weatherLayer); }
-            else { map.removeLayer(weatherLayer); }
+
+            var container = weatherLayer.getContainer && weatherLayer.getContainer();
+
+            if (e.target.checked) {
+                if (!map.hasLayer(weatherLayer)) {
+                    weatherLayer.addTo(map);
+                    container = weatherLayer.getContainer && weatherLayer.getContainer();
+                    if (container) {
+                        container.classList.add('radar-fade-layer');
+                        container.style.opacity = '0';
+                        requestAnimationFrame(function() {
+                            requestAnimationFrame(function() {
+                                container.style.opacity = '0.5';
+                            });
+                        });
+                    }
+                } else if (container) {
+                    container.style.opacity = '0.5';
+                }
+            } else {
+                if (container) {
+                    container.style.opacity = '0';
+                    setTimeout(function() {
+                        if (map.hasLayer(weatherLayer) && !document.getElementById('toggle-weather').checked) {
+                            map.removeLayer(weatherLayer);
+                        }
+                    }, 450);
+                } else if (map.hasLayer(weatherLayer)) {
+                    map.removeLayer(weatherLayer);
+                }
+            }
         });
+
+        document.getElementById('radar-back').addEventListener('click', function() {
+            setRadarFrame(radarFrameIndex - 1);
+        });
+
+        document.getElementById('radar-forward').addEventListener('click', function() {
+            setRadarFrame(radarFrameIndex + 1);
+        });
+
+        document.getElementById('radar-live').addEventListener('click', function() {
+            setRadarFrame(radarFrames.length - 1);
+        });
+
+        var radarScrubTimer = null;
+
+        document.getElementById('radar-timeline').addEventListener('input', function(e) {
+            var value = parseInt(e.target.value, 10);
+
+            clearTimeout(radarScrubTimer);
+            radarScrubTimer = setTimeout(function() {
+                setRadarFrame(value);
+            }, 10);
+        });
+
+        loadRadarFrames();
+        setInterval(loadRadarFrames, 600000);
 
         var markersData = JSON.parse(document.getElementById('markers-data').textContent);
         var allMapItems = [];
@@ -1941,6 +3061,130 @@ Function Select-ATCFromMap {
     }
 }
 
+# Function to start a persistent session that continues to listen for map channel selections 
+# until the user cancels (via 'Q' key or closing the window). Each time a selection is made
+# it invokes the channel selection logic and updates the currently playing ATC stream accordingly.
+Function Start-PersistentATCMapSession {
+    param(
+        [System.Net.HttpListener]$Listener,
+        [array]$AtcSources,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
+    )
+
+    $canPollConsole = Test-InteractiveConsoleAvailable
+
+    Write-Host "`nMap opened in your browser! Click channels to switch ATC live." -ForegroundColor Green
+    if ($canPollConsole) {
+        Write-Host "Persistent map mode active. Press 'Q' in this window to quit." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "Persistent map mode active. Close this PowerShell window to stop." -ForegroundColor Yellow
+    }
+
+    try {
+        while ($true) {
+            $contextTask = $Listener.BeginGetContext($null, $null)
+
+            while (-not $contextTask.IsCompleted) {
+                Start-Sleep -Milliseconds 100
+
+                if ($canPollConsole -and (Test-ConsoleKeyAvailable)) {
+                    $key = Read-ConsoleKey -Intercept
+                    if ($key.Key.ToString() -eq 'Q') {
+                        throw [System.OperationCanceledException]::new("Persistent map session cancelled.")
+                    }
+                }
+            }
+
+            try {
+                $context = $Listener.EndGetContext($contextTask)
+                $req = $context.Request
+                $res = $context.Response
+
+                $payload = @{
+                    ok      = $true
+                    message = "Ready"
+                }
+
+                if ($null -ne $req.QueryString["icao"]) {
+                    $channelIndexRaw = $req.QueryString["channelIndex"]
+                    $channelIndex = $null
+
+                    if ($null -ne $channelIndexRaw -and $channelIndexRaw -match '^\d+$') {
+                        $channelIndex = [int]$channelIndexRaw
+                    }
+
+                    $selection = @{
+                        ICAO         = $req.QueryString["icao"]
+                        ChannelIndex = $channelIndex
+                    }
+
+                    try {
+                        $started = Invoke-MapChannelSelection `
+                            -Selection $selection `
+                            -AtcSources $AtcSources `
+                            -Player $Player `
+                            -ATCVolume $ATCVolume `
+                            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+                            -NoLofiMusic:$NoLofiMusic `
+                            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                            -LofiMusicUrl $LofiMusicUrl `
+                            -LofiVolume $LofiVolume
+
+                        $payload = @{
+                            ok      = $true
+                            message = "Now monitoring $($started.ICAO) — $($started.Channel)"
+                        }
+
+                        Write-Host "Switched to $($started.ICAO) — $($started.Channel)" -ForegroundColor Green
+                    }
+                    catch {
+                        $payload = @{
+                            ok      = $false
+                            message = $_.Exception.Message
+                        }
+
+                        Write-Warning $_.Exception.Message
+                    }
+                }
+
+                $json = $payload | ConvertTo-Json -Compress
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+
+                $res.StatusCode = 200
+                $res.ContentType = 'application/json; charset=utf-8'
+                $res.ContentEncoding = [System.Text.Encoding]::UTF8
+                $res.ContentLength64 = $buffer.Length
+
+                $res.Headers['Access-Control-Allow-Origin'] = '*'
+                $res.Headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+                $res.Headers['Access-Control-Allow-Headers'] = '*'
+                $res.Headers['Cache-Control'] = 'no-store'
+
+                $res.OutputStream.Write($buffer, 0, $buffer.Length)
+                $res.OutputStream.Close()
+            }
+            catch {
+                Write-Verbose "Listener request handling error: $_"
+            }
+        }
+    }
+    finally {
+        Stop-ManagedProcess -Process $script:CurrentATCProcess
+        Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+        Stop-ManagedProcess -Process $script:CurrentLofiProcess
+
+        try { $Listener.Stop() } catch {}
+        try { $Listener.Close() } catch {}
+    }
+}
+
 Function Add-DependencyResult {
     param(
         [string]$Name,
@@ -2068,7 +3312,7 @@ Function Test-LofiATCDependencies {
 
     $playerCandidates = if ($script:OnWindows) {
         @(
-            @{ Name = 'MPV'; Command = 'mpv.com' }
+            @{ Name = 'MPV'; Command = 'mpv.exe' }
             @{ Name = 'VLC'; Command = 'vlc.exe' }
             @{ Name = 'Potplayer'; Command = 'PotPlayerMini64.exe' }
             @{ Name = 'MPC-HC'; Command = 'mpc-hc64.exe' }
@@ -2084,7 +3328,7 @@ Function Test-LofiATCDependencies {
     if ($SelectedPlayer) {
         $selectedCommand = switch ($SelectedPlayer) {
             'VLC'       { if ($script:OnWindows) { 'vlc.exe' } else { 'vlc' } }
-            'MPV'       { if ($script:OnWindows) { 'mpv.com' } else { 'mpv' } }
+            'MPV'       { if ($script:OnWindows) { 'mpv.exe' } else { 'mpv' } }
             'Potplayer' { 'PotPlayerMini64.exe' }
             'MPC-HC'    { 'mpc-hc64.exe' }
             default     { $null }
@@ -2239,13 +3483,31 @@ Function Write-DependencyReport {
 
     foreach ($result in $Results) {
         $color = switch ($result.Status) {
-            'OK'      { 'Green' }
-            'Missing' { if ($result.Required) { 'Red' } else { 'Yellow' } }
-            'Warning' { 'Yellow' }
-            default   { 'White' }
+            'OK' {
+                'Green'
+            }
+            'Missing' {
+                if ($result.Required) {
+                    'Red'
+                }
+                else {
+                    'Yellow'
+                }
+            }
+            'Warning' {
+                'Yellow'
+            }
+            default {
+                'White'
+            }
         }
 
-        $reqText = if ($result.Required) { 'Required' } else { 'Optional' }
+        $reqText = if ($result.Required) {
+            'Required'
+        }
+        else {
+            'Optional'
+        }
 
         Write-Host ("[{0}] {1} - {2}" -f $result.Status.ToUpperInvariant(), $result.Name, $reqText) -ForegroundColor $color
         Write-Host ("    {0}" -f $result.Details)
@@ -2281,7 +3543,25 @@ try {
             $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
             foreach ($prop in $config.PSObject.Properties) {
                 $name = $prop.Name
-                if ($name -in @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) { continue }
+                if ($name -in @(
+                    'Verbose',
+                    'Debug',
+                    'ErrorAction',
+                    'WarningAction',
+                    'InformationAction',
+                    'ProgressAction',
+                    'ErrorVariable',
+                    'WarningVariable',
+                    'InformationVariable',
+                    'OutVariable',
+                    'OutBuffer',
+                    'PipelineVariable',
+                    'SaveConfig',
+                    'LoadConfig',
+                    'ConfigPath'
+                )) {
+                    continue
+                }
 
                 if (-not $PSBoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne "") {
                     Set-Variable -Name $name -Value $prop.Value -Scope Local
@@ -2289,7 +3569,9 @@ try {
             }
             Write-Information "Loaded config from $ConfigPath"
         }
-        else { Write-Warning "Config file not found at $ConfigPath" }
+        else {
+            Write-Warning "Config file not found at $ConfigPath"
+        }
     }
 
     if ($ICAO) {
@@ -2326,9 +3608,27 @@ try {
         $paramNames = (Get-Command $MyInvocation.MyCommand.Path).Parameters.Keys
         $config = @{}
         foreach ($name in $paramNames) {
-            if ($name -notin @('Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ProgressAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'SaveConfig', 'LoadConfig', 'ConfigPath')) {
+            if ($name -notin @(
+                'Verbose',
+                'Debug',
+                'ErrorAction',
+                'WarningAction',
+                'InformationAction',
+                'ProgressAction',
+                'ErrorVariable',
+                'WarningVariable',
+                'InformationVariable',
+                'OutVariable',
+                'OutBuffer',
+                'PipelineVariable',
+                'SaveConfig',
+                'LoadConfig',
+                'ConfigPath'
+            )) {
                 $value = Get-Variable -Name $name -ValueOnly
-                if ($value -is [System.Management.Automation.SwitchParameter]) { $value = [bool]$value }
+                if ($value -is [System.Management.Automation.SwitchParameter]) {
+                    $value = [bool]$value
+                }
 
                 if ($null -ne $value -and $value -ne "") {
                     $config[$name] = $value
@@ -2355,8 +3655,12 @@ try {
         Write-Information "Using base sources CSV: $baseCsv"; $csvPath = $baseCsv
     }
 
-    if ($LofiGenre -and (-not $PSBoundParameters.ContainsKey('LofiSource'))) { $lofiMusicUrl = $LofiGenres[$LofiGenre] }
-    else { $lofiMusicUrl = $LofiSource }
+    if ($LofiGenre -and (-not $PSBoundParameters.ContainsKey('LofiSource'))) {
+        $lofiMusicUrl = $LofiGenres[$LofiGenre]
+    }
+    else {
+        $lofiMusicUrl = $LofiSource
+    }
 
     # Load ATC sources, favorites, and determine user location if needed
     $atcSources = Import-ATCSource -csvPath $csvPath
@@ -2365,14 +3669,22 @@ try {
 
     # If -Nearby is specified, get user location and find nearby airports
     if ($Nearby) {
-        if ($ICAO) { Write-Host "-Nearby switch detected, ignoring -ICAO $ICAO." -ForegroundColor Yellow; $ICAO = $null }
+        if ($ICAO) {
+            Write-Host "-Nearby switch detected, ignoring -ICAO $ICAO." -ForegroundColor Yellow
+            $ICAO = $null
+        }
 
         $currentUserLocation = Get-CurrentCoordinates
         if (-not $currentUserLocation) {
             Write-Error "Could not determine your location. Please select manually."
         }
         else {
-            $locationLabel = if ($currentUserLocation.Source -eq 'Device') { "your current device location" } else { "$($currentUserLocation.City), $($currentUserLocation.Country)" }
+            $locationLabel = if ($currentUserLocation.Source -eq 'Device') {
+                "your current device location"
+            } else {
+                "$($currentUserLocation.City), $($currentUserLocation.Country)"
+            }
+
             Write-Host "Finding airports near $locationLabel..." -ForegroundColor Green
 
             $sortedAirports = Get-NearbyAirports -UserLocation $currentUserLocation -AtcSources $atcSources -Radius $NearbyRadius
@@ -2382,10 +3694,21 @@ try {
                     Write-Error "No LiveATC streams found near your location."
                 }
                 else {
-                    $choices = $sortedAirports | ForEach-Object { "[{0}] {1}, {2} ({3}km away)" -f $_.ICAO, $_.Name, $_.City, ([math]::Round($_.Distance)) }
+                    $choices = $sortedAirports | ForEach-Object { 
+                        "[{0}] {1}, {2} ({3}km away)" -f $_.ICAO, $_.Name, $_.City, ([math]::Round($_.Distance))
+                    }
+
                     $prompt = "Select a nearby airport:"
-                    $selectedChoice = if ($UseFZF) { Select-ItemFZF -prompt $prompt -items $choices } else { Select-Item -prompt $prompt -items $choices }
-                    if ($selectedChoice -match "^\[(?<icao>\w{4})\]") { $ICAO = $matches.icao }
+                    $selectedChoice = if ($UseFZF) {
+                        Select-ItemFZF -prompt $prompt -items $choices
+                    }
+                    else {
+                        Select-Item -prompt $prompt -items $choices
+                    }
+
+                    if ($selectedChoice -match "^\[(?<icao>\w{4})\]") {
+                        $ICAO = $matches.icao
+                    }
                     else {
                         throw "Invalid nearby airport selection."
                     }
@@ -2398,7 +3721,26 @@ try {
     $mapSelectedChannelIndex = $null
 
     if ($ShowMap) {
-        $mapSelection = Select-ATCMap -AtcSources $atcSources -Favorites $favorites -CsvPath $csvPath -UserLocation $currentUserLocation -Radius $NearbyRadius -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable -NoWeather:$NoWeather -Dark:$Dark
+        $mapSelection = Select-ATCMap `
+            -AtcSources $atcSources `
+            -Favorites $favorites `
+            -CsvPath $csvPath `
+            -UserLocation $currentUserLocation `
+            -Radius $NearbyRadius `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+            -NoWeather:$NoWeather `
+            -Dark:$Dark `
+            -KeepOpen:$KeepOpen `
+            -Player $Player `
+            -ATCVolume $ATCVolume `
+            -NoLofiMusic:$NoLofiMusic `
+            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -LofiMusicUrl $lofiMusicUrl `
+            -LofiVolume $LofiVolume
+
+        if ($KeepOpen) {
+            exit 0
+        }
 
         if ($mapSelection -and $mapSelection.ICAO) {
             $ICAO = $mapSelection.ICAO
@@ -2424,7 +3766,12 @@ try {
             $match = $icaoMatches[$mapSelectedChannelIndex]
         }
         elseif ($icaoMatches.Count -eq 1 -or $RandomATC) {
-            $match = if ($RandomATC -and $icaoMatches.Count -gt 1) { Get-Random -InputObject $icaoMatches } else { $icaoMatches[0] }
+            $match = if ($RandomATC -and $icaoMatches.Count -gt 1) {
+                Get-Random -InputObject $icaoMatches
+            }
+            else {
+                $icaoMatches[0]
+            }
         }
         else {
             $channels = $icaoMatches | ForEach-Object {
@@ -2432,8 +3779,12 @@ try {
                 "{0}{1}" -f $_.'Channel Description', $webcamIndicator
             } | Sort-Object -Unique
 
-            $chanSel = if ($UseFZF) { Select-ItemFZF -prompt "Select a channel for ${ICAO}" -items $channels }
-            else { Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels }
+            $chanSel = if ($UseFZF) {
+                Select-ItemFZF -prompt "Select a channel for ${ICAO}" -items $channels
+            }
+            else {
+                Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels 
+            }
 
             $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
             $match = $icaoMatches | Where-Object { $_.'Channel Description' -eq $chanClean } | Select-Object -First 1
@@ -2452,18 +3803,27 @@ try {
 
     # If no ICAO was specified or selected, allow user to select based on favorites, random selection, or manual navigation through continents/countries/states
     if (-not $selectedATC) {
-        if ($RandomATC) { $selectedATC = Get-RandomATCStream -atcSources $atcSources }
+        if ($RandomATC) {
+            $selectedATC = Get-RandomATCStream -atcSources $atcSources
+        }
         else {
-            if ($UseFavorite) { $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF }
+            if ($UseFavorite) {
+                $selectedATC = Select-FavoriteATC -favorites $favorites -atcSources $atcSources -UseFZF:$UseFZF
+            }
             if (-not $selectedATC) {
-                if ($UseFZF) { $selectedATC = Select-ATCStreamFZF -atcSources $atcSources }
+                if ($UseFZF) {
+                    $selectedATC = Select-ATCStreamFZF -atcSources $atcSources
+                }
                 else {
                     while (-not $selectedATC) {
                         $selectedContinent = Select-Item -prompt "Select a continent:" -items ($atcSources.Continent | Sort-Object -Unique)
                         do {
                             $countries = @($atcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
                             $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
-                            if ($null -eq $selectedCountry) { $selectedContinent = $null; break }
+                            if ($null -eq $selectedCountry) {
+                                $selectedContinent = $null
+                                break
+                            }
                             $states = @($atcSources | Where-Object {
                                     $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() -and
                                     $_.Country.Trim().ToLower() -eq $selectedCountry.Trim().ToLower() -and
@@ -2473,10 +3833,16 @@ try {
                             if ($states.Count -gt 0) {
                                 do {
                                     $selectedState = Select-Item -prompt "Select a state or province from ${selectedCountry}:" -items $states -AllowBack
-                                    if ($null -eq $selectedState) { $selectedCountry = $null; break }
+                                    if ($null -eq $selectedState) {
+                                        $selectedCountry = $null
+                                        break
+                                    }
                                     $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry -state $selectedState
                                 } while (-not $selectedATC -and $selectedCountry)
-                                if (-not $selectedCountry) { continue }
+
+                                if (-not $selectedCountry) {
+                                    continue
+                                }
                             }
                             else {
                                 $selectedATC = Select-ATCStream -atcSources $atcSources -continent $selectedContinent -country $selectedCountry
@@ -2497,26 +3863,44 @@ try {
     $selectedWebcamUrl = $selectedATC.WebcamUrl
     Clear-Host
     Write-Welcome -airportInfo $selectedATC.AirportInfo -OpenRadar:$OpenRadar
-    if (-not $RandomATC) { Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites }
-    if ($OpenRadar) { Open-Radar -ICAO $selectedATC.AirportInfo.ICAO }
+    if (-not $RandomATC) {
+        Add-Favorite -path $favoritesJson -ICAO $selectedATC.AirportInfo.ICAO -Channel $selectedATC.AirportInfo.'Channel Description' -maxEntries $maxFavorites
+    }
+    if ($OpenRadar) {
+        Open-Radar -ICAO $selectedATC.AirportInfo.ICAO
+    }
 
-    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) { Write-Verbose "Player selected by user: $Player" }
-    else { Write-Verbose "Default player selected: $Player" }
+    if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) {
+        Write-Verbose "Player selected by user: $Player"
+    }
+    else {
+        Write-Verbose "Default player selected: $Player"
+    }
 
     if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
         Write-Verbose "Opening ATC stream: $selectedATCUrl"
-        if ($selectedWebcamUrl) { Write-Verbose "Opening webcam stream: $selectedWebcamUrl" }
+        if ($selectedWebcamUrl) {
+            Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+        }
     }
 
     Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume
 
     if (-not $NoLofiMusic) {
-        if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) { Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl" }
-        if ($PlayLofiGirlVideo) { Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume }
-        else { Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume }
+        if ($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Verbose"]) {
+            Write-Verbose "Opening Lofi Girl stream: $lofiMusicUrl"
+        }
+        if ($PlayLofiGirlVideo) {
+            Start-Player -url $lofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
+        }
+        else {
+            Start-Player -url $lofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
+        }
     }
 
-    if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) { Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs }
+    if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
+        Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs
+    }
 }
 catch [System.OperationCanceledException] {
     Write-Warning $_.Exception.Message

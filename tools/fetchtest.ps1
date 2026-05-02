@@ -4,7 +4,10 @@ param(
     [string[]]$ICAO,
 
     [Parameter()]
-    [string]$OutCsv = "fetched_sources.csv"
+    [string]$OutCsv = "fetched_sources.csv",
+
+    [Parameter()]
+    [string]$FlareSolverrUrl = "http://localhost:8191/"
 )
 
 # Normalize ICAO input: split on commas/whitespace, trim, uppercase, unique
@@ -21,7 +24,7 @@ if (-not $icaoList -or $icaoList.Count -eq 0) {
 
 # Check if FlareSolverr is alive
 Function Test-FlareSolverrConnection {
-    $baseUrl = "http://localhost:8191/"
+    $baseUrl = $FlareSolverrUrl
     try {
         Write-Host "Checking connection to FlareSolverr..." -NoNewline
         $response = Invoke-RestMethod -Uri $baseUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
@@ -48,7 +51,7 @@ Function Get-HtmlViaFlareSolverr {
         [string]$TargetUrl
     )
     
-    $flareSolverrUrl = "http://localhost:8191/v1"
+    $flareSolverrUrl = "$FlareSolverrUrl/v1"
     
     $payload = @{
         cmd = "request.get"
@@ -216,7 +219,7 @@ Function Save-CombinedDataToCSV {
 
 # Run the health check before proceeding
 if (-not (Test-FlareSolverrConnection)) {
-    Write-Warning "FlareSolverr is not running or unreachable at http://localhost:8191/."
+    Write-Warning "FlareSolverr is not running or unreachable at $FlareSolverrUrl."
     Write-Warning "Please ensure the FlareSolverr Docker container or background process is active."
     exit 1
 }
