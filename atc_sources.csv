@@ -2781,3 +2781,8 @@
 "South America","Uruguay","Salto","","Nueva Hesperides International Airport","SUSO","STY","SUSO Tower/Ramp","https://www.liveatc.net/play/suso1.pls","",""
 "South America","Venezuela","Ciudad Guayana","","Manuel Carlos Piar Guayana Airport","SVPR","PZO","SVPR Twr/App/FIR","https://www.liveatc.net/play/svpr2.pls","","SVBC"
 "North America","United States","Shirley","New York","Brookhaven Airport","KHWV","HWV","KHWV CTAF","https://www.liveatc.net/play/khwv_ctaf.pls","",""
+"North America","United States","Aurora","Colorado","Buckley Air Force Base","KBKF","BKF","KBKF ATIS","https://www.liveatc.net/play/kbkf1_atis.pls","",""
+"North America","United States","Aurora","Colorado","Buckley Air Force Base","KBKF","BKF","KBKF Tower (UHF)","https://www.liveatc.net/play/kbkf1_twr.pls","",""
+"North America","United States","Aurora","Colorado","Buckley Air Force Base","KBKF","BKF","KBKF Tower (VHF)","https://www.liveatc.net/play/kbkf1_twr_vhf.pls","",""
+"North America","United States","Aurora","Colorado","Buckley Air Force Base","KBKF","BKF","KBKF Tower (VHF/UHF)","https://www.liveatc.net/play/kbkf1_twr_both.pls","",""
+"Oceania","Australia","Burnie","Tasmania","Burnie Airport Wynyard Airport","YWYY","BWT","YWYY CTAF/Center","https://www.liveatc.net/play/ywyy2.pls","",""

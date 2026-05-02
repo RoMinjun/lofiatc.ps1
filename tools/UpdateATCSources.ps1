@@ -2,7 +2,8 @@ param(
   [switch]$SortOnly,
   [switch]$InPlace,
   [string]$InputCsvPath,
-  [string]$OutputCsvPath
+  [string]$OutputCsvPath,
+  [string]$FailedLogPath = "failed_liveatc_fetches.log"
 )
 
 function Get-ScriptRoot {
@@ -20,15 +21,14 @@ function Get-ColumnOrder {
 function Sort-AtcRows {
   param([Parameter(Mandatory)][array]$Rows)
 
-  # deterministic, case-insensitive; empty State/Province sorted LAST
   $Rows | Sort-Object `
     @{ Expression = { ($_.Continent        ?? '').Trim() } }, `
     @{ Expression = { ($_.Country          ?? '').Trim() } }, `
     @{ Expression = { [string]::IsNullOrWhiteSpace($_.'State/Province') } }, `
-    @{ Expression = { ($_. 'State/Province'?? '').Trim() } }, `
+    @{ Expression = { ($_.'State/Province' ?? '').Trim() } }, `
     @{ Expression = { ($_.City             ?? '').Trim() } }, `
     @{ Expression = { ($_.ICAO             ?? '').Trim().ToUpper() } }, `
-    @{ Expression = { ($_. 'Channel Description' ?? '').Trim() } }
+    @{ Expression = { ($_.'Channel Description' ?? '').Trim() } }
 }
 
 function Write-AtcCsv {
@@ -36,78 +36,132 @@ function Write-AtcCsv {
     [Parameter(Mandatory)][array]$Rows,
     [Parameter(Mandatory)][string]$Path
   )
+
   $cols = Get-ColumnOrder
   $Rows | Select-Object $cols -Unique | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
   Write-Host "`nWrote: $Path"
 }
 
-# Test proxy connection
-Function Test-FlareSolverrConnection {
-    $baseUrl = "http://localhost:8191/"
-    try {
-        Write-Host "Checking connection to FlareSolverr..." -NoNewline
-        $response = Invoke-RestMethod -Uri $baseUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
-        
-        if ($response.msg -match "FlareSolverr") {
-            Write-Host " OK! (Version: $($response.version))" -ForegroundColor Green
-            return $true
-        }
-        
-        Write-Host " Failed! Unexpected response." -ForegroundColor Red
-        return $false
-    }
-    catch {
-        Write-Host " Failed!" -ForegroundColor Red
-        return $false
-    }
-}
-
-Function Get-HtmlViaFlareSolverr {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$TargetUrl
-    )
-    
-    $flareSolverrUrl = "http://localhost:8191/v1"
-    
-    $payload = @{
-        cmd = "request.get"
-        url = $TargetUrl
-        maxTimeout = 60000
-    } | ConvertTo-Json -Depth 2
-
-    try {
-        Write-Host "Asking FlareSolverr to fetch: $TargetUrl"
-        $response = Invoke-RestMethod -Uri $flareSolverrUrl `
-                                      -Method Post `
-                                      -Body $payload `
-                                      -ContentType "application/json" `
-                                      -TimeoutSec 120
-
-        if ($response.solution.response) {
-            return $response.solution.response
-        } else {
-            Write-Error "FlareSolverr returned a response, but no HTML was found."
-            return $null
-        }
-    }
-    catch {
-        Write-Error "Failed to fetch via FlareSolverr. Exception: $_"
-        return $null
-    }
-}
-
-Function Parse-LiveATCSources {
-  param (
-    [Parameter(Mandatory = $true)][string]$HtmlContent,
-    [Parameter(Mandatory = $true)][string]$Icao
+function Write-FailedFetchLog {
+  param(
+    [Parameter(Mandatory)][string]$Icao,
+    [Parameter()][object]$Status,
+    [Parameter(Mandatory)][string]$Reason,
+    [Parameter(Mandatory)][string]$Url
   )
+
+  $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+  $statusText = if ($null -ne $Status -and "$Status" -ne "") { "$Status" } else { "UNKNOWN" }
+  $line = "[$timestamp] ICAO=$Icao | HTTP=$statusText | URL=$Url | Reason=$Reason"
+
+  try {
+    Add-Content -Path $FailedLogPath -Value $line
+  }
+  catch {
+    Write-Warning "Could not write failed fetch log to '$FailedLogPath'. Exception: $($_.Exception.Message)"
+  }
+}
+
+function Test-FlareSolverrConnection {
+  $baseUrl = "http://localhost:8191/"
+
+  try {
+    Write-Host "Checking connection to FlareSolverr..." -NoNewline
+    $response = Invoke-RestMethod -Uri $baseUrl -Method Get -TimeoutSec 5 -ErrorAction Stop
+
+    if ($response.msg -match "FlareSolverr") {
+      Write-Host " OK! (Version: $($response.version))" -ForegroundColor Green
+      return $true
+    }
+
+    Write-Host " Failed! Unexpected response." -ForegroundColor Red
+    return $false
+  }
+  catch {
+    Write-Host " Failed!" -ForegroundColor Red
+    return $false
+  }
+}
+
+function Get-HtmlViaFlareSolverr {
+  param(
+    [Parameter(Mandatory)][string]$TargetUrl,
+    [Parameter(Mandatory)][string]$Icao
+  )
+
+  $flareSolverrUrl = "http://localhost:8191/v1"
+
+  $payload = @{
+    cmd        = "request.get"
+    url        = $TargetUrl
+    maxTimeout = 60000
+  } | ConvertTo-Json -Depth 2
+
+  try {
+    Write-Host "Asking FlareSolverr to fetch [$Icao]: $TargetUrl"
+
+    $response = Invoke-RestMethod `
+      -Uri $flareSolverrUrl `
+      -Method Post `
+      -Body $payload `
+      -ContentType "application/json" `
+      -TimeoutSec 120 `
+      -ErrorAction Stop
+
+    $statusCode = $response.solution.status
+
+    if ($statusCode -ne 200) {
+      $reason = "LiveATC search page returned HTTP $statusCode instead of 200 OK. Existing rows for this ICAO will be preserved."
+      Write-Warning "[$Icao] $reason"
+      Write-FailedFetchLog -Icao $Icao -Status $statusCode -Reason $reason -Url $TargetUrl
+
+      return [PSCustomObject]@{
+        Success = $false
+        Html    = $null
+      }
+    }
+
+    if ($response.solution.response) {
+      return [PSCustomObject]@{
+        Success = $true
+        Html    = $response.solution.response
+      }
+    }
+
+    $reason = "LiveATC search page returned 200 OK, but FlareSolverr returned no HTML. Existing rows for this ICAO will be preserved."
+    Write-Warning "[$Icao] $reason"
+    Write-FailedFetchLog -Icao $Icao -Status 200 -Reason $reason -Url $TargetUrl
+
+    return [PSCustomObject]@{
+      Success = $false
+      Html    = $null
+    }
+  }
+  catch {
+    $reason = "FlareSolverr request failed. Existing rows for this ICAO will be preserved. Exception: $($_.Exception.Message)"
+    Write-Warning "[$Icao] $reason"
+    Write-FailedFetchLog -Icao $Icao -Status $null -Reason $reason -Url $TargetUrl
+
+    return [PSCustomObject]@{
+      Success = $false
+      Html    = $null
+    }
+  }
+}
+
+function Parse-LiveATCSources {
+  param (
+    [Parameter(Mandatory)][string]$HtmlContent,
+    [Parameter(Mandatory)][string]$Icao
+  )
+
   try {
     $atcSources = @()
     $currentFeedName = ""
-    
+
     $HtmlContent -split '<tr>' | ForEach-Object {
       $row = $_.Trim()
+
       if ($row -match '<td[^>]*bgcolor="lightblue"[^>]*>\s*<strong>(?<feedName>[^<]+)</strong>') {
         $currentFeedName = $matches['feedName'].Trim()
       }
@@ -119,6 +173,7 @@ Function Parse-LiveATCSources {
         }
       }
     }
+
     return $atcSources
   }
   catch {
@@ -128,11 +183,16 @@ Function Parse-LiveATCSources {
 }
 
 $scriptDir = Get-ScriptRoot
-$inputCsv  = if ($InputCsvPath) { Resolve-Path $InputCsvPath -ErrorAction Stop }
-             else { Resolve-Path (Join-Path $scriptDir '..\atc_sources.csv') -ErrorAction Stop }
-$csvDir    = Split-Path -Parent $inputCsv
 
-# Default output for fetch-mode
+$inputCsv = if ($InputCsvPath) {
+  Resolve-Path $InputCsvPath -ErrorAction Stop
+}
+else {
+  Resolve-Path (Join-Path $scriptDir '..\atc_sources.csv') -ErrorAction Stop
+}
+
+$csvDir = Split-Path -Parent $inputCsv
+
 $defaultFetchOut = Join-Path $csvDir 'liveatc_sources.csv'
 
 if ($SortOnly) {
@@ -143,47 +203,58 @@ if ($SortOnly) {
   return
 }
 
-# Run the health check before proceeding with network operations
 if (-not (Test-FlareSolverrConnection)) {
-    Write-Warning "FlareSolverr is not running or unreachable at http://localhost:8191/."
-    Write-Warning "Please ensure the FlareSolverr background process is active."
-    exit 1
+  Write-Warning "FlareSolverr is not running or unreachable at http://localhost:8191/."
+  Write-Warning "Please ensure the FlareSolverr background process is active."
+  exit 1
 }
 
-# Figure out input rows
 $origRows = Import-Csv $inputCsv
 
-# Build a lookup of Webcam URLs by ICAO+Channel
 $webcamLookup = @{}
+
 foreach ($row in $origRows) {
   $key = "{0}||{1}" -f $row.ICAO, $row.'Channel Description'
+
   if (-not $webcamLookup.ContainsKey($key) -and $row.'Webcam URL') {
     $webcamLookup[$key] = $row.'Webcam URL'
   }
 }
 
-# Fetch once per distinct ICAO using FlareSolverr
 $icaoCache = @{}
+
 $origRows |
   Select-Object -ExpandProperty ICAO -Unique |
   Where-Object { [string]::IsNullOrWhiteSpace($_) -eq $false } |
   ForEach-Object {
-    $icao = $_
-    Write-Host "Processing channels for $icao…"
-    
+    $icao = $_.Trim().ToUpper()
+    Write-Host "Processing channels for $icao..."
+
     $url = "https://www.liveatc.net/search/?icao=$icao"
-    $rawHtml = Get-HtmlViaFlareSolverr -TargetUrl $url
-    
-    if ($null -ne $rawHtml) {
-        $icaoCache[$icao] = Parse-LiveATCSources -HtmlContent $rawHtml -Icao $icao
-    } else {
-        $icaoCache[$icao] = @()
+    $fetchResult = Get-HtmlViaFlareSolverr -TargetUrl $url -Icao $icao
+
+    if ($fetchResult.Success -eq $true) {
+      $parsedSources = @(Parse-LiveATCSources -HtmlContent $fetchResult.Html -Icao $icao)
+
+      if ($parsedSources.Count -eq 0) {
+        Write-Host "[$icao] 200 OK, but no channels found. Existing rows for this ICAO will be removed from output." -ForegroundColor Yellow
+      }
+
+      $icaoCache[$icao] = $parsedSources
+    }
+    else {
+      Write-Warning "[$icao] Fetch failed. Existing rows for this ICAO will be preserved."
+      $icaoCache[$icao] = $null
     }
   }
 
-# Build output: one row per fetched source
 $allResults = foreach ($icao in $icaoCache.Keys) {
-  $meta = $origRows | Where-Object ICAO -eq $icao | Select-Object -First 1
+  $meta = $origRows | Where-Object { ($_.ICAO ?? '').Trim().ToUpper() -eq $icao } | Select-Object -First 1
+
+  if ($null -eq $icaoCache[$icao]) {
+    $origRows | Where-Object { ($_.ICAO ?? '').Trim().ToUpper() -eq $icao }
+    continue
+  }
 
   foreach ($src in $icaoCache[$icao]) {
     $key = "{0}||{1}" -f $icao, $src.Channel
@@ -205,11 +276,8 @@ $allResults = foreach ($icao in $icaoCache.Keys) {
   }
 }
 
-# Sort with the new deterministic key
 $sorted = Sort-AtcRows -Rows $allResults
 
-# Choose output path
 $outPath = if ($OutputCsvPath) { $OutputCsvPath } else { $defaultFetchOut }
 
-# Write CSV in canonical column order
 Write-AtcCsv -Rows $sorted -Path $outPath
