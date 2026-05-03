@@ -2389,6 +2389,124 @@ Function New-ATCMapHtml {
         #toast.error {
             background: rgba(180, 50, 50, 0.95);
         }
+        #now-playing-overlay {
+            position: absolute;
+            left: 20px;
+            bottom: 55px;
+            z-index: 1500;
+            min-width: 300px;
+            max-width: 430px;
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            border-left: 5px solid #e94560;
+            border-radius: 14px;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.32);
+            backdrop-filter: blur(8px);
+            padding: 13px 16px 14px 16px;
+            opacity: 0;
+            transform: translateY(18px) scale(0.98);
+            pointer-events: none;
+            transition: opacity 0.35s ease, transform 0.35s ease;
+            overflow: hidden;
+        }
+
+        #now-playing-overlay.active {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+
+        #now-playing-overlay::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -40%;
+            width: 40%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(233, 69, 96, 0.18),
+                transparent
+            );
+            animation: npSweep 3.6s infinite;
+        }
+
+        .np-kicker {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: #e94560;
+            margin-bottom: 5px;
+        }
+
+        .np-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #e94560;
+            box-shadow: 0 0 0 rgba(233, 69, 96, 0.7);
+            animation: npDotPulse 1.5s infinite;
+        }
+
+        .np-title {
+            font-size: 17px;
+            font-weight: 800;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .np-subtitle {
+            margin-top: 3px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .np-eq {
+            display: flex;
+            align-items: end;
+            gap: 3px;
+            height: 18px;
+            margin-top: 9px;
+        }
+
+        .np-bar {
+            width: 4px;
+            border-radius: 999px;
+            background: #e94560;
+            opacity: 0.8;
+            animation: npBars 0.9s infinite ease-in-out;
+        }
+
+        .np-bar:nth-child(1) { height: 7px; animation-delay: 0s; }
+        .np-bar:nth-child(2) { height: 14px; animation-delay: 0.12s; }
+        .np-bar:nth-child(3) { height: 10px; animation-delay: 0.24s; }
+        .np-bar:nth-child(4) { height: 17px; animation-delay: 0.36s; }
+        .np-bar:nth-child(5) { height: 8px; animation-delay: 0.48s; }
+
+        @keyframes npDotPulse {
+            0% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(233, 69, 96, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(233, 69, 96, 0); }
+        }
+
+        @keyframes npBars {
+            0%, 100% { transform: scaleY(0.45); opacity: 0.45; }
+            50% { transform: scaleY(1); opacity: 1; }
+        }
+
+        @keyframes npSweep {
+            0% { left: -45%; }
+            55%, 100% { left: 120%; }
+        }          
         body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; background-color: var(--bg-color); overflow: hidden; transition: background-color 0.3s; }
         #map { height: 100%; width: 100%; z-index: 1; }
         #brand-overlay { position: absolute; top: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-primary); padding: 15px 25px; border-radius: 8px; border-left: 5px solid #e94560; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; backdrop-filter: blur(4px); transition: 0.3s;}
@@ -2476,6 +2594,22 @@ Function New-ATCMapHtml {
     <div id="map"></div>
     <div id="toast"></div>
 
+    <div id="now-playing-overlay" aria-live="polite">
+        <div class="np-kicker">
+            <span class="np-dot"></span>
+            Now playing
+        </div>
+        <div id="np-title" class="np-title">No channel selected</div>
+        <div id="np-subtitle" class="np-subtitle">Click a channel on the map to start monitoring</div>
+        <div class="np-eq" aria-hidden="true">
+            <span class="np-bar"></span>
+            <span class="np-bar"></span>
+            <span class="np-bar"></span>
+            <span class="np-bar"></span>
+            <span class="np-bar"></span>
+        </div>
+    </div>
+
     <div id="starting-screen">
         <div class="content-box">
             <h1>Lofi<span style="color:#e94560">ATC</span> Initialized</h1>
@@ -2506,6 +2640,102 @@ Function New-ATCMapHtml {
                 toast.className = '';
             }, 2400);
         }
+        var currentPlayingPulse = null;
+        var currentPlayingPulseTimer = null;
+        var currentPlayingItem = null;
+
+        function setNowPlaying(data) {
+            var overlay = document.getElementById('now-playing-overlay');
+            var title = document.getElementById('np-title');
+            var subtitle = document.getElementById('np-subtitle');
+
+            var icao = data && data.icao ? data.icao : '';
+            var channel = data && data.channel ? data.channel : 'Unknown channel';
+            var airport = data && data.airport ? data.airport : 'Unknown airport';
+
+            title.textContent = icao ? icao + ' — ' + channel : channel;
+            subtitle.textContent = airport;
+
+            overlay.classList.add('active');
+        }
+
+        function clearNowPlayingPulse() {
+            if (currentPlayingPulseTimer) {
+                clearInterval(currentPlayingPulseTimer);
+                currentPlayingPulseTimer = null;
+            }
+
+            if (currentPlayingPulse && map.hasLayer(currentPlayingPulse)) {
+                map.removeLayer(currentPlayingPulse);
+            }
+
+            currentPlayingPulse = null;
+
+            if (currentPlayingItem && currentPlayingItem.layer) {
+                currentPlayingItem.layer.setStyle({
+                    color: currentPlayingItem.color,
+                    fillColor: currentPlayingItem.color,
+                    fillOpacity: 0.7,
+                    weight: 2
+                });
+            }
+
+            currentPlayingItem = null;
+        }
+
+        function highlightNowPlayingAirport(icao) {
+            if (!icao || !allMapItems || !allMapItems.length) return;
+
+            clearNowPlayingPulse();
+
+            var selected = null;
+
+            allMapItems.forEach(function(item) {
+                if (item.data && item.data.icao === icao) {
+                    selected = item;
+                }
+            });
+
+            if (!selected) return;
+
+            currentPlayingItem = selected;
+
+            selected.layer.setStyle({
+                color: '#e94560',
+                fillColor: '#e94560',
+                fillOpacity: 1,
+                weight: 4
+            });
+
+            selected.layer.bringToFront();
+
+            currentPlayingPulse = L.circleMarker([selected.data.lat, selected.data.lon], {
+                radius: 16,
+                color: '#e94560',
+                fillColor: '#e94560',
+                fillOpacity: 0.08,
+                opacity: 0.75,
+                weight: 3,
+                interactive: false
+            }).addTo(map);
+
+            var pulseTick = 0;
+
+            currentPlayingPulseTimer = setInterval(function() {
+                pulseTick += 0.12;
+
+                if (!currentPlayingPulse) return;
+
+                var radius = 17 + Math.sin(pulseTick) * 6;
+                var opacity = 0.45 + ((Math.cos(pulseTick) + 1) * 0.15);
+
+                currentPlayingPulse.setRadius(radius);
+                currentPlayingPulse.setStyle({
+                    opacity: opacity,
+                    fillOpacity: 0.08
+                });
+            }, 60);
+        }
 
         function playChannel(icao, channelIndex) {
             var keepOpen = $keepOpenJs;
@@ -2528,6 +2758,8 @@ Function New-ATCMapHtml {
                 }
 
                 if (data && data.ok) {
+                    setNowPlaying(data);
+                    highlightNowPlayingAirport(data.icao);
                     showToast(data.message || 'Now monitoring the selected channel.', false);
                 } else {
                     showToast((data && data.message) || 'Could not switch channel.', true);
@@ -2837,7 +3069,14 @@ Function New-ATCMapHtml {
                 windArrow = L.marker([m.lat, m.lon], { icon: wIcon, interactive: false });
             }
 
-            allMapItems.push({ data: m, layer: dot, wind: windArrow, cat: primaryCat });
+            allMapItems.push({
+                data: m,
+                layer: dot,
+                wind: windArrow,
+                cat: primaryCat,
+                color: mColor,
+                radius: baseRadius
+            });
             dot.addTo(map);
             if (windArrow) windArrow.addTo(map);
         });
@@ -3140,6 +3379,11 @@ Function Start-PersistentATCMapSession {
                         $payload = @{
                             ok      = $true
                             message = "Now monitoring $($started.ICAO) — $($started.Channel)"
+                            icao    = $started.ICAO
+                            channel = $started.Channel
+                            airport = $started.Airport
+                            webcam  = $started.Webcam
+                            lofi    = $started.Lofi
                         }
 
                         Write-Host "Switched to $($started.ICAO) — $($started.Channel)" -ForegroundColor Green
