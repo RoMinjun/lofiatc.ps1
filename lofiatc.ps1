@@ -184,7 +184,6 @@ $script:IanaToWindowsMap = @{
 
 $script:CurrentATCProcess = $null
 $script:CurrentWebcamProcess = $null
-$script:CurrentMapSelection = $null
 $script:CurrentLofiProcess = $null
 
 # Function to check if a console key is available without blocking
@@ -1093,6 +1092,50 @@ Function ConvertFrom-METAR {
     return [PSCustomObject]$decoded
 }
 
+# Function to calculate the age of a METAR report in minutes based on the timestamp in the METAR string, returning null if the timestamp is missing or invalid 
+Function Get-METARAgeMinutes {
+    param(
+        [string]$Metar
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Metar)) {
+        return $null
+    }
+
+    if ($Metar -notmatch '\b(?<ts>\d{6})Z\b') {
+        return $null
+    }
+
+    try {
+        $ts = $matches.ts
+        $day = [int]$ts.Substring(0, 2)
+        $hour = [int]$ts.Substring(2, 2)
+        $min = [int]$ts.Substring(4, 2)
+
+        $now = [datetime]::UtcNow
+        $year = $now.Year
+        $month = $now.Month
+
+        if ($day -gt $now.Day) {
+            $prev = $now.AddMonths(-1)
+            $year = $prev.Year
+            $month = $prev.Month
+        }
+
+        $obs = New-Object DateTime($year, $month, $day, $hour, $min, 0, [System.DateTimeKind]::Utc)
+        $age = $now - $obs
+
+        if ($age.TotalMinutes -lt 0) {
+            return $null
+        }
+
+        return [int][math]::Floor($age.TotalMinutes)
+    }
+    catch {
+        return $null
+    }
+}
+
 # Function to convert an IANA timezone ID to a .NET TimeZoneInfo object, with fallback mapping for common timezones
 Function ConvertTo-TimeZoneInfo {
     param(
@@ -1724,6 +1767,144 @@ Function Invoke-MapChannelSelection {
     }
 }
 
+# Function to handle various playback actions from the interactive map, such as stopping the ATC stream, stopping all media, restarting the current stream, or selecting a random stream
+Function Invoke-MapPlaybackAction {
+    param(
+        [string]$Action,
+        [array]$AtcSources,
+        [string]$Player,
+        [int]$ATCVolume,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [string]$LofiMusicUrl,
+        [int]$LofiVolume
+    )
+
+    switch ($Action.ToLowerInvariant()) {
+        'stop-atc' {
+            Stop-ManagedProcess -Process $script:CurrentATCProcess
+            Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+
+            $script:CurrentATCProcess = $null
+            $script:CurrentWebcamProcess = $null
+
+            return @{
+                ok      = $true
+                stopped = $true
+                message = 'ATC and webcam playback stopped.'
+            }
+        }
+
+        'stop-all' {
+            Stop-ManagedProcess -Process $script:CurrentATCProcess
+            Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+            Stop-ManagedProcess -Process $script:CurrentLofiProcess
+
+            $script:CurrentATCProcess = $null
+            $script:CurrentWebcamProcess = $null
+            $script:CurrentLofiProcess = $null
+            $script:CurrentMapSelection = $null
+
+            return @{
+                ok      = $true
+                stopped = $true
+                message = 'All playback stopped.'
+            }
+        }
+
+        'restart' {
+            if (-not $script:CurrentMapSelection) {
+                throw 'No channel is currently selected.'
+            }
+
+            $current = $script:CurrentMapSelection
+            $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $current.ICAO })
+
+            $channelIndex = -1
+            for ($i = 0; $i -lt $icaoMatches.Count; $i++) {
+                if (
+                    $icaoMatches[$i].'Channel Description' -eq $current.'Channel Description' -and
+                    $icaoMatches[$i].'Stream URL' -eq $current.'Stream URL'
+                ) {
+                    $channelIndex = $i
+                    break
+                }
+            }
+
+            if ($channelIndex -lt 0) {
+                throw 'Could not find the current channel in the source list.'
+            }
+
+            $started = Invoke-MapChannelSelection `
+                -Selection @{ ICAO = $current.ICAO; ChannelIndex = $channelIndex } `
+                -AtcSources $AtcSources `
+                -Player $Player `
+                -ATCVolume $ATCVolume `
+                -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+                -NoLofiMusic:$NoLofiMusic `
+                -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                -LofiMusicUrl $LofiMusicUrl `
+                -LofiVolume $LofiVolume
+
+            return @{
+                ok      = $true
+                message = "Restarted $($started.ICAO) — $($started.Channel)"
+                icao    = $started.ICAO
+                channel = $started.Channel
+                airport = $started.Airport
+                webcam  = $started.Webcam
+                lofi    = $started.Lofi
+            }
+        }
+
+        'random' {
+            $randomMatch = $AtcSources | Get-Random
+            $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $randomMatch.ICAO })
+
+            $channelIndex = -1
+            for ($i = 0; $i -lt $icaoMatches.Count; $i++) {
+                if (
+                    $icaoMatches[$i].'Channel Description' -eq $randomMatch.'Channel Description' -and
+                    $icaoMatches[$i].'Stream URL' -eq $randomMatch.'Stream URL'
+                ) {
+                    $channelIndex = $i
+                    break
+                }
+            }
+
+            if ($channelIndex -lt 0) {
+                throw 'Could not select a random channel.'
+            }
+
+            $started = Invoke-MapChannelSelection `
+                -Selection @{ ICAO = $randomMatch.ICAO; ChannelIndex = $channelIndex } `
+                -AtcSources $AtcSources `
+                -Player $Player `
+                -ATCVolume $ATCVolume `
+                -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+                -NoLofiMusic:$NoLofiMusic `
+                -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                -LofiMusicUrl $LofiMusicUrl `
+                -LofiVolume $LofiVolume
+
+            return @{
+                ok      = $true
+                message = "Random channel: $($started.ICAO) — $($started.Channel)"
+                icao    = $started.ICAO
+                channel = $started.Channel
+                airport = $started.Airport
+                webcam  = $started.Webcam
+                lofi    = $started.Lofi
+            }
+        }
+
+        default {
+            throw "Unsupported map playback action: $Action"
+        }
+    }
+}
+
 # Function to get a list of nearby airports within a specified radius
 Function Get-NearbyAirports {
     param (
@@ -1947,11 +2128,16 @@ Function Get-MapWeatherData {
 
             foreach ($item in $wxData) {
                 if ($item.icaoId) {
+                    $rawOb = if ($item.rawOb) { [string]$item.rawOb } else { "METAR Unavailable" }
+
                     $weatherMap[$item.icaoId] = @{
-                        fcat  = if ($item.fltcat) { $item.fltcat } else { "UNK" }
-                        wdir  = if ($null -ne $item.wdir) { $item.wdir } else { "null" }
-                        wspd  = if ($null -ne $item.wspd) { $item.wspd } else { 0 }
-                        rawOb = if ($item.rawOb) { ConvertTo-JsSafeString $item.rawOb } else { "METAR Unavailable" }
+                        fcat = if ($item.fltcat) { $item.fltcat } else { "UNK" }
+                        wdir = if ($null -ne $item.wdir) { $item.wdir } else { "null" }
+                        wspd = if ($null -ne $item.wspd) { $item.wspd } else { 0 }
+                        rawOb  = ConvertTo-JsSafeString $rawOb
+                        ageMin = Get-METARAgeMinutes -Metar $rawOb
+                        source = 'NOAA'
+                        wxIcao = [string]$item.icaoId
                     }
                 }
             }
@@ -2023,10 +2209,13 @@ Function Get-MapWeatherData {
                     }
 
                     $weatherMap[$mIcao] = @{
-                        fcat  = $fcat
-                        wdir  = $wdir
-                        wspd  = $wspd
-                        rawOb = "[VATSIM] " + (ConvertTo-JsSafeString $vRaw)
+                        fcat   = $fcat
+                        wdir   = $wdir
+                        wspd   = $wspd
+                        rawOb  = "[VATSIM] " + (ConvertTo-JsSafeString $vRaw)
+                        ageMin = Get-METARAgeMinutes -Metar $vRaw
+                        source = 'VATSIM'
+                        wxIcao = $mIcao
                     }
                 }
             }
@@ -2121,20 +2310,26 @@ Function ConvertTo-MapMarkers {
             if ($bestFb) {
                 $wxObj = $WeatherMap[$bestFb]
                 $wx = @{
-                    fcat  = $wxObj.fcat
-                    wdir  = $wxObj.wdir
-                    wspd  = $wxObj.wspd
-                    rawOb = "[Fallback $bestFb - $($minDist)km] $($wxObj.rawOb)"
+                    fcat   = $wxObj.fcat
+                    wdir   = $wxObj.wdir
+                    wspd   = $wxObj.wspd
+                    rawOb  = "[Fallback $bestFb - $($minDist)km] $($wxObj.rawOb)"
+                    ageMin = $wxObj.ageMin
+                    source = $wxObj.source
+                    wxIcao = $bestFb
                 }
             }
         }
 
         if (-not $wx) {
             $wx = @{
-                fcat  = $defaultFcat
-                wdir  = 'null'
-                wspd  = 0
+                fcat = $defaultFcat
+                wdir = 'null'
+                wspd = 0
                 rawOb = 'Weather Skipped or Unavailable'
+                ageMin = $null
+                source = 'Unavailable'
+                wxIcao = $icaoCode
             }
         }
 
@@ -2169,6 +2364,9 @@ Function ConvertTo-MapMarkers {
             wdir     = $wdir
             wspd     = [int]$wspd
             rawOb    = [string]$wx.rawOb
+            wxAgeMin = if ($null -ne $wx.ageMin) { [int]$wx.ageMin } else { $null }
+            wxSource = [string]$wx.source
+            wxIcao   = [string]$wx.wxIcao
         }
     }
 
@@ -2271,6 +2469,37 @@ Function New-ATCMapHtml {
     else {
         'false'
     }
+    $favoriteLegendItem = '<label class="legend-item" title="Streams you play often."><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorites</label>'
+
+    $nearbyControls = if ($UserLocation) {
+@"
+        <div class="legend-section-title" style="margin-top:10px;">Nearby</div>
+        <label class="legend-item" title="Only show airports within the selected radius.">
+            <input type="checkbox" id="toggle-nearby-only"> Nearby only
+        </label>
+        <label class="legend-item" title="Adjust nearby airport radius.">
+            Radius: <span id="nearby-radius-label">$Radius km</span>
+        </label>
+        <input type="range" id="nearby-radius" min="50" max="3000" step="50" value="$Radius">
+"@
+    }
+    else {
+        ""
+    }
+
+    $playbackControls = if ($KeepOpen) {
+@"
+        <div class="np-actions">
+            <button type="button" id="np-restart" class="np-btn">Restart</button>
+            <button type="button" id="np-random" class="np-btn">Random</button>
+            <button type="button" id="np-stop-atc" class="np-btn">Stop ATC</button>
+            <button type="button" id="np-stop-all" class="np-btn danger">Stop All</button>
+        </div>
+"@
+    }
+    else {
+        ""
+    }
 
     return @"
 <!DOCTYPE html>
@@ -2363,6 +2592,71 @@ Function New-ATCMapHtml {
 
         #radar-status {
             transition: opacity 0.2s ease;
+        }
+
+        #search-status {
+            margin-top: 6px;
+            padding-left: 12px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            min-height: 14px;
+        }
+
+        #nearby-radius {
+            width: 100%;
+            accent-color: #e94560;
+            margin: 2px 0 8px 0;
+        }
+
+        .weather-meta {
+            margin: 6px 0;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .weather-pill {
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 2px 7px;
+            background: rgba(0,0,0,0.04);
+        }
+
+        body.dark-mode .weather-pill {
+            background: rgba(255,255,255,0.06);
+        }
+
+        .weather-age-stale {
+            color: #e74c3c;
+            font-weight: 700;
+        }
+
+        .np-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            pointer-events: auto;
+        }
+
+        .np-btn {
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            padding: 5px 9px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .np-btn:hover {
+            border-color: #e94560;
+        }
+
+        .np-btn.danger {
+            color: #e74c3c;
         }
         #toast {
             position: absolute;
@@ -2553,7 +2847,8 @@ Function New-ATCMapHtml {
 </head>
 <body$darkModeClass>
     <div id="search-container">
-        <input type="text" id="map-search" placeholder="Search ICAO, City, or Country... (Press Enter)">
+        <input type="text" id="map-search" placeholder="Search ICAO, airport, city, country, channel...">
+        <div id="search-status"></div>
     </div>
 
     <div id="brand-overlay">
@@ -2566,6 +2861,9 @@ Function New-ATCMapHtml {
         <div class="legend-section-title">Map Filters</div>
         $weatherLegendItems
         $webcamLegendItem
+        $favoriteLegendItem
+        $locationLegendItem
+        $nearbyControls
         <div class="radar-controls">
             <label class="legend-item" title="Toggle RainViewer precipitation overlay with up to 1 hour of radar history.">
                 <input type="checkbox" id="toggle-weather"> Weather Radar
@@ -2582,7 +2880,6 @@ Function New-ATCMapHtml {
             </div>
             <div id="radar-status" class="radar-status">Radar history unavailable</div>
         </div>
-        $locationLegendItem
 
         <div class="legend-section-title" style="margin-top:10px;">Overlays</div>
         $windToggle
@@ -2608,6 +2905,7 @@ Function New-ATCMapHtml {
             <span class="np-bar"></span>
             <span class="np-bar"></span>
         </div>
+        $playbackControls
     </div>
 
     <div id="starting-screen">
@@ -2750,6 +3048,10 @@ Function New-ATCMapHtml {
                 { method: 'GET' }
             )
             .then(function(res) {
+                if (!keepOpen) {
+                    return null;
+                }
+
                 return res.json();
             })
             .then(function(data) {
@@ -2773,6 +3075,61 @@ Function New-ATCMapHtml {
                 }
             });
         }
+
+        function setPlaybackStopped(message) {
+            clearNowPlayingPulse();
+
+            var overlay = document.getElementById('now-playing-overlay');
+            var title = document.getElementById('np-title');
+            var subtitle = document.getElementById('np-subtitle');
+
+            title.textContent = 'Playback stopped';
+            subtitle.textContent = message || 'No active ATC channel';
+
+            overlay.classList.add('active');
+        }
+
+        function sendMapAction(action) {
+            fetch(
+                'http://127.0.0.1:$Port/?action=' + encodeURIComponent(action),
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    if (data.stopped) {
+                        setPlaybackStopped(data.message);
+                    } else if (data.icao) {
+                        setNowPlaying(data);
+                        highlightNowPlayingAirport(data.icao);
+                    }
+
+                    showToast(data.message || 'Action complete.', false);
+                } else {
+                    showToast((data && data.message) || 'Action failed.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Map action failed', err);
+                showToast('Could not reach the local LofiATC session.', true);
+            });
+        }
+
+        function bindPlaybackButton(id, action) {
+            var el = document.getElementById(id);
+            if (!el) return;
+
+            el.addEventListener('click', function() {
+                sendMapAction(action);
+            });
+        }
+
+        bindPlaybackButton('np-restart', 'restart');
+        bindPlaybackButton('np-random', 'random');
+        bindPlaybackButton('np-stop-atc', 'stop-atc');
+        bindPlaybackButton('np-stop-all', 'stop-all');
 
         if (typeof L === 'undefined') {
             throw new Error('Leaflet failed to load from CDN.');
@@ -3035,6 +3392,31 @@ Function New-ATCMapHtml {
         var allMapItems = [];
         var searchHighlightLayer = null;
 
+        function formatWeatherAge(ageMin) {
+            if (ageMin === null || ageMin === undefined || isNaN(ageMin)) {
+                return 'Age unavailable';
+            }
+
+            if (ageMin < 60) {
+                return ageMin + ' min old';
+            }
+
+            var hours = Math.floor(ageMin / 60);
+            var minutes = ageMin % 60;
+
+            if (minutes === 0) {
+                return hours + 'h old';
+            }
+
+            return hours + 'h ' + minutes + 'm old';
+        }
+
+        function stripHtml(html) {
+            var tmp = document.createElement('div');
+            tmp.innerHTML = html || '';
+            return tmp.textContent || tmp.innerText || '';
+        }
+
         markersData.forEach(function(m) {
             var baseRadius = 5;
             var mColor = "#95a5a6";
@@ -3050,7 +3432,23 @@ Function New-ATCMapHtml {
             var favStar = m.isFav ? "<span class='fav-star'>★ </span>" : "";
             var titleLabel = m.icao + " - " + m.name;
 
+            var weatherAge = formatWeatherAge(m.wxAgeMin);
+            var weatherAgeClass = (m.wxAgeMin !== null && m.wxAgeMin !== undefined && m.wxAgeMin > 120)
+                ? ' weather-age-stale'
+                : '';
+
+            var weatherStationText = m.wxIcao && m.wxIcao !== m.icao
+                ? 'Station: ' + m.wxIcao
+                : 'Station: ' + m.icao;
+
+            var weatherMeta = "<div class='weather-meta'>" +
+                            "<span class='weather-pill " + weatherAgeClass + "'>METAR " + weatherAge + "</span>" +
+                            "<span class='weather-pill'>" + weatherStationText + "</span>" +
+                            "<span class='weather-pill'>Source: " + (m.wxSource || 'Unknown') + "</span>" +
+                            "</div>";
+
             var popupHTML = "<b>" + favStar + titleLabel + "</b>" +
+                            weatherMeta +
                             "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + m.rawOb + "</div>" +
                             "<div>" + m.desc + "</div>";
 
@@ -3075,7 +3473,9 @@ Function New-ATCMapHtml {
                 wind: windArrow,
                 cat: primaryCat,
                 color: mColor,
-                radius: baseRadius
+                radius: baseRadius,
+                distanceKm: null,
+                matchesSearch: true
             });
             dot.addTo(map);
             if (windArrow) windArrow.addTo(map);
@@ -3095,17 +3495,62 @@ Function New-ATCMapHtml {
             });
         });
 
+        var searchTerm = '';
+
+        function getSearchText(item) {
+            var m = item.data;
+            return (
+                m.icao + ' ' +
+                m.name + ' ' +
+                m.city + ' ' +
+                m.country + ' ' +
+                m.rawOb + ' ' +
+                stripHtml(m.desc)
+            ).toLowerCase();
+        }
+
+        function itemMatchesSearch(item, term) {
+            if (!term) return true;
+            return getSearchText(item).indexOf(term) >= 0;
+        }
+
         function applyFilters() {
             var activeFilters = {};
-            document.querySelectorAll('.filter-cb').forEach(function(cb) { activeFilters[cb.value] = cb.checked; });
+
+            document.querySelectorAll('.filter-cb').forEach(function(cb) {
+                activeFilters[cb.value] = cb.checked;
+            });
 
             var windToggle = document.getElementById('toggle-wind');
             var showWind = windToggle ? windToggle.checked : false;
 
+            var nearbyToggle = document.getElementById('toggle-nearby-only');
+            var nearbyOnly = nearbyToggle ? nearbyToggle.checked : false;
+
+            var radiusSlider = document.getElementById('nearby-radius');
+            var nearbyRadiusKm = radiusSlider ? parseInt(radiusSlider.value, 10) : null;
+
             allMapItems.forEach(function(item) {
-                var isVisible = activeFilters[item.cat];
+                var categoryVisible = true;
+
+                if (typeof activeFilters[item.cat] !== 'undefined') {
+                    categoryVisible = activeFilters[item.cat];
+                }
+
+                item.matchesSearch = itemMatchesSearch(item, searchTerm);
+
+                var nearbyVisible = true;
+                if (nearbyOnly) {
+                    nearbyVisible = typeof item.distanceKm === 'number' &&
+                                    nearbyRadiusKm !== null &&
+                                    item.distanceKm <= nearbyRadiusKm;
+                }
+
+                var isVisible = categoryVisible && item.matchesSearch && nearbyVisible;
+
                 if (isVisible) {
                     if (!map.hasLayer(item.layer)) map.addLayer(item.layer);
+
                     if (item.wind) {
                         if (showWind && !map.hasLayer(item.wind)) map.addLayer(item.wind);
                         if (!showWind && map.hasLayer(item.wind)) map.removeLayer(item.wind);
@@ -3117,74 +3562,155 @@ Function New-ATCMapHtml {
             });
         }
 
-        document.querySelectorAll('.filter-cb').forEach(function(cb) { cb.addEventListener('change', applyFilters); });
-        var windToggle = document.getElementById('toggle-wind');
-        if (windToggle) { windToggle.addEventListener('change', applyFilters); }
+        function runMapSearch(value, fitMap) {
+            searchTerm = (value || '').toLowerCase().trim();
 
-        document.getElementById('map-search').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                var val = e.target.value.toLowerCase().trim();
-                if (searchHighlightLayer) { map.removeLayer(searchHighlightLayer); searchHighlightLayer = null; }
+            var status = document.getElementById('search-status');
+            var matchedBounds = [];
+            var exactItem = null;
+            var visibleMatches = 0;
 
-                if (!val) {
-                    allMapItems.forEach(function(item) { item.layer.setStyle({ opacity: 1, fillOpacity: 0.7 }); });
-                    map.setView([20, 0], 2);
-                    return;
+            allMapItems.forEach(function(item) {
+                if (itemMatchesSearch(item, searchTerm)) {
+                    visibleMatches++;
+                    matchedBounds.push([item.data.lat, item.data.lon]);
+
+                    if (item.data.icao.toLowerCase() === searchTerm) {
+                        exactItem = item;
+                    }
                 }
+            });
 
-                var matchedBounds = [];
-                var exactMarker = null;
+            if (!searchTerm) {
+                status.textContent = '';
+                applyFilters();
+                return;
+            }
 
-                allMapItems.forEach(function(item) {
-                    var m = item.data;
-                    var searchString = (m.icao + " " + m.name + " " + m.city + " " + m.country).toLowerCase();
+            status.textContent = visibleMatches + (visibleMatches === 1 ? ' match' : ' matches');
 
-                    if (searchString.includes(val)) {
-                        matchedBounds.push([m.lat, m.lon]);
-                        if (m.icao.toLowerCase() === val) { exactMarker = item.layer; }
-                        item.layer.setStyle({ opacity: 1, fillOpacity: 0.9 });
-                        item.layer.bringToFront();
-                    } else {
-                        item.layer.setStyle({ opacity: 0.15, fillOpacity: 0.15 });
-                    }
-                });
+            applyFilters();
 
-                if (matchedBounds.length > 0) {
-                    var bounds = L.latLngBounds(matchedBounds);
-                    var maxZ = matchedBounds.length === 1 ? 9 : 5;
-                    map.fitBounds(bounds, { padding: [50, 50], maxZoom: maxZ });
-                    if (exactMarker) { setTimeout(function() { exactMarker.openPopup(); }, 500); }
+            if (fitMap && matchedBounds.length > 0) {
+                var bounds = L.latLngBounds(matchedBounds);
+                var maxZ = matchedBounds.length === 1 ? 9 : 5;
+                map.fitBounds(bounds, { padding: [50, 50], maxZoom: maxZ });
 
-                    if (!exactMarker && val.length > 2) {
-                        fetch('https://nominatim.openstreetmap.org/search?q=' + encodeURIComponent(val) + '&polygon_geojson=1&format=json&limit=1')
-                        .then(res => res.json())
-                        .then(data => {
-                            if (data && data.length > 0 && data[0].geojson) {
-                                searchHighlightLayer = L.geoJSON(data[0].geojson, {
-                                    style: { color: '#e94560', weight: 2, fillOpacity: 0.08, dashArray: '5, 5' },
-                                    interactive: false
-                                }).addTo(map);
-                            }
-                        }).catch(e => console.log('Boundary fetch failed', e));
-                    }
-                } else {
-                    var sb = document.getElementById('map-search');
-                    var origBg = sb.style.background;
-                    sb.style.background = 'rgba(231, 76, 60, 0.8)';
-                    setTimeout(function() { sb.style.background = origBg; }, 500);
-                    allMapItems.forEach(function(item) { item.layer.setStyle({ opacity: 1, fillOpacity: 0.7 }); });
+                if (exactItem) {
+                    setTimeout(function() {
+                        exactItem.layer.openPopup();
+                    }, 350);
                 }
             }
+
+            if (matchedBounds.length === 0) {
+                var sb = document.getElementById('map-search');
+                var origBg = sb.style.background;
+                sb.style.background = 'rgba(231, 76, 60, 0.8)';
+                setTimeout(function() { sb.style.background = origBg; }, 450);
+            }
+        }
+
+        var searchDebounceTimer = null;
+
+        document.getElementById('map-search').addEventListener('input', function(e) {
+            clearTimeout(searchDebounceTimer);
+
+            searchDebounceTimer = setTimeout(function() {
+                runMapSearch(e.target.value, e.target.value.trim().length >= 2);
+            }, 220);
         });
+
+        document.getElementById('map-search').addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                e.target.value = '';
+                runMapSearch('', false);
+                map.setView([20, 0], 2);
+            }
+
+            if (e.key === 'Enter') {
+                runMapSearch(e.target.value, true);
+            }
+        });
+
+        document.querySelectorAll('.filter-cb').forEach(function(cb) {
+            cb.addEventListener('change', applyFilters);
+        });
+
+        var windToggle = document.getElementById('toggle-wind');
+        if (windToggle) {
+            windToggle.addEventListener('change', applyFilters);
+        }
+
+        function distanceKm(lat1, lon1, lat2, lon2) {
+            var r = 6371;
+            var dLat = (lat2 - lat1) * Math.PI / 180;
+            var dLon = (lon2 - lon1) * Math.PI / 180;
+
+            var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(lat1 * Math.PI / 180) *
+                    Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLon / 2) *
+                    Math.sin(dLon / 2);
+
+            return r * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+        }
+
+        function updateDistancesToUser() {
+            if (uLat === null || uLon === null) return;
+
+            allMapItems.forEach(function(item) {
+                item.distanceKm = distanceKm(uLat, uLon, item.data.lat, item.data.lon);
+            });
+        }
 
         var uLat = $userLat;
         var uLon = $userLon;
         var uRad = $userRad;
+        var userRadiusCircle = null;
 
         if (uLat !== null && uLon !== null) {
-            L.circleMarker([uLat, uLon], { radius: 6, color: '#00ff00', fillColor: '#00ff00', fillOpacity: 1, weight: 2, interactive: false }).addTo(map).bindPopup("<b>📍 Your Location</b>");
-            L.circle([uLat, uLon], { radius: uRad, color: '#00ff00', weight: 1, fillOpacity: 0.05, dashArray: '5, 5', interactive: false }).addTo(map);
+            L.circleMarker([uLat, uLon], {
+                radius: 6,
+                color: '#00ff00',
+                fillColor: '#00ff00',
+                fillOpacity: 1,
+                weight: 2,
+                interactive: false
+            }).addTo(map).bindPopup("<b>📍 Your Location</b>");
+
+            userRadiusCircle = L.circle([uLat, uLon], {
+                radius: uRad,
+                color: '#00ff00',
+                weight: 1,
+                fillOpacity: 0.05,
+                dashArray: '5, 5',
+                interactive: false
+            }).addTo(map);
+
+            updateDistancesToUser();
             map.setView([uLat, uLon], 6);
+        }
+
+        var nearbySlider = document.getElementById('nearby-radius');
+        var nearbyLabel = document.getElementById('nearby-radius-label');
+        var nearbyToggle = document.getElementById('toggle-nearby-only');
+
+        if (nearbySlider) {
+            nearbySlider.addEventListener('input', function(e) {
+                var km = parseInt(e.target.value, 10);
+                nearbyLabel.textContent = km + ' km';
+
+                if (userRadiusCircle) {
+                    userRadiusCircle.setRadius(km * 1000);
+                }
+
+                applyFilters();
+            });
+        }
+
+        if (nearbyToggle) {
+            nearbyToggle.addEventListener('change', applyFilters);
         }
     </script>
 </body>
@@ -3351,7 +3877,31 @@ Function Start-PersistentATCMapSession {
                     message = "Ready"
                 }
 
-                if ($null -ne $req.QueryString["icao"]) {
+                if ($null -ne $req.QueryString["action"]) {
+                    try {
+                        $payload = Invoke-MapPlaybackAction `
+                            -Action $req.QueryString["action"] `
+                            -AtcSources $AtcSources `
+                            -Player $Player `
+                            -ATCVolume $ATCVolume `
+                            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+                            -NoLofiMusic:$NoLofiMusic `
+                            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                            -LofiMusicUrl $LofiMusicUrl `
+                            -LofiVolume $LofiVolume
+
+                        Write-Host $payload.message -ForegroundColor Green
+                    }
+                    catch {
+                        $payload = @{
+                            ok      = $false
+                            message = $_.Exception.Message
+                        }
+
+                        Write-Warning $_.Exception.Message
+                    }
+                }
+                elseif ($null -ne $req.QueryString["icao"]) {
                     $channelIndexRaw = $req.QueryString["channelIndex"]
                     $channelIndex = $null
 
