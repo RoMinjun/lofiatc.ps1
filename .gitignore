@@ -6,3 +6,5 @@ config.json
 tools/*.csv*
 *.bak
 *.env
+*.log
+*.awk
