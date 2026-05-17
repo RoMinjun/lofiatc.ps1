@@ -1979,7 +1979,8 @@ Function Select-ATCMap {
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
-        [int]$LofiVolume
+        [int]$LofiVolume,
+        [switch]$StartRandom
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -2013,7 +2014,8 @@ Function Select-ATCMap {
         -NoWeather:$NoWeather `
         -Dark:$Dark `
         -Port $port `
-        -KeepOpen:$KeepOpen
+        -KeepOpen:$KeepOpen `
+        -StartRandom:$StartRandom
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
@@ -2386,7 +2388,8 @@ Function New-ATCMapHtml {
         [switch]$NoWeather,
         [switch]$Dark,
         [int]$Port,
-        [switch]$KeepOpen
+        [switch]$KeepOpen,
+        [switch]$StartRandom
     )
 
     $userLat = if ($UserLocation) {
@@ -2469,6 +2472,14 @@ Function New-ATCMapHtml {
     else {
         'false'
     }
+
+    $startRandomJs = if ($KeepOpen -and $StartRandom) {
+        'true'
+    }
+    else {
+        'false'
+    }
+
     $favoriteLegendItem = '<label class="legend-item" title="Streams you play often."><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorites</label>'
 
     $nearbyControls = if ($UserLocation) {
@@ -3145,6 +3156,10 @@ Function New-ATCMapHtml {
         bindPlaybackButton('np-random', 'random');
         bindPlaybackButton('np-stop-atc', 'stop-atc');
         bindPlaybackButton('np-stop-all', 'stop-all');
+
+        if ($keepOpenJs) {
+            document.getElementById('now-playing-overlay').classList.add('active');
+        }
 
         if (typeof L === 'undefined') {
             throw new Error('Leaflet failed to load from CDN.');
@@ -3826,6 +3841,11 @@ Function New-ATCMapHtml {
 
         if (nearbyToggle) {
             nearbyToggle.addEventListener('change', applyFilters);
+        }
+        if ($startRandomJs) {
+            setTimeout(function() {
+                sendMapAction('random');
+            }, 700);
         }
     </script>
 </body>
@@ -4645,7 +4665,8 @@ try {
             -NoLofiMusic:$NoLofiMusic `
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
             -LofiMusicUrl $lofiMusicUrl `
-            -LofiVolume $LofiVolume
+            -LofiVolume $LofiVolume `
+            -StartRandom:$RandomATC
 
         if ($KeepOpen) {
             exit 0
