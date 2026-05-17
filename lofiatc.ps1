@@ -1796,6 +1796,18 @@ Function Invoke-MapPlaybackAction {
             }
         }
 
+        'stop-lofi' {
+            Stop-ManagedProcess -Process $script:CurrentLofiProcess
+
+            $script:CurrentLofiProcess = $null
+
+            return @{
+                ok      = $true
+                message = 'Lofi playback stopped.'
+                lofi    = $false
+            }
+        }
+
         'stop-all' {
             Stop-ManagedProcess -Process $script:CurrentATCProcess
             Stop-ManagedProcess -Process $script:CurrentWebcamProcess
@@ -1835,6 +1847,9 @@ Function Invoke-MapPlaybackAction {
             if ($channelIndex -lt 0) {
                 throw 'Could not find the current channel in the source list.'
             }
+
+            Stop-ManagedProcess -Process $script:CurrentLofiProcess
+            $script:CurrentLofiProcess = $null
 
             $started = Invoke-MapChannelSelection `
                 -Selection @{ ICAO = $current.ICAO; ChannelIndex = $channelIndex } `
@@ -2504,6 +2519,7 @@ Function New-ATCMapHtml {
             <button type="button" id="np-restart" class="np-btn">Restart</button>
             <button type="button" id="np-random" class="np-btn">Random</button>
             <button type="button" id="np-stop-atc" class="np-btn">Stop ATC</button>
+            <button type="button" id="np-stop-lofi" class="np-btn">Stop Lofi</button>
             <button type="button" id="np-stop-all" class="np-btn danger">Stop All</button>
         </div>
 "@
@@ -3155,6 +3171,7 @@ Function New-ATCMapHtml {
         bindPlaybackButton('np-restart', 'restart');
         bindPlaybackButton('np-random', 'random');
         bindPlaybackButton('np-stop-atc', 'stop-atc');
+        bindPlaybackButton('np-stop-lofi', 'stop-lofi');
         bindPlaybackButton('np-stop-all', 'stop-all');
 
         if ($keepOpenJs) {
