@@ -2811,6 +2811,10 @@ Function New-ATCMapHtml {
         #search-container { position: absolute; top: 20px; left: 60px; z-index: 1000; }
         #map-search { background: var(--overlay-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 10px 15px; border-radius: 20px; width: 280px; outline: none; backdrop-filter: blur(4px); font-size: 14px; transition: 0.3s;}
         #map-search::placeholder { color: var(--text-secondary); opacity: 0.8; }
+
+        #map-search.search-error {
+            background: rgba(231, 76, 60, 0.8) !important;
+        }
         #legend-overlay { position: absolute; bottom: 20px; right: 20px; z-index: 1000; background: var(--overlay-bg); color: var(--text-secondary); padding: 12px 18px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); backdrop-filter: blur(4px); font-size: 13px; transition: 0.3s; }
         .legend-section-title { margin-bottom:8px; font-weight:bold; color:var(--text-primary); border-bottom:1px solid var(--divider); padding-bottom:4px; padding-left:3px; cursor:default; }
         .legend-item { display: flex; align-items: center; margin-bottom: 8px; cursor: help; user-select: none; color: var(--text-secondary);}
@@ -3007,7 +3011,18 @@ Function New-ATCMapHtml {
 
             selected.layer.bringToFront();
 
-            currentPlayingPulse = L.circleMarker([selected.data.lat, selected.data.lon], {
+            var selectedLatLng = [selected.data.lat, selected.data.lon];
+
+            map.flyTo(selectedLatLng, Math.max(map.getZoom(), 8), {
+                animate: true,
+                duration: 1.1
+            });
+
+            setTimeout(function() {
+                selected.layer.openPopup();
+            }, 900);
+
+            currentPlayingPulse = L.circleMarker(selectedLatLng, {
                 radius: 16,
                 color: '#e94560',
                 fillColor: '#e94560',
@@ -3391,6 +3406,85 @@ Function New-ATCMapHtml {
         var markersData = JSON.parse(document.getElementById('markers-data').textContent);
         var allMapItems = [];
         var searchHighlightLayer = null;
+        var searchBoundaryRequestId = 0;
+
+        function clearSearchHighlight() {
+            if (searchHighlightLayer && map.hasLayer(searchHighlightLayer)) {
+                map.removeLayer(searchHighlightLayer);
+            }
+
+            searchHighlightLayer = null;
+        }
+
+        function flashSearchError() {
+            var sb = document.getElementById('map-search');
+
+            sb.classList.add('search-error');
+
+            setTimeout(function() {
+                sb.classList.remove('search-error');
+            }, 450);
+        }
+
+        function clearSearchError() {
+            var sb = document.getElementById('map-search');
+
+            sb.classList.remove('search-error');
+            sb.style.background = '';
+        }
+
+        function fetchSearchBoundary(value, fitToBoundary) {
+            var query = (value || '').trim();
+
+            clearSearchHighlight();
+
+            if (query.length < 2) {
+                return;
+            }
+
+            var requestId = ++searchBoundaryRequestId;
+
+            fetch(
+                'https://nominatim.openstreetmap.org/search?q=' +
+                encodeURIComponent(query) +
+                '&polygon_geojson=1&format=json&limit=1'
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (requestId !== searchBoundaryRequestId) {
+                    return;
+                }
+
+                if (!data || !data.length || !data[0].geojson) {
+                    return;
+                }
+
+                searchHighlightLayer = L.geoJSON(data[0].geojson, {
+                    style: {
+                        color: '#e94560',
+                        weight: 3,
+                        opacity: 0.95,
+                        fillOpacity: 0.04,
+                        dashArray: '6, 6'
+                    },
+                    interactive: false
+                }).addTo(map);
+
+                searchHighlightLayer.bringToFront();
+
+                if (fitToBoundary) {
+                    map.fitBounds(searchHighlightLayer.getBounds(), {
+                        padding: [60, 60],
+                        maxZoom: 9
+                    });
+                }
+            })
+            .catch(function(err) {
+                console.log('Boundary fetch failed', err);
+            });
+        }
 
         function formatWeatherAge(ageMin) {
             if (ageMin === null || ageMin === undefined || isNaN(ageMin)) {
@@ -3563,12 +3657,24 @@ Function New-ATCMapHtml {
         }
 
         function runMapSearch(value, fitMap) {
-            searchTerm = (value || '').toLowerCase().trim();
+            var rawSearchTerm = (value || '').trim();
+            searchTerm = rawSearchTerm.toLowerCase();
+
+            clearSearchError();
+
+            var status = document.getElementById('search-status');
 
             var status = document.getElementById('search-status');
             var matchedBounds = [];
             var exactItem = null;
             var visibleMatches = 0;
+
+            if (!searchTerm) {
+                status.textContent = '';
+                clearSearchHighlight();
+                applyFilters();
+                return;
+            }
 
             allMapItems.forEach(function(item) {
                 if (itemMatchesSearch(item, searchTerm)) {
@@ -3581,12 +3687,6 @@ Function New-ATCMapHtml {
                 }
             });
 
-            if (!searchTerm) {
-                status.textContent = '';
-                applyFilters();
-                return;
-            }
-
             status.textContent = visibleMatches + (visibleMatches === 1 ? ' match' : ' matches');
 
             applyFilters();
@@ -3594,7 +3694,11 @@ Function New-ATCMapHtml {
             if (fitMap && matchedBounds.length > 0) {
                 var bounds = L.latLngBounds(matchedBounds);
                 var maxZ = matchedBounds.length === 1 ? 9 : 5;
-                map.fitBounds(bounds, { padding: [50, 50], maxZoom: maxZ });
+
+                map.fitBounds(bounds, {
+                    padding: [50, 50],
+                    maxZoom: maxZ
+                });
 
                 if (exactItem) {
                     setTimeout(function() {
@@ -3603,14 +3707,23 @@ Function New-ATCMapHtml {
                 }
             }
 
+            /*
+                Draw the red boundary outline for searched places like countries,
+                cities, states, regions, etc.
+
+                If markers matched, keep the map fit to your ATC markers.
+                If no markers matched, fit to the boundary instead.
+            */
+            if (rawSearchTerm.length >= 2) {
+                fetchSearchBoundary(rawSearchTerm, fitMap && matchedBounds.length === 0);
+            } else {
+                clearSearchHighlight();
+            }
+
             if (matchedBounds.length === 0) {
-                var sb = document.getElementById('map-search');
-                var origBg = sb.style.background;
-                sb.style.background = 'rgba(231, 76, 60, 0.8)';
-                setTimeout(function() { sb.style.background = origBg; }, 450);
+                flashSearchError();
             }
         }
-
         var searchDebounceTimer = null;
 
         document.getElementById('map-search').addEventListener('input', function(e) {
@@ -3624,7 +3737,9 @@ Function New-ATCMapHtml {
         document.getElementById('map-search').addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 e.target.value = '';
+                clearSearchError();
                 runMapSearch('', false);
+                clearSearchHighlight();
                 map.setView([20, 0], 2);
             }
 
