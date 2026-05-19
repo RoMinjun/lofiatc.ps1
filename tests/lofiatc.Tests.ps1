@@ -277,6 +277,378 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+
+    Context 'Added favorite persistence behavior' {
+        BeforeEach {
+            $script:addedFavoritesPath = Join-Path $TestDrive 'added_favorites.json'
+            if (Test-Path $script:addedFavoritesPath) {
+                Remove-Item $script:addedFavoritesPath -Force
+            }
+        }
+
+        It 'removes an existing favorite entry' {
+            Add-Favorite -path $script:addedFavoritesPath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+
+            $removed = Remove-Favorite -path $script:addedFavoritesPath -ICAO 'KLAX' -Channel 'Tower'
+
+            $removed | Should -BeTrue
+            @(Get-Favorite -path $script:addedFavoritesPath).Count | Should -Be 0
+        }
+
+        It 'returns false when removing a favorite that does not exist' {
+            Add-Favorite -path $script:addedFavoritesPath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+
+            $removed = Remove-Favorite -path $script:addedFavoritesPath -ICAO 'KLAX' -Channel 'Ground'
+
+            $removed | Should -BeFalse
+
+            $favorites = @(Get-Favorite -path $script:addedFavoritesPath)
+            $favorites.Count | Should -Be 1
+            $favorites[0].Channel | Should -Be 'Tower'
+        }
+
+        It 'supports airport-level favorites using the airport sentinel channel' {
+            Add-Favorite -path $script:addedFavoritesPath -ICAO 'EHAM' -Channel '__AIRPORT__' -maxEntries 10
+
+            $favorites = @(Get-Favorite -path $script:addedFavoritesPath)
+
+            $favorites.Count | Should -Be 1
+            $favorites[0].ICAO | Should -Be 'EHAM'
+            $favorites[0].Channel | Should -Be '__AIRPORT__'
+        }
+    }
+
+    Context 'Map favorite actions' {
+        BeforeEach {
+            $script:favoritesPath = Join-Path $TestDrive 'map_favorites.json'
+            '[]' | Set-Content -Path $script:favoritesPath -Encoding UTF8
+
+            $script:mapAtcSources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    IATA                  = 'AMS'
+                    City                  = 'Amsterdam'
+                    Country               = 'Netherlands'
+                    Continent             = 'Europe'
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'http://example.test/eham-tower'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    IATA                  = 'AMS'
+                    City                  = 'Amsterdam'
+                    Country               = 'Netherlands'
+                    Continent             = 'Europe'
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Approach'
+                    'Stream URL'          = 'http://example.test/eham-approach'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                }
+            )
+        }
+
+        It 'toggles a channel favorite on and off through Invoke-MapPlaybackAction' {
+            $addResult = Invoke-MapPlaybackAction `
+                -Action 'favorite-toggle' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -ICAO 'EHAM' `
+                -ChannelIndex 0 `
+                -FavoritesPath $script:favoritesPath
+
+            $addResult.ok | Should -BeTrue
+            $addResult.favorited | Should -BeTrue
+            $addResult.icao | Should -Be 'EHAM'
+            $addResult.channel | Should -Be 'Tower'
+
+            $favoritesAfterAdd = @(Get-Favorite -path $script:favoritesPath)
+            $favoritesAfterAdd.Count | Should -Be 1
+            $favoritesAfterAdd[0].ICAO | Should -Be 'EHAM'
+            $favoritesAfterAdd[0].Channel | Should -Be 'Tower'
+
+            $removeResult = Invoke-MapPlaybackAction `
+                -Action 'favorite-toggle' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -ICAO 'EHAM' `
+                -ChannelIndex 0 `
+                -FavoritesPath $script:favoritesPath
+
+            $removeResult.ok | Should -BeTrue
+            $removeResult.favorited | Should -BeFalse
+
+            @(Get-Favorite -path $script:favoritesPath).Count | Should -Be 0
+        }
+
+        It 'toggles an airport favorite on and off through Invoke-MapPlaybackAction' {
+            $addResult = Invoke-MapPlaybackAction `
+                -Action 'airport-favorite-toggle' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -ICAO 'EHAM' `
+                -FavoritesPath $script:favoritesPath
+
+            $addResult.ok | Should -BeTrue
+            $addResult.favorited | Should -BeTrue
+            $addResult.icao | Should -Be 'EHAM'
+            $addResult.airport | Should -Be 'Amsterdam Schiphol'
+
+            $favoritesAfterAdd = @(Get-Favorite -path $script:favoritesPath)
+            $favoritesAfterAdd.Count | Should -Be 1
+            $favoritesAfterAdd[0].ICAO | Should -Be 'EHAM'
+            $favoritesAfterAdd[0].Channel | Should -Be '__AIRPORT__'
+
+            $removeResult = Invoke-MapPlaybackAction `
+                -Action 'airport-favorite-toggle' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -ICAO 'EHAM' `
+                -FavoritesPath $script:favoritesPath
+
+            $removeResult.ok | Should -BeTrue
+            $removeResult.favorited | Should -BeFalse
+
+            @(Get-Favorite -path $script:favoritesPath).Count | Should -Be 0
+        }
+
+        It 'requires ICAO for channel favorite actions' {
+            {
+                Invoke-MapPlaybackAction `
+                    -Action 'favorite-toggle' `
+                    -AtcSources $script:mapAtcSources `
+                    -Player 'MPV' `
+                    -ATCVolume 65 `
+                    -LofiVolume 50 `
+                    -LofiMusicUrl 'http://example.test/lofi' `
+                    -ChannelIndex 0 `
+                    -FavoritesPath $script:favoritesPath
+            } | Should -Throw '*ICAO is required*'
+        }
+
+        It 'requires a channel index for channel favorite actions' {
+            {
+                Invoke-MapPlaybackAction `
+                    -Action 'favorite-toggle' `
+                    -AtcSources $script:mapAtcSources `
+                    -Player 'MPV' `
+                    -ATCVolume 65 `
+                    -LofiVolume 50 `
+                    -LofiMusicUrl 'http://example.test/lofi' `
+                    -ICAO 'EHAM' `
+                    -FavoritesPath $script:favoritesPath
+            } | Should -Throw '*Channel index is required*'
+        }
+    }
+
+    Context 'Map playback controls' {
+        BeforeEach {
+            $script:CurrentATCProcess = $null
+            $script:CurrentWebcamProcess = $null
+            $script:CurrentLofiProcess = $null
+            $script:CurrentMapSelection = $null
+            $script:CurrentATCVolume = $null
+            $script:CurrentLofiVolume = $null
+
+            Mock Stop-ManagedProcess {}
+            Mock Start-PlayerProcess {
+                [pscustomobject]@{
+                    FakeProcess = $true
+                    HasExited   = $false
+                }
+            }
+            Mock Test-ManagedProcessAlive {
+                $false
+            }
+
+            $script:mapAtcSources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    IATA                  = 'AMS'
+                    City                  = 'Amsterdam'
+                    Country               = 'Netherlands'
+                    Continent             = 'Europe'
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'http://example.test/eham-tower'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                }
+            )
+        }
+
+        It 'stops only lofi playback' {
+            $script:CurrentLofiProcess = [System.Diagnostics.Process]::new()
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'stop-lofi' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi'
+
+            $result.ok | Should -BeTrue
+            $result.lofi | Should -BeFalse
+            $script:CurrentLofiProcess | Should -BeNullOrEmpty
+
+            Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'stores ATC volume for the next selected channel when no channel is active' {
+            $result = Invoke-MapPlaybackAction `
+                -Action 'set-volume' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -Target 'atc' `
+                -Volume 42
+
+            $result.ok | Should -BeTrue
+            $result.atcVolume | Should -Be 42
+            $script:CurrentATCVolume | Should -Be 42
+
+            Should -Invoke Start-PlayerProcess -Times 0 -Exactly
+        }
+
+        It 'stores lofi volume when lofi is disabled without starting playback' {
+            $result = Invoke-MapPlaybackAction `
+                -Action 'set-volume' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -NoLofiMusic `
+                -Target 'lofi' `
+                -Volume 35
+
+            $result.ok | Should -BeTrue
+            $result.lofi | Should -BeFalse
+            $result.lofiVolume | Should -Be 35
+            $script:CurrentLofiVolume | Should -Be 35
+
+            Should -Invoke Start-PlayerProcess -Times 0 -Exactly
+        }
+
+        It 'rejects invalid volume values' {
+            {
+                Invoke-MapPlaybackAction `
+                    -Action 'set-volume' `
+                    -AtcSources $script:mapAtcSources `
+                    -Player 'MPV' `
+                    -ATCVolume 65 `
+                    -LofiVolume 50 `
+                    -LofiMusicUrl 'http://example.test/lofi' `
+                    -Target 'atc' `
+                    -Volume 101
+            } | Should -Throw '*Volume must be between 0 and 100*'
+        }
+    }
+
+    Context 'Generated map HTML for added controls' {
+        It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -StartRandom `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'id="np-stop-lofi"'
+            $html | Should -Match 'id="np-atc-volume"'
+            $html | Should -Match 'id="np-lofi-volume"'
+            $html | Should -Match 'action=set-volume'
+            $html | Should -Match 'action=favorite-toggle'
+            $html | Should -Match 'action=airport-favorite-toggle'
+            $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'emits channel and airport favorite links in marker JSON when favorite actions are enabled' {
+            $script:AirportData = [pscustomobject]@{
+                EHAM = [pscustomobject]@{
+                    lat = 52.3086
+                    lon = 4.7639
+                    tz  = 'Europe/Amsterdam'
+                }
+            }
+
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    IATA                  = 'AMS'
+                    City                  = 'Amsterdam'
+                    Country               = 'Netherlands'
+                    Continent             = 'Europe'
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'http://example.test/eham-tower'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                }
+            )
+
+            $favorites = @(
+                [pscustomobject]@{
+                    ICAO     = 'EHAM'
+                    Channel  = 'Tower'
+                    Count    = 1
+                    LastUsed = Get-Date
+                },
+                [pscustomobject]@{
+                    ICAO     = 'EHAM'
+                    Channel  = '__AIRPORT__'
+                    Count    = 1
+                    LastUsed = Get-Date
+                }
+            )
+
+            $json = ConvertTo-MapMarkers `
+                -AtcSources $sources `
+                -Favorites $favorites `
+                -WeatherMap @{} `
+                -IcaoToFallbacks @{} `
+                -NoWeather `
+                -EnableFavoriteActions
+
+            $marker = @($json | ConvertFrom-Json)[0]
+
+            $marker.icao | Should -Be 'EHAM'
+            $marker.isFav | Should -BeTrue
+            $marker.isAirportFav | Should -BeTrue
+            $marker.airportFavHtml | Should -Match 'toggleAirportFavorite'
+            $marker.airportFavHtml | Should -Match '★ Remove airport favorite'
+            $marker.desc | Should -Match 'toggleFavorite'
+            $marker.desc | Should -Match '★ Remove favorite'
+        }
+    }
+
     Context 'Import-ATCSource validation' {
         BeforeEach {
             $script:csvPath = Join-Path $TestDrive 'atc_sources.csv'
