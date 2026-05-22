@@ -96,8 +96,8 @@ param (
     [int]$ATCVolume = 65,
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
-    [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa", "Asian", "Medieval")]
+    [string]$LofiSource = "https://youtu.be/EWrX250Zhko"
+    [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa","Medieval")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,
@@ -117,12 +117,11 @@ param (
 )
 
 $LofiGenres = @{
-    "Chillhop"    = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
+    "Chillhop"    = "https://youtu.be/EWrX250Zhko" # lofi girl original
     "Synthwave"   = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
-    "Jazz"        = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
+    "Jazz"        = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Jazz
     "Ambient"     = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
-    "Bossa"       = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
-    "Asian"       = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
+    "Bossa"       = "https://youtu.be/56llPN9tS88" # Bossa lofi girl
     "Medieval"    = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
     "DarkAmbient" = "https://youtu.be/S_MOd40zlYU" # Dark Ambient lofi girl
 }
