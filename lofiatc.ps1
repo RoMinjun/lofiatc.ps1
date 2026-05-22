@@ -96,7 +96,7 @@ param (
     [int]$ATCVolume = 65,
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://youtu.be/EWrX250Zhko"
+    [string]$LofiSource = "https://youtu.be/EWrX250Zhko",
     [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa","Medieval")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
