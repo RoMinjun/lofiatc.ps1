@@ -3106,6 +3106,18 @@ Function New-ATCMapHtml {
             color: var(--text-primary);
         }
 
+        #now-playing-overlay:not(.playing) .np-actions,
+        #now-playing-overlay:not(.playing) .np-volume-panel,
+        #now-playing-overlay:not(.playing) .np-eq {
+            display: none;
+        }
+
+        #now-playing-overlay:not(.playing) .np-dot {
+            animation: none;
+            box-shadow: none;
+            opacity: 0.45;
+        }
+
         #toast {
             position: absolute;
             top: 80px;
@@ -3389,7 +3401,7 @@ Function New-ATCMapHtml {
     <div id="now-playing-overlay" aria-live="polite">
         <div class="np-kicker">
             <span class="np-dot"></span>
-            Now playing
+            <span id="np-kicker-text">Idle</span>
         </div>
         <div id="np-title" class="np-title">No channel selected</div>
         <div id="np-subtitle" class="np-subtitle">Click a channel on the map to start monitoring</div>
@@ -3439,6 +3451,7 @@ Function New-ATCMapHtml {
 
         function setNowPlaying(data) {
             var overlay = document.getElementById('now-playing-overlay');
+            var kicker = document.getElementById('np-kicker-text');
             var title = document.getElementById('np-title');
             var subtitle = document.getElementById('np-subtitle');
 
@@ -3446,10 +3459,15 @@ Function New-ATCMapHtml {
             var channel = data && data.channel ? data.channel : 'Unknown channel';
             var airport = data && data.airport ? data.airport : 'Unknown airport';
 
+            if (kicker) {
+                kicker.textContent = 'Now playing';
+            }
+
             title.textContent = icao ? icao + ' — ' + channel : channel;
             subtitle.textContent = airport;
 
             overlay.classList.add('active');
+            overlay.classList.add('playing');
         }
 
         function clearNowPlayingPulse() {
@@ -3645,13 +3663,19 @@ Function New-ATCMapHtml {
             clearNowPlayingPulse();
 
             var overlay = document.getElementById('now-playing-overlay');
+            var kicker = document.getElementById('np-kicker-text');
             var title = document.getElementById('np-title');
             var subtitle = document.getElementById('np-subtitle');
 
-            title.textContent = 'Playback stopped';
-            subtitle.textContent = message || 'No active ATC channel';
+            if (kicker) {
+                kicker.textContent = 'Idle';
+            }
+
+            title.textContent = 'No channel selected';
+            subtitle.textContent = message || 'Click a channel on the map to start monitoring';
 
             overlay.classList.add('active');
+            overlay.classList.remove('playing');
         }
 
         function sendMapAction(action) {
@@ -3915,7 +3939,7 @@ Function New-ATCMapHtml {
                 {
                     opacity: 0.5,
                     zIndex: 10,
-                    maxNativeZoom: 14,
+                    maxNativeZoom: 7,
                     maxZoom: 18,
                     updateWhenZooming: false,
                     updateWhenIdle: true,
