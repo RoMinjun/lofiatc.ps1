@@ -96,8 +96,8 @@ param (
     [int]$ATCVolume = 65,
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://youtu.be/jfKfPfyJRdk",
-    [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa", "Asian", "Medieval")]
+    [string]$LofiSource = "https://youtu.be/EWrX250Zhko",
+    [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa","Medieval")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,
@@ -117,12 +117,11 @@ param (
 )
 
 $LofiGenres = @{
-    "Chillhop"    = "https://youtu.be/jfKfPfyJRdk" # lofi girl original
+    "Chillhop"    = "https://youtu.be/EWrX250Zhko" # lofi girl original
     "Synthwave"   = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
-    "Jazz"        = "https://youtu.be/HuFYqnbVbzY" # Lofi Girl Jazz
+    "Jazz"        = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Jazz
     "Ambient"     = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
-    "Bossa"       = "https://youtu.be/Zq9-4INDsvY" # Bossa lofi girl
-    "Asian"       = "https://youtu.be/Na0w3Mz46GA" # Asian lofi girl
+    "Bossa"       = "https://youtu.be/56llPN9tS88" # Bossa lofi girl
     "Medieval"    = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
     "DarkAmbient" = "https://youtu.be/S_MOd40zlYU" # Dark Ambient lofi girl
 }
@@ -185,6 +184,9 @@ $script:IanaToWindowsMap = @{
 $script:CurrentATCProcess = $null
 $script:CurrentWebcamProcess = $null
 $script:CurrentLofiProcess = $null
+
+$script:CurrentATCVolume = $null
+$script:CurrentLofiVolume = $null
 
 # Function to check if a console key is available without blocking
 Function Test-ConsoleKeyAvailable {
@@ -617,7 +619,15 @@ Function Get-Favorite {
 # Function to save favorites back to the JSON file
 Function Save-Favorite {
     param([array]$favorites, [string]$path)
-    $favorites | ConvertTo-Json | Set-Content -Path $path
+
+    $items = @($favorites)
+
+    if ($items.Count -eq 0) {
+        '[]' | Set-Content -Path $path
+        return
+    }
+
+    $items | ConvertTo-Json -Depth 5 | Set-Content -Path $path
 }
 
 # Function to add or update a favorite entry
@@ -651,6 +661,34 @@ Function Add-Favorite {
     Save-Favorite -favorites $favorites -path $path
 }
 
+# Function to remove a favorite entry
+Function Remove-Favorite {
+    param(
+        [string]$path,
+        [string]$ICAO,
+        [string]$Channel
+    )
+
+    $favorites = @(Get-Favorite -path $path)
+
+    if ($favorites.Count -eq 0) {
+        Save-Favorite -favorites @() -path $path
+        return $false
+    }
+
+    $updated = @(
+        $favorites | Where-Object {
+            !(($_.ICAO -eq $ICAO) -and ($_.Channel -eq $Channel))
+        }
+    )
+
+    $removed = $updated.Count -ne $favorites.Count
+
+    Save-Favorite -favorites $updated -path $path
+
+    return $removed
+}
+
 # Function to open the FlightAware radar page for a given ICAO code
 Function Open-Radar {
     param([string]$ICAO)
@@ -676,11 +714,26 @@ Function Select-FavoriteATC {
     )
 
     $favEntries = foreach ($fav in $favorites) {
-        $entry = $atcSources | Where-Object { $_.ICAO -eq $fav.ICAO -and $_.'Channel Description' -eq $fav.Channel } | Select-Object -First 1
-        if ($entry) {
-            [pscustomobject]@{
-                Display = "[{0}] {1} - {2} ({3})" -f $entry.ICAO, $entry.'Airport Name', $entry.'Channel Description', $fav.Count
-                Entry   = $entry
+        if ($fav.Channel -eq '__AIRPORT__') {
+            $airportEntries = @($atcSources | Where-Object { $_.ICAO -eq $fav.ICAO })
+
+            foreach ($entry in $airportEntries) {
+                [pscustomobject]@{
+                    Display = "[{0}] {1} - {2} [Airport favorite] ({3})" -f $entry.ICAO, $entry.'Airport Name', $entry.'Channel Description', $fav.Count
+                    Entry   = $entry
+                }
+            }
+        }
+        else {
+            $entry = $atcSources | Where-Object {
+                $_.ICAO -eq $fav.ICAO -and $_.'Channel Description' -eq $fav.Channel
+            } | Select-Object -First 1
+
+            if ($entry) {
+                [pscustomobject]@{
+                    Display = "[{0}] {1} - {2} ({3})" -f $entry.ICAO, $entry.'Airport Name', $entry.'Channel Description', $fav.Count
+                    Entry   = $entry
+                }
             }
         }
     }
@@ -1713,6 +1766,23 @@ Function Invoke-MapChannelSelection {
 
     $match = $icaoMatches[$Selection.ChannelIndex]
 
+    $effectiveATCVolume = if ($null -ne $script:CurrentATCVolume) {
+        [int]$script:CurrentATCVolume
+    }
+    else {
+        [int]$ATCVolume
+    }
+
+    $effectiveLofiVolume = if ($null -ne $script:CurrentLofiVolume) {
+        [int]$script:CurrentLofiVolume
+    }
+    else {
+        [int]$LofiVolume
+    }
+
+    $script:CurrentATCVolume = $effectiveATCVolume
+    $script:CurrentLofiVolume = $effectiveLofiVolume
+
     Stop-ManagedProcess -Process $script:CurrentATCProcess
     $script:CurrentATCProcess = $null
 
@@ -1724,7 +1794,7 @@ Function Invoke-MapChannelSelection {
         -Player $Player `
         -NoVideo `
         -BasicArgs `
-        -Volume $ATCVolume
+        -Volume $effectiveATCVolume
 
     if ($IncludeWebcamIfAvailable -and -not [string]::IsNullOrWhiteSpace($match.'Webcam URL')) {
         $script:CurrentWebcamProcess = Start-PlayerProcess `
@@ -1743,7 +1813,7 @@ Function Invoke-MapChannelSelection {
                     -Url $LofiMusicUrl `
                     -Player $Player `
                     -BasicArgs `
-                    -Volume $LofiVolume
+                    -Volume $effectiveLofiVolume
             }
             else {
                 Start-PlayerProcess `
@@ -1751,7 +1821,7 @@ Function Invoke-MapChannelSelection {
                     -Player $Player `
                     -NoVideo `
                     -BasicArgs `
-                    -Volume $LofiVolume
+                    -Volume $effectiveLofiVolume
             }
         }
     }
@@ -1778,7 +1848,12 @@ Function Invoke-MapPlaybackAction {
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
-        [int]$LofiVolume
+        [int]$LofiVolume,
+        [string]$Target,
+        [int]$Volume = -1,
+        [string]$ICAO,
+        [int]$ChannelIndex = -1,
+        [string]$FavoritesPath
     )
 
     switch ($Action.ToLowerInvariant()) {
@@ -1805,6 +1880,219 @@ Function Invoke-MapPlaybackAction {
                 ok      = $true
                 message = 'Lofi playback stopped.'
                 lofi    = $false
+            }
+        }
+
+        'set-volume' {
+            if ($Volume -lt 0 -or $Volume -gt 100) {
+                throw 'Volume must be between 0 and 100.'
+            }
+
+            $targetName = if ($Target) {
+                $Target.ToLowerInvariant()
+            }
+            else {
+                ''
+            }
+
+            switch ($targetName) {
+                'atc' {
+                    $script:CurrentATCVolume = $Volume
+
+                    if (-not $script:CurrentMapSelection) {
+                        return @{
+                            ok        = $true
+                            message   = "ATC volume set to $Volume% for the next channel."
+                            atcVolume = $Volume
+                        }
+                    }
+
+                    $current = $script:CurrentMapSelection
+
+                    Stop-ManagedProcess -Process $script:CurrentATCProcess
+                    $script:CurrentATCProcess = $null
+
+                    $script:CurrentATCProcess = Start-PlayerProcess `
+                        -Url $current.'Stream URL' `
+                        -Player $Player `
+                        -NoVideo `
+                        -BasicArgs `
+                        -Volume $script:CurrentATCVolume
+
+                    return @{
+                        ok        = $true
+                        message   = "ATC volume set to $Volume%."
+                        atcVolume = $Volume
+                    }
+                }
+
+                'lofi' {
+                    $script:CurrentLofiVolume = $Volume
+
+                    if ($NoLofiMusic) {
+                        return @{
+                            ok         = $true
+                            message    = "Lofi is disabled. Lofi volume saved as $Volume% for later."
+                            lofi       = $false
+                            lofiVolume = $Volume
+                        }
+                    }
+
+                    $lofiAlive = Test-ManagedProcessAlive -Process $script:CurrentLofiProcess
+
+                    if (-not $lofiAlive -and -not $script:CurrentMapSelection) {
+                        return @{
+                            ok         = $true
+                            message    = "Lofi volume set to $Volume% for the next channel."
+                            lofiVolume = $Volume
+                        }
+                    }
+
+                    Stop-ManagedProcess -Process $script:CurrentLofiProcess
+                    $script:CurrentLofiProcess = $null
+
+                    $script:CurrentLofiProcess = if ($PlayLofiGirlVideo) {
+                        Start-PlayerProcess `
+                            -Url $LofiMusicUrl `
+                            -Player $Player `
+                            -BasicArgs `
+                            -Volume $script:CurrentLofiVolume
+                    }
+                    else {
+                        Start-PlayerProcess `
+                            -Url $LofiMusicUrl `
+                            -Player $Player `
+                            -NoVideo `
+                            -BasicArgs `
+                            -Volume $script:CurrentLofiVolume
+                    }
+
+                    return @{
+                        ok         = $true
+                        message    = "Lofi volume set to $Volume%."
+                        lofi       = $true
+                        lofiVolume = $Volume
+                    }
+                }
+
+                default {
+                    throw 'Volume target must be atc or lofi.'
+                }
+            }
+        }
+
+        'favorite-toggle' {
+            if ([string]::IsNullOrWhiteSpace($FavoritesPath)) {
+                throw 'Favorites path is not available.'
+            }
+
+            if ([string]::IsNullOrWhiteSpace($ICAO)) {
+                throw 'ICAO is required to update favorites.'
+            }
+
+            if ($ChannelIndex -lt 0) {
+                throw 'Channel index is required to update favorites.'
+            }
+
+            $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $ICAO })
+
+            if ($icaoMatches.Count -eq 0) {
+                throw "No ATC stream found for ICAO $ICAO."
+            }
+
+            if ($ChannelIndex -ge $icaoMatches.Count) {
+                throw "Invalid channel index for ICAO $ICAO."
+            }
+
+            $match = $icaoMatches[$ChannelIndex]
+            $channel = [string]$match.'Channel Description'
+
+            $favorites = @(Get-Favorite -path $FavoritesPath)
+            $existing = $favorites | Where-Object {
+                $_.ICAO -eq $ICAO -and $_.Channel -eq $channel
+            } | Select-Object -First 1
+
+            if ($existing) {
+                Remove-Favorite `
+                    -path $FavoritesPath `
+                    -ICAO $ICAO `
+                    -Channel $channel | Out-Null
+
+                return @{
+                    ok        = $true
+                    favorited = $false
+                    icao      = $ICAO
+                    channel   = $channel
+                    message   = "Removed favorite: $ICAO — $channel"
+                }
+            }
+
+            Add-Favorite `
+                -path $FavoritesPath `
+                -ICAO $ICAO `
+                -Channel $channel `
+                -maxEntries 10
+
+            return @{
+                ok        = $true
+                favorited = $true
+                icao      = $ICAO
+                channel   = $channel
+                message   = "Added favorite: $ICAO — $channel"
+            }
+        }
+
+        'airport-favorite-toggle' {
+            if ([string]::IsNullOrWhiteSpace($FavoritesPath)) {
+                throw 'Favorites path is not available.'
+            }
+
+            if ([string]::IsNullOrWhiteSpace($ICAO)) {
+                throw 'ICAO is required to update airport favorites.'
+            }
+
+            $airportFavoriteChannel = '__AIRPORT__'
+
+            $airportMatches = @($AtcSources | Where-Object { $_.ICAO -eq $ICAO })
+
+            if ($airportMatches.Count -eq 0) {
+                throw "No ATC streams found for ICAO $ICAO."
+            }
+
+            $airportName = [string]$airportMatches[0].'Airport Name'
+
+            $favorites = @(Get-Favorite -path $FavoritesPath)
+            $existing = $favorites | Where-Object {
+                $_.ICAO -eq $ICAO -and $_.Channel -eq $airportFavoriteChannel
+            } | Select-Object -First 1
+
+            if ($existing) {
+                Remove-Favorite `
+                    -path $FavoritesPath `
+                    -ICAO $ICAO `
+                    -Channel $airportFavoriteChannel | Out-Null
+
+                return @{
+                    ok        = $true
+                    favorited = $false
+                    icao      = $ICAO
+                    airport   = $airportName
+                    message   = "Removed airport favorite: $ICAO — $airportName"
+                }
+            }
+
+            Add-Favorite `
+                -path $FavoritesPath `
+                -ICAO $ICAO `
+                -Channel $airportFavoriteChannel `
+                -maxEntries 10
+
+            return @{
+                ok        = $true
+                favorited = $true
+                icao      = $ICAO
+                airport   = $airportName
+                message   = "Added airport favorite: $ICAO — $airportName"
             }
         }
 
@@ -1995,7 +2283,8 @@ Function Select-ATCMap {
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
-        [switch]$StartRandom
+        [switch]$StartRandom,
+        [string]$FavoritesPath
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -2017,7 +2306,8 @@ Function Select-ATCMap {
         -WeatherMap $weatherData.WeatherMap `
         -IcaoToFallbacks $weatherData.IcaoToFallbacks `
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
-        -NoWeather:$NoWeather
+        -NoWeather:$NoWeather `
+        -EnableFavoriteActions:$KeepOpen
 
     $csvName = Split-Path $CsvPath -Leaf
     $htmlContent = New-ATCMapHtml `
@@ -2030,7 +2320,9 @@ Function Select-ATCMap {
         -Dark:$Dark `
         -Port $port `
         -KeepOpen:$KeepOpen `
-        -StartRandom:$StartRandom
+        -StartRandom:$StartRandom `
+        -ATCVolume $ATCVolume `
+        -LofiVolume $LofiVolume
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
@@ -2056,7 +2348,8 @@ Function Select-ATCMap {
             -NoLofiMusic:$NoLofiMusic `
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
             -LofiMusicUrl $LofiMusicUrl `
-            -LofiVolume $LofiVolume
+            -LofiVolume $LofiVolume `
+            -FavoritesPath $FavoritesPath
 
         return $null
     }
@@ -2257,7 +2550,8 @@ Function ConvertTo-MapMarkers {
         [hashtable]$WeatherMap,
         [hashtable]$IcaoToFallbacks,
         [switch]$IncludeWebcamIfAvailable,
-        [switch]$NoWeather
+        [switch]$NoWeather,
+        [switch]$EnableFavoriteActions
     )
 
     $mapData = @()
@@ -2280,6 +2574,43 @@ Function ConvertTo-MapMarkers {
         $hasWebcamGlobal = $false
         $channelLinks = @()
 
+        $airportFavoriteChannel = '__AIRPORT__'
+        $icaoJs = ConvertTo-JsSafeString $icaoCode
+
+        $isAirportFavorite = @(
+            $Favorites | Where-Object {
+                $_.ICAO -eq $icaoCode -and $_.Channel -eq $airportFavoriteChannel
+            }
+        ).Count -gt 0
+
+        $airportFavText = if ($isAirportFavorite) {
+            '★ Remove airport favorite'
+        }
+        else {
+            '☆ Add airport favorite'
+        }
+
+        $airportFavClass = if ($isAirportFavorite) {
+            'airport-favorite-link active'
+        }
+        else {
+            'airport-favorite-link'
+        }
+
+        $airportFavState = if ($isAirportFavorite) {
+            'true'
+        }
+        else {
+            'false'
+        }
+
+        $airportFavoriteLink = if ($EnableFavoriteActions) {
+            "<div class=`"airport-favorite-row`"><a href=`"javascript:void(0)`" onclick=`"toggleAirportFavorite('$icaoJs', this)`" class=`"$airportFavClass`" data-favorited=`"$airportFavState`">$airportFavText</a></div>"
+        }
+        else {
+            ""
+        }
+
         for ($i = 0; $i -lt $group.Group.Count; $i++) {
             $ch = $group.Group[$i]
 
@@ -2289,10 +2620,45 @@ Function ConvertTo-MapMarkers {
                 $hasWebcamGlobal = $true
             }
 
-            $icaoJs = ConvertTo-JsSafeString $icaoCode
             $descHtml = ConvertTo-HtmlSafeString $ch.'Channel Description'
+            $channelName = [string]$ch.'Channel Description'
 
-            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoJs', $i)`" class=`"channel-link`">$descHtml</a>$camIcon"
+            $isChannelFavorite = @(
+                $Favorites | Where-Object {
+                    $_.ICAO -eq $icaoCode -and $_.Channel -eq $channelName
+                }
+            ).Count -gt 0
+
+            $favText = if ($isChannelFavorite) {
+                '★ Remove favorite'
+            }
+            else {
+                '☆ Add favorite'
+            }
+
+            $favClass = if ($isChannelFavorite) {
+                'favorite-link active'
+            }
+            else {
+                'favorite-link'
+            }
+
+            $favState = if ($isChannelFavorite) {
+                'true'
+            }
+            else {
+                'false'
+            }
+
+            $favoriteLink = if ($EnableFavoriteActions) {
+                " <span class=`"channel-separator`">·</span> <a href=`"javascript:void(0)`" onclick=`"toggleFavorite('$icaoJs', $i, this)`" class=`"$favClass`" data-favorited=`"$favState`">$favText</a>"
+            }
+            else {
+                ""
+            }
+
+            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoJs', $i)`" class=`"channel-link`">$descHtml</a>$camIcon$favoriteLink"
+
         }
 
         $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
@@ -2375,6 +2741,8 @@ Function ConvertTo-MapMarkers {
             country  = [string]$group.Group[0].Country
             desc     = [string]($channelLinks -join "<br/>")
             isFav    = [bool]($favCount -gt 0)
+            isAirportFav   = [bool]$isAirportFavorite
+            airportFavHtml = [string]$airportFavoriteLink
             favCount = [int]$favCount
             hasCam   = [bool]$hasWebcamGlobal
             fcat     = [string]$wx.fcat
@@ -2404,7 +2772,9 @@ Function New-ATCMapHtml {
         [switch]$Dark,
         [int]$Port,
         [switch]$KeepOpen,
-        [switch]$StartRandom
+        [switch]$StartRandom,
+        [int]$ATCVolume,
+        [int]$LofiVolume
     )
 
     $userLat = if ($UserLocation) {
@@ -2522,6 +2892,20 @@ Function New-ATCMapHtml {
             <button type="button" id="np-stop-lofi" class="np-btn">Stop Lofi</button>
             <button type="button" id="np-stop-all" class="np-btn danger">Stop All</button>
         </div>
+
+        <div class="np-volume-panel">
+            <label class="np-volume-row" title="Restarts the current ATC stream when released.">
+                <span>ATC</span>
+                <input type="range" id="np-atc-volume" min="0" max="100" step="1" value="$ATCVolume">
+                <span id="np-atc-volume-value" class="np-volume-value">$ATCVolume%</span>
+            </label>
+
+            <label class="np-volume-row" title="Restarts the lofi stream when released.">
+                <span>Lofi</span>
+                <input type="range" id="np-lofi-volume" min="0" max="100" step="1" value="$LofiVolume">
+                <span id="np-lofi-volume-value" class="np-volume-value">$LofiVolume%</span>
+            </label>
+        </div>
 "@
     }
     else {
@@ -2534,6 +2918,7 @@ Function New-ATCMapHtml {
 <head>
     <title>LofiATC Global Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
     <style>
@@ -2685,6 +3070,42 @@ Function New-ATCMapHtml {
         .np-btn.danger {
             color: #e74c3c;
         }
+
+        .np-volume-panel {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid var(--divider);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+            position: relative;
+            z-index: 3;
+        }
+
+        .np-volume-row {
+            display: grid;
+            grid-template-columns: 42px 1fr 42px;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .np-volume-row input[type="range"] {
+            width: 100%;
+            accent-color: #e94560;
+            cursor: pointer;
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        .np-volume-value {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-primary);
+        }
+
         #toast {
             position: absolute;
             top: 80px;
@@ -2749,6 +3170,7 @@ Function New-ATCMapHtml {
                 rgba(233, 69, 96, 0.18),
                 transparent
             );
+            pointer-events: none;
             animation: npSweep 3.6s infinite;
         }
 
@@ -2867,6 +3289,48 @@ Function New-ATCMapHtml {
         body.dark-mode .metar-box { background: rgba(0,0,0,0.5); }
         .channel-link { color: var(--text-secondary); text-decoration: none; transition: 0.2s; }
         .channel-link:hover { color: var(--hover-color); text-decoration: underline;}
+
+        .channel-separator {
+            color: var(--text-secondary);
+            opacity: 0.55;
+            margin: 0 4px;
+        }
+
+        .favorite-link {
+            color: #e94560;
+            text-decoration: none;
+            font-size: 11px;
+            transition: 0.2s;
+        }
+
+        .favorite-link:hover {
+            color: var(--hover-color);
+            text-decoration: underline;
+        }
+
+        .favorite-link.active {
+            font-weight: 800;
+        }
+        .airport-favorite-row {
+            margin: 4px 0 7px 0;
+            font-size: 12px;
+        }
+
+        .airport-favorite-link {
+            color: #e94560;
+            text-decoration: none;
+            font-weight: 700;
+            transition: 0.2s;
+        }
+
+        .airport-favorite-link:hover {
+            color: var(--hover-color);
+            text-decoration: underline;
+        }
+
+        .airport-favorite-link.active {
+            font-weight: 900;
+        }
         #starting-screen { display:none; position: fixed; top:0; left:0; width:100%; height:100%; background: var(--bg-color); z-index: 9999; flex-direction:column; align-items:center; justify-content:center; text-align:center; transition: 0.3s;}
         .content-box { z-index: 10; background: var(--overlay-bg); padding: 40px; border-radius: 20px; border: 1px solid var(--border-color); backdrop-filter: blur(15px); box-shadow: 0 20px 50px rgba(0,0,0,0.3); transition: 0.3s; }
         .content-box h1 { color: var(--text-primary); margin:0; font-size: 2.8em; letter-spacing: 2px; font-weight: 800; transition: color 0.3s; }
@@ -3001,12 +3465,14 @@ Function New-ATCMapHtml {
             currentPlayingPulse = null;
 
             if (currentPlayingItem && currentPlayingItem.layer) {
-                currentPlayingItem.layer.setStyle({
+                setAirportMarkerStyle(currentPlayingItem, {
                     color: currentPlayingItem.color,
-                    fillColor: currentPlayingItem.color,
+                    radius: currentPlayingItem.radius,
                     fillOpacity: 0.7,
                     weight: 2
                 });
+
+                resetAirportMarkerZIndex(currentPlayingItem);
             }
 
             currentPlayingItem = null;
@@ -3029,14 +3495,14 @@ Function New-ATCMapHtml {
 
             currentPlayingItem = selected;
 
-            selected.layer.setStyle({
+            setAirportMarkerStyle(selected, {
                 color: '#e94560',
-                fillColor: '#e94560',
+                radius: Math.max(selected.radius || 5, 7),
                 fillOpacity: 1,
                 weight: 4
             });
 
-            selected.layer.bringToFront();
+            bringAirportMarkerToFront(selected);
 
             var selectedLatLng = [selected.data.lat, selected.data.lon];
 
@@ -3046,7 +3512,7 @@ Function New-ATCMapHtml {
             });
 
             setTimeout(function() {
-                selected.layer.openPopup();
+                openAirportPopup(selected.layer);
             }, 900);
 
             currentPlayingPulse = L.circleMarker(selectedLatLng, {
@@ -3118,6 +3584,63 @@ Function New-ATCMapHtml {
             });
         }
 
+        function toggleFavorite(icao, channelIndex, el) {
+            fetch(
+                'http://127.0.0.1:$Port/?action=favorite-toggle' +
+                '&icao=' + encodeURIComponent(icao) +
+                '&channelIndex=' + encodeURIComponent(channelIndex),
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    if (el) {
+                        el.textContent = data.favorited ? '★ Remove favorite' : '☆ Add favorite';
+                        el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
+                        el.classList.toggle('active', !!data.favorited);
+                    }
+
+                    showToast(data.message || 'Favorite updated.', false);
+                } else {
+                    showToast((data && data.message) || 'Could not update favorite.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Favorite update failed', err);
+                showToast('Could not reach the local LofiATC session.', true);
+            });
+        }
+
+        function toggleAirportFavorite(icao, el) {
+            fetch(
+                'http://127.0.0.1:$Port/?action=airport-favorite-toggle' +
+                '&icao=' + encodeURIComponent(icao),
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    if (el) {
+                        el.textContent = data.favorited ? '★ Remove airport favorite' : '☆ Add airport favorite';
+                        el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
+                        el.classList.toggle('active', !!data.favorited);
+                    }
+
+                    showToast(data.message || 'Airport favorite updated.', false);
+                } else {
+                    showToast((data && data.message) || 'Could not update airport favorite.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Airport favorite update failed', err);
+                showToast('Could not reach the local LofiATC session.', true);
+            });
+        }
+
         function setPlaybackStopped(message) {
             clearNowPlayingPulse();
 
@@ -3168,11 +3691,94 @@ Function New-ATCMapHtml {
             });
         }
 
+        function sendVolumeChange(target, volume) {
+            fetch(
+                'http://127.0.0.1:$Port/?action=set-volume' +
+                '&target=' + encodeURIComponent(target) +
+                '&volume=' + encodeURIComponent(volume),
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    showToast(data.message || 'Volume updated.', false);
+                } else {
+                    showToast((data && data.message) || 'Could not update volume.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Volume update failed', err);
+                showToast('Could not reach the local LofiATC session.', true);
+            });
+        }
+
+        function stopMapInteractionForElement(el) {
+            if (!el) return;
+
+            if (typeof L !== 'undefined' && L.DomEvent) {
+                L.DomEvent.disableClickPropagation(el);
+                L.DomEvent.disableScrollPropagation(el);
+            }
+
+            [
+                'click',
+                'dblclick',
+                'mousedown',
+                'mouseup',
+                'mousemove',
+                'pointerdown',
+                'pointerup',
+                'pointermove',
+                'touchstart',
+                'touchmove',
+                'touchend',
+                'wheel',
+                'contextmenu'
+            ].forEach(function(eventName) {
+                el.addEventListener(eventName, function(e) {
+                    e.stopPropagation();
+                }, { capture: true, passive: false });
+            });
+        }
+
+        function bindVolumeSlider(sliderId, valueId, target) {
+            var slider = document.getElementById(sliderId);
+            var valueLabel = document.getElementById(valueId);
+
+            if (!slider) return;
+
+            stopMapInteractionForElement(slider);
+
+            function updateLabel() {
+                if (valueLabel) {
+                    valueLabel.textContent = slider.value + '%';
+                }
+            }
+
+            slider.addEventListener('input', function() {
+                updateLabel();
+            });
+
+            slider.addEventListener('change', function() {
+                updateLabel();
+                sendVolumeChange(target, slider.value);
+            });
+
+            updateLabel();
+        }
+
         bindPlaybackButton('np-restart', 'restart');
         bindPlaybackButton('np-random', 'random');
         bindPlaybackButton('np-stop-atc', 'stop-atc');
         bindPlaybackButton('np-stop-lofi', 'stop-lofi');
         bindPlaybackButton('np-stop-all', 'stop-all');
+        
+        stopMapInteractionForElement(document.querySelector('.np-volume-panel'));
+
+        bindVolumeSlider('np-atc-volume', 'np-atc-volume-value', 'atc');
+        bindVolumeSlider('np-lofi-volume', 'np-lofi-volume-value', 'lofi');
 
         if ($keepOpenJs) {
             document.getElementById('now-playing-overlay').classList.add('active');
@@ -3184,7 +3790,61 @@ Function New-ATCMapHtml {
 
         var map = L.map('map').setView([20, 0], 2);
         setTimeout(function() { map.invalidateSize(); }, 100);
+        function addAirportLayer(layer) {
+            if (!layer) return;
 
+            if (!map.hasLayer(layer)) {
+                layer.addTo(map);
+            }
+        }
+
+        function removeAirportLayer(layer) {
+            if (!layer) return;
+
+            if (map.hasLayer(layer)) {
+                map.removeLayer(layer);
+            }
+        }
+
+        function openAirportPopup(layer) {
+            if (!layer) return;
+
+            layer.openPopup();
+        }
+
+        function setAirportMarkerStyle(item, options) {
+            if (!item || !item.layer || typeof item.layer.setStyle !== 'function') return;
+
+            options = options || {};
+
+            var color = options.color || item.color;
+            var radius = options.radius || item.radius || 5;
+            var fillOpacity = typeof options.fillOpacity === 'undefined' ? 0.7 : options.fillOpacity;
+            var weight = options.weight || 2;
+
+            item.layer.setStyle({
+                color: color,
+                fillColor: color,
+                fillOpacity: fillOpacity,
+                weight: weight
+            });
+
+            if (typeof item.layer.setRadius === 'function') {
+                item.layer.setRadius(radius);
+            }
+        }
+
+        function bringAirportMarkerToFront(item) {
+            if (!item || !item.layer) return;
+
+            if (typeof item.layer.bringToFront === 'function') {
+                item.layer.bringToFront();
+            }
+        }
+
+        function resetAirportMarkerZIndex(item) {
+            // No-op for circleMarker version.
+        }
         var isDarkInitial = $isDarkJs;
         var lightTileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
         var darkTileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
@@ -3574,12 +4234,17 @@ Function New-ATCMapHtml {
                             "</div>";
 
             var popupHTML = "<b>" + favStar + titleLabel + "</b>" +
+                            (m.airportFavHtml || '') +
                             weatherMeta +
                             "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + m.rawOb + "</div>" +
                             "<div>" + m.desc + "</div>";
 
             var dot = L.circleMarker([m.lat, m.lon], {
-                radius: baseRadius, color: mColor, fillColor: mColor, fillOpacity: 0.7, weight: 2
+                radius: baseRadius,
+                color: mColor,
+                fillColor: mColor,
+                fillOpacity: 0.7,
+                weight: 2
             }).bindPopup(popupHTML);
 
             var windArrow = null;
@@ -3603,7 +4268,7 @@ Function New-ATCMapHtml {
                 distanceKm: null,
                 matchesSearch: true
             });
-            dot.addTo(map);
+            addAirportLayer(dot);
             if (windArrow) windArrow.addTo(map);
         });
 
@@ -3675,15 +4340,18 @@ Function New-ATCMapHtml {
                 var isVisible = categoryVisible && item.matchesSearch && nearbyVisible;
 
                 if (isVisible) {
-                    if (!map.hasLayer(item.layer)) map.addLayer(item.layer);
+                    addAirportLayer(item.layer);
 
                     if (item.wind) {
                         if (showWind && !map.hasLayer(item.wind)) map.addLayer(item.wind);
                         if (!showWind && map.hasLayer(item.wind)) map.removeLayer(item.wind);
                     }
                 } else {
-                    if (map.hasLayer(item.layer)) map.removeLayer(item.layer);
-                    if (item.wind && map.hasLayer(item.wind)) map.removeLayer(item.wind);
+                    removeAirportLayer(item.layer);
+
+                    if (item.wind && map.hasLayer(item.wind)) {
+                        map.removeLayer(item.wind);
+                    }
                 }
             });
         }
@@ -3734,7 +4402,7 @@ Function New-ATCMapHtml {
 
                 if (exactItem) {
                     setTimeout(function() {
-                        exactItem.layer.openPopup();
+                        openAirportPopup(exactItem.layer);
                     }, 350);
                 }
             }
@@ -3991,10 +4659,14 @@ Function Start-PersistentATCMapSession {
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
-        [int]$LofiVolume
+        [int]$LofiVolume,
+        [string]$FavoritesPath
     )
 
     $canPollConsole = Test-InteractiveConsoleAvailable
+
+    $script:CurrentATCVolume = [int]$ATCVolume
+    $script:CurrentLofiVolume = [int]$LofiVolume
 
     Write-Host "`nMap opened in your browser! Click channels to switch ATC live." -ForegroundColor Green
     if ($canPollConsole) {
@@ -4031,6 +4703,24 @@ Function Start-PersistentATCMapSession {
 
                 if ($null -ne $req.QueryString["action"]) {
                     try {
+                        $volumeValue = -1
+
+                        if ($null -ne $req.QueryString["volume"] -and $req.QueryString["volume"] -match '^\d+$') {
+                            $volumeValue = [int]$req.QueryString["volume"]
+                        }
+
+                        $volumeValue = -1
+
+                        if ($null -ne $req.QueryString["volume"] -and $req.QueryString["volume"] -match '^\d+$') {
+                            $volumeValue = [int]$req.QueryString["volume"]
+                        }
+
+                        $actionChannelIndex = -1
+
+                        if ($null -ne $req.QueryString["channelIndex"] -and $req.QueryString["channelIndex"] -match '^\d+$') {
+                            $actionChannelIndex = [int]$req.QueryString["channelIndex"]
+                        }
+
                         $payload = Invoke-MapPlaybackAction `
                             -Action $req.QueryString["action"] `
                             -AtcSources $AtcSources `
@@ -4040,7 +4730,12 @@ Function Start-PersistentATCMapSession {
                             -NoLofiMusic:$NoLofiMusic `
                             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
                             -LofiMusicUrl $LofiMusicUrl `
-                            -LofiVolume $LofiVolume
+                            -LofiVolume $LofiVolume `
+                            -Target $req.QueryString["target"] `
+                            -Volume $volumeValue `
+                            -ICAO $req.QueryString["icao"] `
+                            -ChannelIndex $actionChannelIndex `
+                            -FavoritesPath $FavoritesPath
 
                         Write-Host $payload.message -ForegroundColor Green
                     }
@@ -4683,7 +5378,8 @@ try {
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
             -LofiMusicUrl $lofiMusicUrl `
             -LofiVolume $LofiVolume `
-            -StartRandom:$RandomATC
+            -StartRandom:$RandomATC `
+            -FavoritesPath $favoritesJson
 
         if ($KeepOpen) {
             exit 0
