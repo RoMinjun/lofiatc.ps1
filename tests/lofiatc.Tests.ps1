@@ -625,6 +625,41 @@ Describe 'lofiatc.ps1 helper functions' {
             $html | Should -Match 'escapeHtml\(m.rawOb\)'
         }
 
+        It 'lazy-loads RainViewer radar only after the radar toggle is enabled' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'if \(e\.target\.checked && !radarFramesLoaded\)'
+            $html | Should -Match 'startRadarRefreshTimer\(\)'
+            $html | Should -Not -Match '(?s)loadRadarFrames\(\);\s*setInterval\(loadRadarFrames, 600000\)'
+        }
+
+        It 'lazy-loads map METAR data through the local control endpoint' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LazyWeather
+
+            $html | Should -Match ([regex]::Escape("controlUrl('?action=weather')"))
+            $html | Should -Match 'applyWeatherMarkerUpdates'
+            $html | Should -Match 'loadMapWeatherData\(\);'
+            $html | Should -Match 'Loading weather stations'
+            $html | Should -Match 'Weather stations loaded'
+        }
+
         It 'emits channel and airport favorite links in marker JSON when favorite actions are enabled' {
             $script:AirportData = [pscustomobject]@{
                 EHAM = [pscustomobject]@{
@@ -926,6 +961,112 @@ KLAX,Tower,http://example.com/stream
 
             Should -Not -Invoke Invoke-RestMethod
             Should -Not -Invoke Invoke-WebRequest
+        }
+
+        It 'fetches NOAA METARs in endpoint-safe chunks' {
+            $sources = 1..201 | ForEach-Object {
+                [pscustomobject]@{
+                    ICAO        = ('K{0:D3}' -f $_)
+                    NearbyICAOs = ''
+                }
+            }
+
+            Mock Invoke-RestMethod { @() }
+            Mock Invoke-WebRequest { throw 'Should not be called' }
+            Mock Write-Warning {}
+
+            Get-MapWeatherData -AtcSources $sources | Out-Null
+
+            Should -Invoke Invoke-RestMethod -Times 3 -Exactly
+            Should -Not -Invoke Invoke-WebRequest
+        }
+
+        It 'uses VATSIM fallback when requested for missing primary METARs' {
+            $sources = @(
+                [pscustomobject]@{ ICAO = 'KAAA'; NearbyICAOs = 'KCCC' },
+                [pscustomobject]@{ ICAO = 'KBBB'; NearbyICAOs = '' }
+            )
+
+            Mock Invoke-RestMethod {
+                @(
+                    [pscustomobject]@{
+                        icaoId = 'KCCC'
+                        rawOb  = 'KCCC 121650Z 18012KT 9999 FEW020 18/12 Q1013'
+                        fltcat = 'VFR'
+                        wdir   = 180
+                        wspd   = 12
+                    }
+                )
+            }
+            Mock Invoke-WebRequest {
+                param($Uri)
+
+                if ($Uri -like '*id=KAAA') {
+                    [pscustomobject]@{ Content = 'KAAA 121650Z 18012KT 9999 FEW020 18/12 Q1013' }
+                }
+                else {
+                    [pscustomobject]@{ Content = 'No METAR available' }
+                }
+            }
+            Mock Write-Warning {}
+
+            $result = Get-MapWeatherData -AtcSources $sources -UseVatsimFallback
+
+            Should -Invoke Invoke-WebRequest -Times 2 -Exactly
+            $result.WeatherMap.ContainsKey('KAAA') | Should -BeTrue
+            $result.WeatherMap['KAAA'].Source | Should -Be 'VATSIM'
+            $result.WeatherMap.ContainsKey('KCCC') | Should -BeTrue
+            $result.WeatherMap['KCCC'].Source | Should -Be 'NOAA'
+            $result.WeatherMap.ContainsKey('KBBB') | Should -BeFalse
+        }
+
+        It 'builds lazy weather marker payloads' {
+            $script:AirportData = [pscustomobject]@{
+                KAAA = [pscustomobject]@{
+                    lat = 10
+                    lon = 20
+                }
+            }
+
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'KAAA'
+                    IATA                  = ''
+                    City                  = 'Test City'
+                    Country               = 'Test Country'
+                    Continent             = ''
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Test Airport'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'http://example.test/stream'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                }
+            )
+
+            Mock Get-MapWeatherData {
+                @{
+                    WeatherMap = @{
+                        KAAA = @{
+                            fcat   = 'VFR'
+                            wdir   = 180
+                            wspd   = 12
+                            rawOb  = 'KAAA 121650Z 18012KT 9999 FEW020 18/12 Q1013'
+                            ageMin = 10
+                            source = 'NOAA'
+                            wxIcao = 'KAAA'
+                        }
+                    }
+                    IcaoToFallbacks = @{}
+                }
+            }
+
+            $payload = New-MapWeatherPayload -AtcSources $sources -Favorites @()
+
+            $payload.ok | Should -BeTrue
+            $payload.markers.Count | Should -Be 1
+            $payload.markers[0].icao | Should -Be 'KAAA'
+            $payload.markers[0].fcat | Should -Be 'VFR'
         }
     }
 

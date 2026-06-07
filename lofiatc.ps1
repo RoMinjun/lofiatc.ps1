@@ -2302,12 +2302,15 @@ Function Select-ATCMap {
         Get-AirportInfo -ICAO "KLAX" | Out-Null
     }
 
-    $weatherData = Get-MapWeatherData -AtcSources $AtcSources -NoWeather:$NoWeather
-
     $server = Start-ATCMapServer
     $port = $server.Port
     $listener = $server.Listener
     $mapControlToken = New-MapControlToken
+    $lazyWeather = -not $NoWeather
+    $weatherData = @{
+        WeatherMap      = @{}
+        IcaoToFallbacks = @{}
+    }
 
     $jsArray = ConvertTo-MapMarkers `
         -AtcSources $AtcSources `
@@ -2315,7 +2318,7 @@ Function Select-ATCMap {
         -WeatherMap $weatherData.WeatherMap `
         -IcaoToFallbacks $weatherData.IcaoToFallbacks `
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
-        -NoWeather:$NoWeather `
+        -NoWeather:($NoWeather -or $lazyWeather) `
         -EnableFavoriteActions:$KeepOpen
 
     $csvName = Split-Path $CsvPath -Leaf
@@ -2332,7 +2335,8 @@ Function Select-ATCMap {
         -StartRandom:$StartRandom `
         -ATCVolume $ATCVolume `
         -LofiVolume $LofiVolume `
-        -MapControlToken $mapControlToken
+        -MapControlToken $mapControlToken `
+        -LazyWeather:$lazyWeather
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
@@ -2360,12 +2364,19 @@ Function Select-ATCMap {
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
             -FavoritesPath $FavoritesPath `
+            -Favorites $Favorites `
             -MapControlToken $mapControlToken
 
         return $null
     }
 
-    return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300 -MapControlToken $mapControlToken
+    return Select-ATCFromMap `
+        -Listener $listener `
+        -TimeoutSeconds 300 `
+        -MapControlToken $mapControlToken `
+        -AtcSources $AtcSources `
+        -Favorites $Favorites `
+        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
 }
 
 # Converts a string to be safely embedded in JavaScript code by escaping special characters.
@@ -2433,7 +2444,8 @@ Function Test-MapControlToken {
 Function Get-MapWeatherData {
     param(
         [array]$AtcSources,
-        [switch]$NoWeather
+        [switch]$NoWeather,
+        [switch]$UseVatsimFallback
     )
 
     $weatherMap = @{}
@@ -2468,12 +2480,14 @@ Function Get-MapWeatherData {
 
     $icaoArray = @($allIcaosToFetch)
 
-    for ($i = 0; $i -lt $icaoArray.Count; $i += 50) {
-        $chunkEnd = [math]::Min($i + 49, $icaoArray.Count - 1)
+    $chunkSize = 100
+
+    for ($i = 0; $i -lt $icaoArray.Count; $i += $chunkSize) {
+        $chunkEnd = [math]::Min($i + ($chunkSize - 1), $icaoArray.Count - 1)
         $chunk = $icaoArray[$i..$chunkEnd] -join ','
 
         try {
-            $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 10
+            $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 12
 
             foreach ($item in $wxData) {
                 if ($item.icaoId) {
@@ -2497,23 +2511,10 @@ Function Get-MapWeatherData {
     }
 
     $missingPrimaries = $AtcSources.ICAO | Sort-Object -Unique | Where-Object {
-        $missing = -not $weatherMap.ContainsKey($_)
-
-        if ($missing -and $icaoToFallbacks.ContainsKey($_)) {
-            $hasWorkingFallback = $false
-            foreach ($fb in $icaoToFallbacks[$_]) {
-                if ($weatherMap.ContainsKey($fb)) {
-                    $hasWorkingFallback = $true
-                    break
-                }
-            }
-            $missing = -not $hasWorkingFallback
-        }
-
-        $missing
+        -not $weatherMap.ContainsKey($_)
     }
 
-    if ($missingPrimaries.Count -gt 0 -and $missingPrimaries.Count -lt 150) {
+    if ($UseVatsimFallback -and $missingPrimaries.Count -gt 0) {
         Write-Host "Fetching VATSIM alternative METARs for $($missingPrimaries.Count) stations..." -ForegroundColor DarkCyan
 
         foreach ($mIcao in $missingPrimaries) {
@@ -2579,6 +2580,28 @@ Function Get-MapWeatherData {
     return @{
         WeatherMap      = $weatherMap
         IcaoToFallbacks = $icaoToFallbacks
+    }
+}
+
+Function New-MapWeatherPayload {
+    param(
+        [array]$AtcSources,
+        [array]$Favorites,
+        [switch]$IncludeWebcamIfAvailable
+    )
+
+    $weatherData = Get-MapWeatherData -AtcSources $AtcSources -UseVatsimFallback
+    $markersJson = ConvertTo-MapMarkers `
+        -AtcSources $AtcSources `
+        -Favorites $Favorites `
+        -WeatherMap $weatherData.WeatherMap `
+        -IcaoToFallbacks $weatherData.IcaoToFallbacks `
+        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
+
+    return @{
+        ok      = $true
+        message = "Weather updated for $($weatherData.WeatherMap.Count) stations."
+        markers = @($markersJson | ConvertFrom-Json)
     }
 }
 
@@ -2814,7 +2837,8 @@ Function New-ATCMapHtml {
         [switch]$StartRandom,
         [int]$ATCVolume,
         [int]$LofiVolume,
-        [string]$MapControlToken = ''
+        [string]$MapControlToken = '',
+        [switch]$LazyWeather
     )
 
     $userLat = if ($UserLocation) {
@@ -2899,6 +2923,13 @@ Function New-ATCMapHtml {
     }
 
     $startRandomJs = if ($KeepOpen -and $StartRandom) {
+        'true'
+    }
+    else {
+        'false'
+    }
+
+    $lazyWeatherJs = if ($LazyWeather) {
         'true'
     }
     else {
@@ -3477,7 +3508,7 @@ Function New-ATCMapHtml {
             }
         };
 
-        function showToast(message, isError) {
+        function showToast(message, isError, durationMs) {
             var toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = isError ? 'show error' : 'show';
@@ -3485,7 +3516,7 @@ Function New-ATCMapHtml {
             clearTimeout(window.__lofiatcToastTimer);
             window.__lofiatcToastTimer = setTimeout(function() {
                 toast.className = '';
-            }, 2400);
+            }, durationMs || 2400);
         }
         var currentPlayingPulse = null;
         var currentPlayingPulseTimer = null;
@@ -3949,6 +3980,8 @@ Function New-ATCMapHtml {
         var radarPalette = '2';
         var radarSmooth = '1';
         var radarSnow = '1';
+        var radarFramesLoaded = false;
+        var radarRefreshTimer = null;
 
         function formatRadarFrameTime(frame) {
             if (!frame || !frame.time) return 'Radar history unavailable';
@@ -4072,6 +4105,8 @@ Function New-ATCMapHtml {
         }
 
         function loadRadarFrames() {
+            document.getElementById('radar-status').textContent = 'Loading radar...';
+
             var previousFrameTime = null;
             if (radarFrames.length && radarFrameIndex >= 0 && radarFrames[radarFrameIndex]) {
                 previousFrameTime = radarFrames[radarFrameIndex].time;
@@ -4080,6 +4115,8 @@ Function New-ATCMapHtml {
             fetch('https://api.rainviewer.com/public/weather-maps.json')
                 .then(function(res) { return res.json(); })
                 .then(function(data) {
+                    radarFramesLoaded = true;
+
                     var pastFrames = (data && data.radar && data.radar.past) ? data.radar.past : [];
                     radarHost = data && data.host ? data.host : '';
 
@@ -4107,13 +4144,28 @@ Function New-ATCMapHtml {
                 })
                 .catch(function() {
                     console.log('Weather radar fetch failed.');
+                    radarFramesLoaded = true;
                     radarFrames = [];
                     radarFrameIndex = -1;
                     updateRadarControls();
                 });
         }
 
+        function startRadarRefreshTimer() {
+            if (radarRefreshTimer) {
+                return;
+            }
+
+            radarRefreshTimer = setInterval(loadRadarFrames, 600000);
+        }
+
         document.getElementById('toggle-weather').addEventListener('change', function(e) {
+            if (e.target.checked && !radarFramesLoaded) {
+                loadRadarFrames();
+                startRadarRefreshTimer();
+                return;
+            }
+
             if (!weatherLayer) return;
 
             var container = weatherLayer.getContainer && weatherLayer.getContainer();
@@ -4171,8 +4223,7 @@ Function New-ATCMapHtml {
             }, 10);
         });
 
-        loadRadarFrames();
-        setInterval(loadRadarFrames, 600000);
+        updateRadarControls();
 
         var markersData = JSON.parse(document.getElementById('markers-data').textContent);
         var allMapItems = [];
@@ -4282,7 +4333,7 @@ Function New-ATCMapHtml {
             return tmp.textContent || tmp.innerText || '';
         }
 
-        markersData.forEach(function(m) {
+        function getMarkerVisual(m) {
             var baseRadius = 5;
             var mColor = "#95a5a6";
             var primaryCat = "unk";
@@ -4294,6 +4345,14 @@ Function New-ATCMapHtml {
             else if (m.fcat === "IFR" || m.fcat === "LIFR") { mColor = "#e74c3c"; primaryCat = "ifr"; }
             else if (m.fcat === "NONE") { mColor = "#2A81CB"; primaryCat = "none"; }
 
+            return {
+                radius: baseRadius,
+                color: mColor,
+                cat: primaryCat
+            };
+        }
+
+        function buildMarkerPopupHtml(m, mColor) {
             var favStar = m.isFav ? "<span class='fav-star'>★ </span>" : "";
             var titleLabel = m.icao + " - " + m.name;
 
@@ -4312,44 +4371,125 @@ Function New-ATCMapHtml {
                             "<span class='weather-pill'>Source: " + (m.wxSource || 'Unknown') + "</span>" +
                             "</div>";
 
-            var popupHTML = "<b>" + favStar + titleLabel + "</b>" +
+            return "<b>" + favStar + titleLabel + "</b>" +
                             (m.airportFavHtml || '') +
                             weatherMeta +
                             "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + escapeHtml(m.rawOb) + "</div>" +
                             "<div>" + m.desc + "</div>";
+        }
 
-            var dot = L.circleMarker([m.lat, m.lon], {
-                radius: baseRadius,
-                color: mColor,
-                fillColor: mColor,
-                fillOpacity: 0.7,
-                weight: 2
-            }).bindPopup(popupHTML);
-
-            var windArrow = null;
-            if (m.wdir !== "null" && m.wspd > 0) {
-                var rot = parseInt(m.wdir) + 180;
-                var arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#1a1a2e; text-shadow: 0 0 4px #fff, 0 0 6px #fff; text-align:center;">&#8593;</div>';
-                if (document.getElementById('toggle-theme').checked) {
-                    arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#fff; text-shadow: 0 0 4px #000, 0 0 6px #000; text-align:center;">&#8593;</div>';
-                }
-                var wIcon = L.divIcon({ className: 'wind-arrow', html: arrowHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
-                windArrow = L.marker([m.lat, m.lon], { icon: wIcon, interactive: false });
+        function buildWindMarker(m) {
+            if (m.wdir === "null" || !m.wspd || m.wspd <= 0) {
+                return null;
             }
 
-            allMapItems.push({
+            var rot = parseInt(m.wdir) + 180;
+            var arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#1a1a2e; text-shadow: 0 0 4px #fff, 0 0 6px #fff; text-align:center;">&#8593;</div>';
+            if (document.getElementById('toggle-theme').checked) {
+                arrowHtml = '<div style="transform: rotate(' + rot + 'deg); font-size:15px; color:#fff; text-shadow: 0 0 4px #000, 0 0 6px #000; text-align:center;">&#8593;</div>';
+            }
+
+            var wIcon = L.divIcon({ className: 'wind-arrow', html: arrowHtml, iconSize: [20, 20], iconAnchor: [10, 10] });
+            return L.marker([m.lat, m.lon], { icon: wIcon, interactive: false });
+        }
+
+        var mapItemsByIcao = {};
+
+        markersData.forEach(function(m) {
+            var visual = getMarkerVisual(m);
+
+            var dot = L.circleMarker([m.lat, m.lon], {
+                radius: visual.radius,
+                color: visual.color,
+                fillColor: visual.color,
+                fillOpacity: 0.7,
+                weight: 2
+            }).bindPopup(buildMarkerPopupHtml(m, visual.color));
+
+            var windArrow = buildWindMarker(m);
+
+            var mapItem = {
                 data: m,
                 layer: dot,
                 wind: windArrow,
-                cat: primaryCat,
-                color: mColor,
-                radius: baseRadius,
+                cat: visual.cat,
+                color: visual.color,
+                radius: visual.radius,
                 distanceKm: null,
                 matchesSearch: true
-            });
+            };
+
+            allMapItems.push(mapItem);
+            mapItemsByIcao[m.icao] = mapItem;
             addAirportLayer(dot);
             if (windArrow) windArrow.addTo(map);
         });
+
+        function applyWeatherMarkerUpdates(updatedMarkers) {
+            if (!updatedMarkers || !updatedMarkers.length) {
+                return;
+            }
+
+            updatedMarkers.forEach(function(updated) {
+                var item = mapItemsByIcao[updated.icao];
+                if (!item) {
+                    return;
+                }
+
+                item.data.fcat = updated.fcat;
+                item.data.wdir = updated.wdir;
+                item.data.wspd = updated.wspd;
+                item.data.rawOb = updated.rawOb;
+                item.data.wxAgeMin = updated.wxAgeMin;
+                item.data.wxSource = updated.wxSource;
+                item.data.wxIcao = updated.wxIcao;
+
+                var visual = getMarkerVisual(item.data);
+                item.cat = visual.cat;
+                item.color = visual.color;
+                item.radius = visual.radius;
+
+                item.layer.setStyle({
+                    color: visual.color,
+                    fillColor: visual.color
+                });
+                item.layer.setRadius(visual.radius);
+                item.layer.bindPopup(buildMarkerPopupHtml(item.data, visual.color));
+
+                if (item.wind && map.hasLayer(item.wind)) {
+                    map.removeLayer(item.wind);
+                }
+
+                item.wind = buildWindMarker(item.data);
+            });
+
+            applyFilters();
+        }
+
+        function loadMapWeatherData() {
+            if (!$lazyWeatherJs) {
+                return;
+            }
+
+            showToast('Loading weather stations...', false, 30000);
+
+            fetch(controlUrl('?action=weather'), { method: 'GET' })
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(data) {
+                    if (data && data.ok) {
+                        applyWeatherMarkerUpdates(data.markers || []);
+                        showToast(data.message || 'Weather stations loaded.', false);
+                    } else {
+                        showToast((data && data.message) || 'Could not load live weather.', true);
+                    }
+                })
+                .catch(function(err) {
+                    console.error('Weather update failed', err);
+                    showToast('Could not reach the local weather loader.', true);
+                });
+        }
 
         document.getElementById('toggle-theme').addEventListener('change', function(e) {
             var isDark = e.target.checked;
@@ -4606,6 +4746,9 @@ Function New-ATCMapHtml {
         if (nearbyToggle) {
             nearbyToggle.addEventListener('change', applyFilters);
         }
+
+        loadMapWeatherData();
+
         if ($startRandomJs) {
             setTimeout(function() {
                 sendMapAction('random');
@@ -4654,7 +4797,10 @@ Function Select-ATCFromMap {
     param(
         [System.Net.HttpListener]$Listener,
         [int]$TimeoutSeconds = 300,
-        [string]$MapControlToken = ''
+        [string]$MapControlToken = '',
+        [array]$AtcSources,
+        [array]$Favorites,
+        [switch]$IncludeWebcamIfAvailable
     )
 
     $canPollConsole = Test-InteractiveConsoleAvailable
@@ -4699,6 +4845,24 @@ Function Select-ATCFromMap {
                     -not (Test-MapControlToken -ExpectedToken $MapControlToken -ProvidedToken $req.QueryString["token"])
                 ) {
                     $res.StatusCode = 403
+                    $res.OutputStream.Close()
+                    continue
+                }
+
+                if ($req.QueryString["action"] -eq 'weather') {
+                    $payload = New-MapWeatherPayload `
+                        -AtcSources $AtcSources `
+                        -Favorites $Favorites `
+                        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
+                    $json = $payload | ConvertTo-Json -Depth 8 -Compress
+                    $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+
+                    $res.StatusCode = 200
+                    $res.ContentType = 'application/json; charset=utf-8'
+                    $res.ContentEncoding = [System.Text.Encoding]::UTF8
+                    $res.ContentLength64 = $buffer.Length
+                    $res.Headers['Cache-Control'] = 'no-store'
+                    $res.OutputStream.Write($buffer, 0, $buffer.Length)
                     $res.OutputStream.Close()
                     continue
                 }
@@ -4750,6 +4914,7 @@ Function Start-PersistentATCMapSession {
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
         [string]$FavoritesPath,
+        [array]$Favorites,
         [string]$MapControlToken
     )
 
@@ -4798,6 +4963,12 @@ Function Start-PersistentATCMapSession {
                         ok      = $false
                         message = "Unauthorized map control request."
                     }
+                }
+                elseif ($req.QueryString["action"] -eq 'weather') {
+                    $payload = New-MapWeatherPayload `
+                        -AtcSources $AtcSources `
+                        -Favorites $Favorites `
+                        -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
                 }
                 elseif ($null -ne $req.QueryString["action"]) {
                     try {
@@ -4887,7 +5058,7 @@ Function Start-PersistentATCMapSession {
                     }
                 }
 
-                $json = $payload | ConvertTo-Json -Compress
+                $json = $payload | ConvertTo-Json -Depth 8 -Compress
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
 
                 $res.StatusCode = $statusCode
