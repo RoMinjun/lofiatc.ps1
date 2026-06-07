@@ -958,6 +958,8 @@ KLAX,Tower,http://example.com/stream
             $result | Should -Not -BeNullOrEmpty
             $result.WeatherMap.Count | Should -Be 0
             $result.IcaoToFallbacks.Count | Should -Be 0
+            $result.Stats.NoaaStations | Should -Be 0
+            $result.Stats.VatsimStations | Should -Be 0
 
             Should -Not -Invoke Invoke-RestMethod
             Should -Not -Invoke Invoke-WebRequest
@@ -1018,6 +1020,10 @@ KLAX,Tower,http://example.com/stream
             $result.WeatherMap.ContainsKey('KCCC') | Should -BeTrue
             $result.WeatherMap['KCCC'].Source | Should -Be 'NOAA'
             $result.WeatherMap.ContainsKey('KBBB') | Should -BeFalse
+            $result.Stats.NoaaStations | Should -Be 1
+            $result.Stats.VatsimStations | Should -Be 1
+            $result.Stats.NoaaRequests | Should -Be 1
+            $result.Stats.VatsimRequests | Should -Be 2
         }
 
         It 'builds lazy weather marker payloads' {
@@ -1058,12 +1064,22 @@ KLAX,Tower,http://example.com/stream
                         }
                     }
                     IcaoToFallbacks = @{}
+                    Stats = [pscustomobject]@{
+                        NoaaStations   = 1
+                        VatsimStations = 0
+                        NoaaMs         = 123
+                        VatsimMs       = 0
+                        NoaaRequests   = 1
+                        VatsimRequests = 0
+                    }
                 }
             }
 
             $payload = New-MapWeatherPayload -AtcSources $sources -Favorites @()
 
             $payload.ok | Should -BeTrue
+            $payload.message | Should -Be 'Weather stations loaded: 1 NOAA, 0 VATSIM.'
+            $payload.stats.NoaaStations | Should -Be 1
             $payload.markers.Count | Should -Be 1
             $payload.markers[0].icao | Should -Be 'KAAA'
             $payload.markers[0].fcat | Should -Be 'VFR'

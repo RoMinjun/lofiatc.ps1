@@ -2450,11 +2450,20 @@ Function Get-MapWeatherData {
 
     $weatherMap = @{}
     $icaoToFallbacks = @{}
+    $stats = [ordered]@{
+        NoaaStations  = 0
+        VatsimStations = 0
+        NoaaMs        = 0
+        VatsimMs      = 0
+        NoaaRequests  = 0
+        VatsimRequests = 0
+    }
 
     if ($NoWeather) {
         return @{
             WeatherMap      = $weatherMap
             IcaoToFallbacks = $icaoToFallbacks
+            Stats           = [pscustomobject]$stats
         }
     }
 
@@ -2487,7 +2496,15 @@ Function Get-MapWeatherData {
         $chunk = $icaoArray[$i..$chunkEnd] -join ','
 
         try {
-            $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 12
+            $noaaTimer = [System.Diagnostics.Stopwatch]::StartNew()
+            try {
+                $stats.NoaaRequests++
+                $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 12
+            }
+            finally {
+                $noaaTimer.Stop()
+                $stats.NoaaMs += [int]$noaaTimer.ElapsedMilliseconds
+            }
 
             foreach ($item in $wxData) {
                 if ($item.icaoId) {
@@ -2502,6 +2519,8 @@ Function Get-MapWeatherData {
                         source = 'NOAA'
                         wxIcao = [string]$item.icaoId
                     }
+
+                    $stats.NoaaStations++
                 }
             }
         }
@@ -2519,8 +2538,16 @@ Function Get-MapWeatherData {
 
         foreach ($mIcao in $missingPrimaries) {
             try {
-                $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-                $vRaw = $vRes.Content.Trim()
+                $vatsimTimer = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    $stats.VatsimRequests++
+                    $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+                    $vRaw = $vRes.Content.Trim()
+                }
+                finally {
+                    $vatsimTimer.Stop()
+                    $stats.VatsimMs += [int]$vatsimTimer.ElapsedMilliseconds
+                }
 
                 if ($vRaw -match "\b$mIcao\b") {
                     $fcat = "VFR"
@@ -2567,6 +2594,8 @@ Function Get-MapWeatherData {
                         source = 'VATSIM'
                         wxIcao = $mIcao
                     }
+
+                    $stats.VatsimStations++
                 }
             }
             catch {}
@@ -2580,6 +2609,7 @@ Function Get-MapWeatherData {
     return @{
         WeatherMap      = $weatherMap
         IcaoToFallbacks = $icaoToFallbacks
+        Stats           = [pscustomobject]$stats
     }
 }
 
@@ -2598,9 +2628,24 @@ Function New-MapWeatherPayload {
         -IcaoToFallbacks $weatherData.IcaoToFallbacks `
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
 
+    $stats = if ($weatherData.Stats) {
+        $weatherData.Stats
+    }
+    else {
+        [pscustomobject]@{
+            NoaaStations   = 0
+            VatsimStations = 0
+            NoaaMs         = 0
+            VatsimMs       = 0
+            NoaaRequests   = 0
+            VatsimRequests = 0
+        }
+    }
+
     return @{
         ok      = $true
-        message = "Weather updated for $($weatherData.WeatherMap.Count) stations."
+        message = "Weather stations loaded: $($stats.NoaaStations) NOAA, $($stats.VatsimStations) VATSIM."
+        stats   = $stats
         markers = @($markersJson | ConvertFrom-Json)
     }
 }
