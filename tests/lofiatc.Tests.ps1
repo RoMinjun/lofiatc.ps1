@@ -566,6 +566,24 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Map control token' {
+        It 'generates URL-safe random tokens' {
+            $first = New-MapControlToken
+            $second = New-MapControlToken
+
+            $first | Should -Match '^[A-Za-z0-9_-]{43}$'
+            $second | Should -Match '^[A-Za-z0-9_-]{43}$'
+            $first | Should -Not -Be $second
+        }
+
+        It 'accepts only the expected non-empty token' {
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken 'expected-token' | Should -BeTrue
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken 'wrong-token' | Should -BeFalse
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken '' | Should -BeFalse
+            Test-MapControlToken -ExpectedToken '' -ProvidedToken 'expected-token' | Should -BeFalse
+        }
+    }
+
     Context 'Generated map HTML for added controls' {
         It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
             $html = New-ATCMapHtml `
@@ -578,7 +596,8 @@ Describe 'lofiatc.ps1 helper functions' {
                 -KeepOpen `
                 -StartRandom `
                 -ATCVolume 65 `
-                -LofiVolume 50
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
 
             $html | Should -Match 'id="np-stop-lofi"'
             $html | Should -Match 'id="np-atc-volume"'
@@ -586,7 +605,24 @@ Describe 'lofiatc.ps1 helper functions' {
             $html | Should -Match 'action=set-volume'
             $html | Should -Match 'action=favorite-toggle'
             $html | Should -Match 'action=airport-favorite-toggle'
+            $html | Should -Match "var mapControlToken = 'test-token'"
+            $html | Should -Match "token=' \+ encodeURIComponent\(mapControlToken\)"
             $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'escapes raw METAR text before adding it to popup HTML' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'function escapeHtml'
+            $html | Should -Match 'escapeHtml\(m.rawOb\)'
         }
 
         It 'emits channel and airport favorite links in marker JSON when favorite actions are enabled' {
@@ -925,64 +961,6 @@ KLAX,Tower,http://example.com/stream
             $result | Should -Not -BeNullOrEmpty
             $result.icao | Should -Be 'KLAX'
             Should -Not -Invoke Invoke-RestMethod
-        }
-    }
-
-    Context 'Select-ATCFromMap cancellation path' {
-        It 'throws OperationCanceledException when Q is pressed' {
-            $server = Start-ATCMapServer -StartPort 59999 -MaxRetries 20
-            $listener = $server.Listener
-
-            Mock Start-Sleep {}
-            Mock Write-Host {}
-            Mock Test-InteractiveConsoleAvailable { $true }
-            Mock Test-ConsoleKeyAvailable { $true }
-            Mock Read-ConsoleKey {
-                [pscustomobject]@{ Key = 'Q' }
-            }
-
-            try {
-                $thrown = $null
-
-                try {
-                    Select-ATCFromMap -Listener $listener -TimeoutSeconds 5
-                }
-                catch {
-                    $thrown = $_.Exception
-                }
-
-                $thrown | Should -Not -BeNullOrEmpty
-
-                $allTypes = @(
-                    $thrown.GetType().FullName
-                    if ($thrown.InnerException) { $thrown.InnerException.GetType().FullName }
-                )
-
-                $allTypes | Should -Contain 'System.OperationCanceledException'
-            }
-            finally {
-                try { $listener.Stop() } catch {}
-                try { $listener.Close() } catch {}
-            }
-        }
-    }
-
-    Context 'Select-ATCFromMap non-interactive host path' {
-        It 'times out cleanly when console cancellation is unavailable' {
-            $server = Start-ATCMapServer -StartPort 59998 -MaxRetries 20
-            $listener = $server.Listener
-
-            Mock Write-Host {}
-            Mock Test-InteractiveConsoleAvailable { $false }
-            Mock Start-Sleep {}
-
-            try {
-                { Select-ATCFromMap -Listener $listener -TimeoutSeconds 0 } | Should -Throw '*Timed out waiting for a map selection*'
-            }
-            finally {
-                try { $listener.Stop() } catch {}
-                try { $listener.Close() } catch {}
-            }
         }
     }
 

@@ -45,7 +45,7 @@ Volume level for the Lofi Girl stream. Default is 50.
 Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
 
 .PARAMETER LofiGenre
-Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, Jazz, Ambient, DarkAmbient, Bossa, Asian, Medieval. This is overridden by -LofiSource.
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, SynthAmbient, Sad, Piano, Classical, Jazz, RelaxJazz, SleepAmbient, DarkAmbient, Medieval, Asian, SleepChill, Guitar, Pomodoro. This is overridden by -LofiSource.
 
 .PARAMETER ICAO
 Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
@@ -96,8 +96,8 @@ param (
     [int]$ATCVolume = 65,
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://youtu.be/EWrX250Zhko",
-    [ValidateSet("Chillhop", "Synthwave", "Jazz", "Ambient", "DarkAmbient", "Bossa","Medieval")]
+    [string]$LofiSource = "https://youtu.be/X4VbdwhkE10",
+    [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient","Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian", "DarkAmbient")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,
@@ -117,13 +117,21 @@ param (
 )
 
 $LofiGenres = @{
-    "Chillhop"    = "https://youtu.be/EWrX250Zhko" # lofi girl original
-    "Synthwave"   = "https://youtu.be/4xDzrJKXOOY" # Synthwave Boy (lofi girl)
-    "Jazz"        = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Jazz
-    "Ambient"     = "https://youtu.be/xORCbIptqcc" # Ambient lofi girl
-    "Bossa"       = "https://youtu.be/56llPN9tS88" # Bossa lofi girl
-    "Medieval"    = "https://youtu.be/IxPANmjPaek" # Medieval lofi girl
-    "DarkAmbient" = "https://youtu.be/S_MOd40zlYU" # Dark Ambient lofi girl
+    "Chillhop"      = "https://youtu.be/X4VbdwhkE10" # Lofi Girl original
+    "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Lofi Girl Synthwave
+    "SynthAmbient"  = "https://youtu.be/GSfT7H87zq4" # Lofi Girl Synthwave Ambient
+    "Sad"           = "https://youtu.be/CwPCy1GLS38" # Lofi Girl sad
+    "Piano"         = "https://youtu.be/5qap5aOn9sA" # Lofi Girl Piano
+    "Classical"     = "https://youtu.be/jXAEIWcGXwE" # Lofi Girl Classical
+    "Jazz"          = "https://youtu.be/E2vONfzoyRI" # Lofi Girl Jazz
+    "RelaxJazz"     = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Relax Jazz
+    "SleepAmbient"  = "https://youtu.be/xORCbIptqcc" # Lofi Girl Sleep Ambient
+    "DarkAmbient"   = "https://youtu.be/S_MOd40zlYU" # Lofi Girl Dark Ambient
+    "Medieval"      = "https://youtu.be/IxPANmjPaek" # Lofi Girl Medieval
+    "Asian"         = "https://youtu.be/1Tl2FtV06qo" # Lofi Girl Asian
+    "SleepChill"    = "https://youtu.be/JD-kMIpDfnY" # Lofi Girl Sleep/Chill
+    "Guitar"        = "https://youtu.be/E_XmwjgRLz8" # Lofi Girl Guitar
+    "Pomodoro"      = "https://youtu.be/qGohtGC5Rtk" # Lofi Girl Pomodoro (25min timer with breaks)
 }
 
 # Explicitly set OS variables at the script scope
@@ -2299,6 +2307,7 @@ Function Select-ATCMap {
     $server = Start-ATCMapServer
     $port = $server.Port
     $listener = $server.Listener
+    $mapControlToken = New-MapControlToken
 
     $jsArray = ConvertTo-MapMarkers `
         -AtcSources $AtcSources `
@@ -2322,7 +2331,8 @@ Function Select-ATCMap {
         -KeepOpen:$KeepOpen `
         -StartRandom:$StartRandom `
         -ATCVolume $ATCVolume `
-        -LofiVolume $LofiVolume
+        -LofiVolume $LofiVolume `
+        -MapControlToken $mapControlToken
 
     $tempMapFile = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_map_{0}.html" -f ([guid]::NewGuid().ToString('N')))
 
@@ -2349,12 +2359,13 @@ Function Select-ATCMap {
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
-            -FavoritesPath $FavoritesPath
+            -FavoritesPath $FavoritesPath `
+            -MapControlToken $mapControlToken
 
         return $null
     }
 
-    return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300
+    return Select-ATCFromMap -Listener $listener -TimeoutSeconds 300 -MapControlToken $mapControlToken
 }
 
 # Converts a string to be safely embedded in JavaScript code by escaping special characters.
@@ -2388,6 +2399,34 @@ Function ConvertTo-HtmlSafeString {
     }
 
     return [System.Net.WebUtility]::HtmlEncode($Value)
+}
+
+# Generates an unguessable token used to bind browser map controls to the current local session.
+Function New-MapControlToken {
+    $bytes = [byte[]]::new(32)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+}
+
+Function Test-MapControlToken {
+    param(
+        [string]$ExpectedToken,
+        [string]$ProvidedToken
+    )
+
+    return (
+        -not [string]::IsNullOrWhiteSpace($ExpectedToken) -and
+        -not [string]::IsNullOrWhiteSpace($ProvidedToken) -and
+        $ProvidedToken -eq $ExpectedToken
+    )
 }
 
 # Fetches METAR data for all ICAOs in the provided sources, including fallbacks, and returns a map of ICAO to weather data and a map of ICAOs to their fallback lists.
@@ -2774,7 +2813,8 @@ Function New-ATCMapHtml {
         [switch]$KeepOpen,
         [switch]$StartRandom,
         [int]$ATCVolume,
-        [int]$LofiVolume
+        [int]$LofiVolume,
+        [string]$MapControlToken = ''
     )
 
     $userLat = if ($UserLocation) {
@@ -2864,6 +2904,8 @@ Function New-ATCMapHtml {
     else {
         'false'
     }
+
+    $mapControlTokenJs = ConvertTo-JsSafeString $MapControlToken
 
     $favoriteLegendItem = '<label class="legend-item" title="Streams you play often."><input type="checkbox" class="filter-cb" value="fav" checked> <span class="legend-color color-fav"></span> Favorites</label>'
 
@@ -3561,6 +3603,19 @@ Function New-ATCMapHtml {
             }, 60);
         }
 
+        var mapControlToken = '$mapControlTokenJs';
+
+        function controlUrl(pathAndQuery) {
+            var separator = pathAndQuery.indexOf('?') >= 0 ? '&' : '?';
+            return 'http://127.0.0.1:$Port/' + pathAndQuery + separator + 'token=' + encodeURIComponent(mapControlToken);
+        }
+
+        function escapeHtml(value) {
+            var div = document.createElement('div');
+            div.textContent = value || '';
+            return div.innerHTML;
+        }
+
         function playChannel(icao, channelIndex) {
             var keepOpen = $keepOpenJs;
 
@@ -3569,8 +3624,8 @@ Function New-ATCMapHtml {
             }
 
             fetch(
-                'http://127.0.0.1:$Port/?icao=' + encodeURIComponent(icao) +
-                '&channelIndex=' + encodeURIComponent(channelIndex),
+                controlUrl('?icao=' + encodeURIComponent(icao) +
+                '&channelIndex=' + encodeURIComponent(channelIndex)),
                 { method: 'GET' }
             )
             .then(function(res) {
@@ -3604,9 +3659,9 @@ Function New-ATCMapHtml {
 
         function toggleFavorite(icao, channelIndex, el) {
             fetch(
-                'http://127.0.0.1:$Port/?action=favorite-toggle' +
+                controlUrl('?action=favorite-toggle' +
                 '&icao=' + encodeURIComponent(icao) +
-                '&channelIndex=' + encodeURIComponent(channelIndex),
+                '&channelIndex=' + encodeURIComponent(channelIndex)),
                 { method: 'GET' }
             )
             .then(function(res) {
@@ -3633,8 +3688,8 @@ Function New-ATCMapHtml {
 
         function toggleAirportFavorite(icao, el) {
             fetch(
-                'http://127.0.0.1:$Port/?action=airport-favorite-toggle' +
-                '&icao=' + encodeURIComponent(icao),
+                controlUrl('?action=airport-favorite-toggle' +
+                '&icao=' + encodeURIComponent(icao)),
                 { method: 'GET' }
             )
             .then(function(res) {
@@ -3680,7 +3735,7 @@ Function New-ATCMapHtml {
 
         function sendMapAction(action) {
             fetch(
-                'http://127.0.0.1:$Port/?action=' + encodeURIComponent(action),
+                controlUrl('?action=' + encodeURIComponent(action)),
                 { method: 'GET' }
             )
             .then(function(res) {
@@ -3717,9 +3772,9 @@ Function New-ATCMapHtml {
 
         function sendVolumeChange(target, volume) {
             fetch(
-                'http://127.0.0.1:$Port/?action=set-volume' +
+                controlUrl('?action=set-volume' +
                 '&target=' + encodeURIComponent(target) +
-                '&volume=' + encodeURIComponent(volume),
+                '&volume=' + encodeURIComponent(volume)),
                 { method: 'GET' }
             )
             .then(function(res) {
@@ -4260,7 +4315,7 @@ Function New-ATCMapHtml {
             var popupHTML = "<b>" + favStar + titleLabel + "</b>" +
                             (m.airportFavHtml || '') +
                             weatherMeta +
-                            "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + m.rawOb + "</div>" +
+                            "<div class='metar-box' style='border-left: 2px solid " + mColor + ";'>" + escapeHtml(m.rawOb) + "</div>" +
                             "<div>" + m.desc + "</div>";
 
             var dot = L.circleMarker([m.lat, m.lon], {
@@ -4598,7 +4653,8 @@ Function Start-ATCMapServer {
 Function Select-ATCFromMap {
     param(
         [System.Net.HttpListener]$Listener,
-        [int]$TimeoutSeconds = 300
+        [int]$TimeoutSeconds = 300,
+        [string]$MapControlToken = ''
     )
 
     $canPollConsole = Test-InteractiveConsoleAvailable
@@ -4637,6 +4693,15 @@ Function Select-ATCFromMap {
                 $context = $Listener.EndGetContext($contextTask)
                 $req = $context.Request
                 $res = $context.Response
+
+                if (
+                    -not [string]::IsNullOrWhiteSpace($MapControlToken) -and
+                    -not (Test-MapControlToken -ExpectedToken $MapControlToken -ProvidedToken $req.QueryString["token"])
+                ) {
+                    $res.StatusCode = 403
+                    $res.OutputStream.Close()
+                    continue
+                }
 
                 if ($null -ne $req.QueryString["icao"]) {
                     $channelIndexRaw = $req.QueryString["channelIndex"]
@@ -4684,7 +4749,8 @@ Function Start-PersistentATCMapSession {
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
-        [string]$FavoritesPath
+        [string]$FavoritesPath,
+        [string]$MapControlToken
     )
 
     $canPollConsole = Test-InteractiveConsoleAvailable
@@ -4724,15 +4790,17 @@ Function Start-PersistentATCMapSession {
                     ok      = $true
                     message = "Ready"
                 }
+                $statusCode = 200
 
-                if ($null -ne $req.QueryString["action"]) {
+                if (-not (Test-MapControlToken -ExpectedToken $MapControlToken -ProvidedToken $req.QueryString["token"])) {
+                    $statusCode = 403
+                    $payload = @{
+                        ok      = $false
+                        message = "Unauthorized map control request."
+                    }
+                }
+                elseif ($null -ne $req.QueryString["action"]) {
                     try {
-                        $volumeValue = -1
-
-                        if ($null -ne $req.QueryString["volume"] -and $req.QueryString["volume"] -match '^\d+$') {
-                            $volumeValue = [int]$req.QueryString["volume"]
-                        }
-
                         $volumeValue = -1
 
                         if ($null -ne $req.QueryString["volume"] -and $req.QueryString["volume"] -match '^\d+$') {
@@ -4822,12 +4890,12 @@ Function Start-PersistentATCMapSession {
                 $json = $payload | ConvertTo-Json -Compress
                 $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
 
-                $res.StatusCode = 200
+                $res.StatusCode = $statusCode
                 $res.ContentType = 'application/json; charset=utf-8'
                 $res.ContentEncoding = [System.Text.Encoding]::UTF8
                 $res.ContentLength64 = $buffer.Length
 
-                $res.Headers['Access-Control-Allow-Origin'] = '*'
+                $res.Headers['Access-Control-Allow-Origin'] = 'null'
                 $res.Headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
                 $res.Headers['Access-Control-Allow-Headers'] = '*'
                 $res.Headers['Cache-Control'] = 'no-store'
