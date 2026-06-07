@@ -585,6 +585,23 @@ Describe 'lofiatc.ps1 helper functions' {
     }
 
     Context 'Generated map HTML for added controls' {
+        It 'loads the external map HTML template and replaces all placeholders' {
+            Get-ATCMapHtmlTemplatePath | Should -Be (Join-Path $repoRoot 'templates\atc-map.html')
+
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match '<!DOCTYPE html>'
+            $html | Should -Not -Match '\{\{[A-Z0-9_]+\}\}'
+        }
+
         It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
             $html = New-ATCMapHtml `
                 -JsArray '[]' `
