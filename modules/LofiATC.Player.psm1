@@ -374,6 +374,66 @@ Function Start-Player {
     }
 }
 
+Function Start-LofiATCSession {
+    param(
+        [hashtable]$SelectedATC,
+        [string]$Player,
+        [string]$LofiMusicUrl,
+        [string]$FavoritesPath,
+        [int]$MaxFavorites = 10,
+        [int]$ATCVolume = 65,
+        [int]$LofiVolume = 50,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$OpenRadar,
+        [switch]$RandomATC,
+        [switch]$PlayerWasSpecified
+    )
+
+    $selectedATCUrl = $SelectedATC.StreamUrl
+    $selectedWebcamUrl = $SelectedATC.WebcamUrl
+
+    Clear-Host
+    Write-Welcome -airportInfo $SelectedATC.AirportInfo -OpenRadar:$OpenRadar
+
+    if (-not $RandomATC) {
+        Add-Favorite -path $FavoritesPath -ICAO $SelectedATC.AirportInfo.ICAO -Channel $SelectedATC.AirportInfo.'Channel Description' -maxEntries $MaxFavorites
+    }
+
+    if ($OpenRadar) {
+        Open-Radar -ICAO $SelectedATC.AirportInfo.ICAO
+    }
+
+    if ($PlayerWasSpecified) {
+        Write-Verbose "Player selected by user: $Player"
+    }
+    else {
+        Write-Verbose "Default player selected: $Player"
+    }
+
+    Write-Verbose "Opening ATC stream: $selectedATCUrl"
+    if ($selectedWebcamUrl) {
+        Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+    }
+
+    Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume
+
+    if (-not $NoLofiMusic) {
+        Write-Verbose "Opening Lofi Girl stream: $LofiMusicUrl"
+        if ($PlayLofiGirlVideo) {
+            Start-Player -url $LofiMusicUrl -player $Player -basicArgs -volume $LofiVolume
+        }
+        else {
+            Start-Player -url $LofiMusicUrl -player $Player -noVideo -basicArgs -volume $LofiVolume
+        }
+    }
+
+    if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
+        Start-Player -url $selectedWebcamUrl -player $Player -noAudio -basicArgs
+    }
+}
+
 # Function to start a media player process and return the process object for later management
 # with support for different players and argument configurations
 

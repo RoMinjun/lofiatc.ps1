@@ -1,5 +1,162 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
 
+Function Get-LofiATCGenreMap {
+    return @{
+        "Chillhop"      = "https://youtu.be/X4VbdwhkE10" # Lofi Girl original
+        "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Lofi Girl Synthwave
+        "SynthAmbient"  = "https://youtu.be/GSfT7H87zq4" # Lofi Girl Synthwave Ambient
+        "Sad"           = "https://youtu.be/CwPCy1GLS38" # Lofi Girl sad
+        "Piano"         = "https://youtu.be/5qap5aOn9sA" # Lofi Girl Piano
+        "Classical"     = "https://youtu.be/jXAEIWcGXwE" # Lofi Girl Classical
+        "Jazz"          = "https://youtu.be/E2vONfzoyRI" # Lofi Girl Jazz
+        "RelaxJazz"     = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Relax Jazz
+        "SleepAmbient"  = "https://youtu.be/xORCbIptqcc" # Lofi Girl Sleep Ambient
+        "DarkAmbient"   = "https://youtu.be/S_MOd40zlYU" # Lofi Girl Dark Ambient
+        "Medieval"      = "https://youtu.be/IxPANmjPaek" # Lofi Girl Medieval
+        "Asian"         = "https://youtu.be/1Tl2FtV06qo" # Lofi Girl Asian
+        "SleepChill"    = "https://youtu.be/JD-kMIpDfnY" # Lofi Girl Sleep/Chill
+        "Guitar"        = "https://youtu.be/E_XmwjgRLz8" # Lofi Girl Guitar
+        "Pomodoro"      = "https://youtu.be/qGohtGC5Rtk" # Lofi Girl Pomodoro (25min timer with breaks)
+    }
+}
+
+Function Initialize-LofiATCState {
+    $script:OnWindows = $env:OS -eq 'Windows_NT'
+    $script:AirportData = $null
+
+    $script:IanaToWindowsMap = @{
+        "Etc/UTC"                        = "UTC"
+        "Europe/London"                  = "GMT Standard Time"
+        "Europe/Dublin"                  = "GMT Standard Time"
+        "Europe/Amsterdam"               = "W. Europe Standard Time"
+        "Europe/Paris"                   = "Romance Standard Time"
+        "Europe/Berlin"                  = "W. Europe Standard Time"
+        "Europe/Madrid"                  = "Romance Standard Time"
+        "Europe/Brussels"                = "Romance Standard Time"
+        "Europe/Rome"                    = "W. Europe Standard Time"
+        "Europe/Vienna"                  = "W. Europe Standard Time"
+        "Europe/Prague"                  = "Central Europe Standard Time"
+        "Europe/Moscow"                  = "Russian Standard Time"
+        "Europe/Athens"                  = "GTB Standard Time"
+        "Europe/Bucharest"               = "GTB Standard Time"
+        "Africa/Cairo"                   = "Egypt Standard Time"
+        "Africa/Johannesburg"            = "South Africa Standard Time"
+        "Asia/Jerusalem"                 = "Israel Standard Time"
+        "Asia/Dubai"                     = "Arabian Standard Time"
+        "Asia/Tehran"                    = "Iran Standard Time"
+        "Asia/Riyadh"                    = "Arab Standard Time"
+        "Asia/Karachi"                   = "Pakistan Standard Time"
+        "Asia/Kolkata"                   = "India Standard Time"
+        "Asia/Dhaka"                     = "Bangladesh Standard Time"
+        "Asia/Bangkok"                   = "SE Asia Standard Time"
+        "Asia/Singapore"                 = "Singapore Standard Time"
+        "Asia/Hong_Kong"                 = "China Standard Time"
+        "Asia/Shanghai"                  = "China Standard Time"
+        "Asia/Taipei"                    = "Taipei Standard Time"
+        "Asia/Tokyo"                     = "Tokyo Standard Time"
+        "Asia/Seoul"                     = "Korea Standard Time"
+        "Australia/Perth"                = "W. Australia Standard Time"
+        "Australia/Adelaide"             = "Cen. Australia Standard Time"
+        "Australia/Sydney"               = "AUS Eastern Standard Time"
+        "Pacific/Auckland"               = "New Zealand Standard Time"
+        "America/Halifax"                = "Atlantic Standard Time"
+        "America/St_Johns"               = "Newfoundland Standard Time"
+        "America/Argentina/Buenos_Aires" = "Argentina Standard Time"
+        "America/Sao_Paulo"              = "E. South America Standard Time"
+        "America/New_York"               = "Eastern Standard Time"
+        "America/Chicago"                = "Central Standard Time"
+        "America/Denver"                 = "Mountain Standard Time"
+        "America/Phoenix"                = "US Mountain Standard Time"
+        "America/Los_Angeles"            = "Pacific Standard Time"
+        "America/Anchorage"              = "Alaskan Standard Time"
+        "Pacific/Honolulu"               = "Hawaiian Standard Time"
+    }
+
+    $script:CurrentATCProcess = $null
+    $script:CurrentWebcamProcess = $null
+    $script:CurrentLofiProcess = $null
+
+    $script:CurrentATCVolume = $null
+    $script:CurrentLofiVolume = $null
+}
+
+Function Get-LofiATCIgnoredConfigParameterNames {
+    return @(
+        'Verbose',
+        'Debug',
+        'ErrorAction',
+        'WarningAction',
+        'InformationAction',
+        'ProgressAction',
+        'ErrorVariable',
+        'WarningVariable',
+        'InformationVariable',
+        'OutVariable',
+        'OutBuffer',
+        'PipelineVariable',
+        'SaveConfig',
+        'LoadConfig',
+        'ConfigPath'
+    )
+}
+
+Function Import-LofiATCConfig {
+    param(
+        [string]$ConfigPath,
+        [hashtable]$BoundParameters
+    )
+
+    if (-not (Test-Path $ConfigPath)) {
+        Write-Warning "Config file not found at $ConfigPath"
+        return
+    }
+
+    $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
+    $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
+
+    foreach ($prop in $config.PSObject.Properties) {
+        $name = $prop.Name
+        if ($name -in $ignoredParameters) {
+            continue
+        }
+
+        if (-not $BoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne "") {
+            Set-Variable -Name $name -Value $prop.Value -Scope 1
+        }
+    }
+
+    Write-Information "Loaded config from $ConfigPath"
+}
+
+Function Export-LofiATCConfig {
+    param(
+        [string]$CommandPath,
+        [string]$ConfigPath
+    )
+
+    $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
+    $paramNames = (Get-Command $CommandPath).Parameters.Keys
+    $config = @{}
+
+    foreach ($name in $paramNames) {
+        if ($name -in $ignoredParameters) {
+            continue
+        }
+
+        $value = Get-Variable -Name $name -ValueOnly -Scope 1
+        if ($value -is [System.Management.Automation.SwitchParameter]) {
+            $value = [bool]$value
+        }
+
+        if ($null -ne $value -and $value -ne "") {
+            $config[$name] = $value
+        }
+    }
+
+    $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    Write-Information "Saved config to $ConfigPath"
+}
+
 Function Test-ConsoleKeyAvailable {
     return [console]::KeyAvailable
 }
@@ -361,6 +518,262 @@ Function Get-RandomATCStream {
         StreamUrl   = $selectedStream.'Stream URL'
         WebcamUrl   = $selectedStream.'Webcam URL'
         AirportInfo = $selectedStream
+    }
+}
+
+Function Select-ATCStreamByICAO {
+    param(
+        [array]$AtcSources,
+        [string]$ICAO,
+        [Nullable[int]]$MapSelectedChannelIndex,
+        [switch]$RandomATC,
+        [switch]$UseFZF,
+        [switch]$IncludeWebcamIfAvailable
+    )
+
+    $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $ICAO })
+    if (-not $icaoMatches) {
+        throw "No ATC stream found for ICAO $ICAO."
+    }
+
+    if ($null -ne $MapSelectedChannelIndex) {
+        if ($MapSelectedChannelIndex -lt 0 -or $MapSelectedChannelIndex -ge $icaoMatches.Count) {
+            throw "Invalid channel index returned from map for ICAO $ICAO."
+        }
+
+        $match = $icaoMatches[$MapSelectedChannelIndex]
+    }
+    elseif ($icaoMatches.Count -eq 1 -or $RandomATC) {
+        $match = if ($RandomATC -and $icaoMatches.Count -gt 1) {
+            Get-Random -InputObject $icaoMatches
+        }
+        else {
+            $icaoMatches[0]
+        }
+    }
+    else {
+        $channels = $icaoMatches | ForEach-Object {
+            $webcamIndicator = if (-not [string]::IsNullOrWhiteSpace($_.'Webcam URL') -and $IncludeWebcamIfAvailable) { " [Webcam available]" } else { "" }
+            "{0}{1}" -f $_.'Channel Description', $webcamIndicator
+        } | Sort-Object -Unique
+
+        $chanSel = if ($UseFZF) {
+            Select-ItemFZF -prompt "Select a channel for ${ICAO}" -items $channels
+        }
+        else {
+            Select-Item -prompt "Select a channel for ${ICAO}:" -items $channels
+        }
+
+        $chanClean = $chanSel -replace '\s\[Webcam available\]', ''
+        $match = $icaoMatches | Where-Object { $_.'Channel Description' -eq $chanClean } | Select-Object -First 1
+    }
+
+    if (-not $match) {
+        throw "No matching ATC channel found for ICAO $ICAO."
+    }
+
+    return @{
+        StreamUrl   = $match.'Stream URL'
+        WebcamUrl   = $match.'Webcam URL'
+        AirportInfo = $match
+    }
+}
+
+Function Select-ATCStreamManually {
+    param(
+        [array]$AtcSources
+    )
+
+    $selectedATC = $null
+
+    while (-not $selectedATC) {
+        $selectedContinent = Select-Item -prompt "Select a continent:" -items ($AtcSources.Continent | Sort-Object -Unique)
+        do {
+            $countries = @($AtcSources | Where-Object { $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() } | Select-Object -ExpandProperty Country | Sort-Object -Unique)
+            $selectedCountry = Select-Item -prompt "Select a country from ${selectedContinent}:" -items $countries -AllowBack
+            if ($null -eq $selectedCountry) {
+                $selectedContinent = $null
+                break
+            }
+
+            $states = @($AtcSources | Where-Object {
+                    $_.Continent.Trim().ToLower() -eq $selectedContinent.Trim().ToLower() -and
+                    $_.Country.Trim().ToLower() -eq $selectedCountry.Trim().ToLower() -and
+                    -not [string]::IsNullOrWhiteSpace($_.'State/Province')
+                } | Select-Object -ExpandProperty 'State/Province' | Sort-Object -Unique)
+
+            if ($states.Count -gt 0) {
+                do {
+                    $selectedState = Select-Item -prompt "Select a state or province from ${selectedCountry}:" -items $states -AllowBack
+                    if ($null -eq $selectedState) {
+                        $selectedCountry = $null
+                        break
+                    }
+
+                    $selectedATC = Select-ATCStream -atcSources $AtcSources -continent $selectedContinent -country $selectedCountry -state $selectedState
+                } while (-not $selectedATC -and $selectedCountry)
+
+                if (-not $selectedCountry) {
+                    continue
+                }
+            }
+            else {
+                $selectedATC = Select-ATCStream -atcSources $AtcSources -continent $selectedContinent -country $selectedCountry
+            }
+        } while (-not $selectedATC)
+    }
+
+    return $selectedATC
+}
+
+Function Resolve-SelectedATCStream {
+    param(
+        [array]$AtcSources,
+        [array]$Favorites,
+        [string]$CsvPath,
+        [string]$FavoritesPath,
+        [string]$ICAO,
+        [int]$NearbyRadius,
+        [string]$Player,
+        [int]$ATCVolume,
+        [int]$LofiVolume,
+        [string]$LofiMusicUrl,
+        [switch]$Nearby,
+        [switch]$ShowMap,
+        [switch]$KeepOpen,
+        [switch]$UseFZF,
+        [switch]$UseFavorite,
+        [switch]$RandomATC,
+        [switch]$IncludeWebcamIfAvailable,
+        [switch]$NoWeather,
+        [switch]$Dark,
+        [switch]$NoLofiMusic,
+        [switch]$PlayLofiGirlVideo
+    )
+
+    $currentUserLocation = $null
+
+    if ($Nearby) {
+        if ($ICAO) {
+            Write-Host "-Nearby switch detected, ignoring -ICAO $ICAO." -ForegroundColor Yellow
+            $ICAO = $null
+        }
+
+        $currentUserLocation = Get-CurrentCoordinates
+        if (-not $currentUserLocation) {
+            Write-Error "Could not determine your location. Please select manually."
+        }
+        else {
+            $locationLabel = if ($currentUserLocation.Source -eq 'Device') {
+                "your current device location"
+            } else {
+                "$($currentUserLocation.City), $($currentUserLocation.Country)"
+            }
+
+            Write-Host "Finding airports near $locationLabel..." -ForegroundColor Green
+
+            $sortedAirports = Get-NearbyAirports -UserLocation $currentUserLocation -AtcSources $AtcSources -Radius $NearbyRadius
+
+            if (-not $ShowMap) {
+                if ($sortedAirports.Count -eq 0) {
+                    Write-Error "No LiveATC streams found near your location."
+                }
+                else {
+                    $choices = $sortedAirports | ForEach-Object {
+                        "[{0}] {1}, {2} ({3}km away)" -f $_.ICAO, $_.Name, $_.City, ([math]::Round($_.Distance))
+                    }
+
+                    $prompt = "Select a nearby airport:"
+                    $selectedChoice = if ($UseFZF) {
+                        Select-ItemFZF -prompt $prompt -items $choices
+                    }
+                    else {
+                        Select-Item -prompt $prompt -items $choices
+                    }
+
+                    if ($selectedChoice -match "^\[(?<icao>\w{4})\]") {
+                        $ICAO = $matches.icao
+                    }
+                    else {
+                        throw "Invalid nearby airport selection."
+                    }
+                }
+            }
+        }
+    }
+
+    $mapSelectedChannelIndex = $null
+
+    if ($ShowMap) {
+        $mapSelection = Select-ATCMap `
+            -AtcSources $AtcSources `
+            -Favorites $Favorites `
+            -CsvPath $CsvPath `
+            -UserLocation $currentUserLocation `
+            -Radius $NearbyRadius `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
+            -NoWeather:$NoWeather `
+            -Dark:$Dark `
+            -KeepOpen:$KeepOpen `
+            -Player $Player `
+            -ATCVolume $ATCVolume `
+            -NoLofiMusic:$NoLofiMusic `
+            -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -LofiMusicUrl $LofiMusicUrl `
+            -LofiVolume $LofiVolume `
+            -StartRandom:$RandomATC `
+            -FavoritesPath $FavoritesPath
+
+        if ($KeepOpen) {
+            exit 0
+        }
+
+        if ($mapSelection -and $mapSelection.ICAO) {
+            $ICAO = $mapSelection.ICAO
+            $mapSelectedChannelIndex = $mapSelection.ChannelIndex
+        }
+    }
+
+    $selectedATC = $null
+
+    if ($ICAO) {
+        $selectedATC = Select-ATCStreamByICAO `
+            -AtcSources $AtcSources `
+            -ICAO $ICAO `
+            -MapSelectedChannelIndex $mapSelectedChannelIndex `
+            -RandomATC:$RandomATC `
+            -UseFZF:$UseFZF `
+            -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable
+    }
+
+    if (-not $selectedATC) {
+        if ($RandomATC) {
+            $selectedATC = Get-RandomATCStream -atcSources $AtcSources
+        }
+        else {
+            if ($UseFavorite) {
+                $selectedATC = Select-FavoriteATC -favorites $Favorites -atcSources $AtcSources -UseFZF:$UseFZF
+            }
+
+            if (-not $selectedATC) {
+                if ($UseFZF) {
+                    $selectedATC = Select-ATCStreamFZF -atcSources $AtcSources
+                }
+                else {
+                    $selectedATC = Select-ATCStreamManually -AtcSources $AtcSources
+                }
+            }
+        }
+    }
+
+    if (-not $selectedATC -or -not $selectedATC.AirportInfo) {
+        throw "No ATC stream was selected."
+    }
+
+    return [pscustomobject]@{
+        SelectedATC         = $selectedATC
+        CurrentUserLocation = $currentUserLocation
+        ICAO                = $ICAO
     }
 }
 
