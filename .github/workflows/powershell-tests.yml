@@ -9,11 +9,17 @@ on:
       - enhancement/**
     paths:
       - 'lofiatc.ps1'
+      - 'install.ps1'
+      - 'modules/**/*.psm1'
+      - 'packaging/**/*.ps*1'
       - 'tests/lofiatc.Tests.ps1'
 
   pull_request:
     paths:
       - 'lofiatc.ps1'
+      - 'install.ps1'
+      - 'modules/**/*.psm1'
+      - 'packaging/**/*.ps*1'
       - 'tests/lofiatc.Tests.ps1'
 
     

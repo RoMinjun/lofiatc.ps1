@@ -57,7 +57,7 @@ Open the FlightAware radar page for the selected ICAO after displaying the welco
 Save the parameters used for the current run to a configuration file.
 
 .PARAMETER ConfigPath
-Optional path for the saved configuration file. Defaults to a file named `config.json` beside the script.
+Optional path for the saved configuration file. Defaults to user data when installed, with repo-local config as a compatibility fallback.
 
 .PARAMETER Nearby
 Shows a list of nearby airports to your current device location (IP as fallback)
@@ -148,7 +148,7 @@ try {
 
     # Load config if specified, then override with any directly provided parameters
     if ($LoadConfig) {
-        if (-not $ConfigPath) { $ConfigPath = Join-Path $scriptDir 'config.json' }
+        if (-not $ConfigPath) { $ConfigPath = Resolve-LofiATCUserFilePath -FileName 'config.json' -ScriptDir $scriptDir }
         Import-LofiATCConfig -ConfigPath $ConfigPath -BoundParameters $PSBoundParameters
     }
 
@@ -182,7 +182,7 @@ try {
 
     # Save config if specified, excluding common PowerShell parameters and any that were directly provided to override config values
     if ($SaveConfig) {
-        if (-not $ConfigPath) { $ConfigPath = Join-Path $scriptDir 'config.json' }
+        if (-not $ConfigPath) { $ConfigPath = Join-Path (Initialize-LofiATCUserDataPath) 'config.json' }
         Export-LofiATCConfig -CommandPath $MyInvocation.MyCommand.Path -ConfigPath $ConfigPath
     }
 
@@ -192,7 +192,7 @@ try {
     # Define paths for CSV files and favorites JSON
     $baseCsv = Join-Path $scriptDir 'atc_sources.csv'
     $liveCsv = Join-Path $scriptDir 'liveatc_sources.csv'
-    $favoritesJson = Join-Path $scriptDir 'favorites.json'
+    $favoritesJson = Resolve-LofiATCUserFilePath -FileName 'favorites.json' -ScriptDir $scriptDir
     $maxFavorites = 10
 
     if (-not $UseBaseCSV -and (Test-Path $liveCsv)) {
@@ -258,4 +258,3 @@ catch {
     Write-Error $_.Exception.Message
     exit 1
 }
-

@@ -91,19 +91,19 @@ Ensure you have the following installed before running the script:
   - Debian based distros: `sudo apt install fzf`
 
 ### Optional preflight check
-After cloning the repo, you can verify required tools and optional integrations with:
+After installing, you can verify required tools and optional integrations with:
 
 ```powershell
-.\lofiatc.ps1 -CheckDependencies
+lofiatc -CheckDependencies
 ```
 
 This prints a dependency report and exits without starting playback.
 
 Useful variations:
 ```powershell
-.\lofiatc.ps1 -CheckDependencies -UseFZF
-.\lofiatc.ps1 -CheckDependencies -ShowMap
-.\lofiatc.ps1 -CheckDependencies -Player VLC
+lofiatc -CheckDependencies -UseFZF
+lofiatc -CheckDependencies -ShowMap
+lofiatc -CheckDependencies -Player VLC
 ```
 
 `-CheckDependencies` reports:
@@ -115,13 +115,38 @@ Useful variations:
 ---
 
 ## Install
-Clone the repository locally to get started:
+Install the `lofiatc` PowerShell command:
+```powershell
+irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | iex
+```
+
+Open a new PowerShell session after installation, then run:
+```powershell
+lofiatc
+```
+
+The installer copies the app files to `$env:LOCALAPPDATA\lofiatc` on Windows and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion:
+```powershell
+Get-Help lofiatc -Full
+lofiatc -Player <Tab>
+lofiatc -LofiGenre <Tab>
+```
+
+Refresh the weekly LiveATC source list:
+```powershell
+lofiatc -UpdateSources
+```
+
+Update the installed app files:
+```powershell
+Update-LofiATC
+```
+
+You can still clone the repository locally for development:
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
 cd lofiatc.ps1
 ```
-> [!IMPORTANT]
-> Keep it updated with `git pull`.
 
 > [!NOTE]
 > If you prefer the older, lightweight `lofiatc.ps1` without the new features, switch to the `legacy` branch in this repository.
@@ -131,7 +156,7 @@ cd lofiatc.ps1
 ## Run
 ### Windows (PowerShell)
 ```powershell
-.\lofiatc.ps1
+lofiatc
 ```
 
 If PowerShell blocks the script, use one of these:
@@ -145,7 +170,7 @@ powershell -ExecutionPolicy Bypass -File .\lofiatc.ps1
 
 ### macOS / Linux (PowerShell Core)
 ```bash
-pwsh ./lofiatc.ps1
+lofiatc
 ```
 > [!TIP]
 > If `pwsh` isn’t in your PATH, install from https://aka.ms/pscore6
@@ -155,50 +180,50 @@ pwsh ./lofiatc.ps1
 ## Usage Recipes
 ```powershell
 # Interactive (auto-detect player, show menus)
-.\lofiatc.ps1
+lofiatc
 
 # Use fuzzy finder to pick an airport, open its radar, tweak volumes
-.\lofiatc.ps1 -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45
+lofiatc -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45
 
 # Load your last-used settings, but override to open radar this time
-.\lofiatc.ps1 -LoadConfig -OpenRadar
+lofiatc -LoadConfig -OpenRadar
 
 # Force a specific player
-.\lofiatc.ps1 -Player mpv
-.\lofiatc.ps1 -Player vlc
+lofiatc -Player mpv
+lofiatc -Player vlc
 
 # Open the interactive ATC map in your browser
-.\lofiatc.ps1 -ShowMap
+lofiatc -ShowMap
 
 # Open the map faster by skipping live weather fetch
-.\lofiatc.ps1 -ShowMap -NoWeather
+lofiatc -ShowMap -NoWeather
 
 # Open the map in dark mode
-.\lofiatc.ps1 -ShowMap -Dark
+lofiatc -ShowMap -Dark
 
 # Show the map centered around your current location, with nearby airport context
-.\lofiatc.ps1 -ShowMap -Nearby
+lofiatc -ShowMap -Nearby
 
 # Open the map and include webcam-enabled feeds where available
-.\lofiatc.ps1 -ShowMap -IncludeWebcamIfAvailable
+lofiatc -ShowMap -IncludeWebcamIfAvailable
 
 # Nearby airport selection without the map
-.\lofiatc.ps1 -Nearby
+lofiatc -Nearby
 
 # Nearby airport selection with a custom radius in kilometers
-.\lofiatc.ps1 -Nearby -NearbyRadius 250
+lofiatc -Nearby -NearbyRadius 250
 
 # Check required and optional dependencies without starting playback
-.\lofiatc.ps1 -CheckDependencies
+lofiatc -CheckDependencies
 
 # Check dependencies for the fzf flow
-.\lofiatc.ps1 -CheckDependencies -UseFZF
+lofiatc -CheckDependencies -UseFZF
 
 # Check dependencies for the map flow
-.\lofiatc.ps1 -CheckDependencies -ShowMap
+lofiatc -CheckDependencies -ShowMap
 
 # Check whether a specific player is available
-.\lofiatc.ps1 -CheckDependencies -Player VLC
+lofiatc -CheckDependencies -Player VLC
 ```
 
 > [!TIP]
@@ -207,6 +232,7 @@ pwsh ./lofiatc.ps1
 To explore all features:
 ```powershell
 Get-Help .\lofiatc.ps1 -Full
+Get-Help lofiatc -Full
 ```
 
 <br>
@@ -221,9 +247,9 @@ Get-Help .\lofiatc.ps1 -Full
 | `-OpenRadar`    | switch    | false   | Opens the selected airport’s FlightAware radar in your browser. |
 | `-ATCVolume`    | int 0–100 | `65`    | ATC stream volume. |
 | `-LofiVolume`   | int 0–100 | `50`    | Lofi Girl volume. |
-| `-SaveConfig`   | switch    | false   | Saves the current flags/values to `config.json`. |
-| `-LoadConfig`   | switch    | false   | Loads options from `config.json`. CLI flags override loaded values. |
-| `-ConfigPath`   | string    | `./config.json` | Custom path for saving/loading. |
+| `-SaveConfig`   | switch    | false   | Saves the current flags/values to your user `config.json`. |
+| `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
+| `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
 | `-ICAO`         | string    | none    | Select a specific airport by ICAO code. If multiple channels exist, you’ll be prompted unless `-RandomATC` is used. |
 | `-Nearby`       | switch    | false   | Uses your current location to show or select nearby airports. |
@@ -234,6 +260,7 @@ Get-Help .\lofiatc.ps1 -Full
 | `-NoLofiMusic`  | switch    | false   | Disables the lofi stream and only plays ATC audio. |
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
+| `-UpdateSources` | switch | false | Refreshes the installed `liveatc_sources.csv` and exits. Available from the installed `lofiatc` command. |
 
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
@@ -245,24 +272,28 @@ Easily persist your favorite command-line options and reuse them across sessions
 
 **Save your settings**
 ```powershell
-.\lofiatc.ps1 -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45 -SaveConfig
+lofiatc -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45 -SaveConfig
 ```
 
 **Load saved settings**
 ```powershell
-.\lofiatc.ps1 -LoadConfig
+lofiatc -LoadConfig
 ```
 
 **Custom file path**
 ```powershell
-.\lofiatc.ps1 -LoadConfig -ConfigPath "C:\work\lofiatc.json"
+lofiatc -LoadConfig -ConfigPath "C:\work\lofiatc.json"
 ```
 
 **Command-line overrides**
 Even if your config has `OpenRadar: false`, you can re-enable it with:
 ```powershell
-.\lofiatc.ps1 -LoadConfig -OpenRadar
+lofiatc -LoadConfig -OpenRadar
 ```
+
+By default, installed runs store `config.json` and `favorites.json` in your user data folder:
+- Windows: `$env:APPDATA\lofiatc`
+- macOS/Linux: `$XDG_CONFIG_HOME/lofiatc` or `~/.config/lofiatc`
 
 **Example `config.json`**
 ```json
@@ -278,7 +309,7 @@ Even if your config has `OpenRadar: false`, you can re-enable it with:
 <br>
 
 ## Favorites
-Each time you select a stream, its ICAO and channel are recorded in `favorites.json` beside the script. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries.
+Each time you select a stream, its ICAO and channel are recorded in your user `favorites.json`. The file tracks how many times you've listened to each stream and keeps the ten most frequently used entries.
 
 - Use `-UseFavorite` to pick from this list (combine with `-UseFZF` to search within favorites).
 - Streams chosen with `-RandomATC` aren't saved to the favorites list.
@@ -309,7 +340,8 @@ The script reads ATC streams from `atc_sources.csv`.
 > [!IMPORTANT]
 > ~~Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix.~~ A workaround is to use [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), but to keep it stealthy each request would take around 8 seconds (So it can take up hours to fully update the sources). So I wouldn't recommend trying to update yourself anymore. Instead I'll publish a more recent version every now and then. But if you really wish to update yourself, check the steps below.
 
-- Run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. By default it'll be called `liveatc_sources.csv`. This overrides the current `liveatc_sources.csv` file.
+- Run `lofiatc -UpdateSources` to refresh the installed weekly `liveatc_sources.csv`.
+- For development, run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. By default it'll be called `liveatc_sources.csv`. This overrides the current `liveatc_sources.csv` file.
 - If a locally updated CSV exists, it is **preferred** over the `liveatc_sources.csv`.  
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
 
@@ -334,8 +366,8 @@ If `-Player` is not specified, the script auto-detects a supported player.
 
 Force a specific player any time:
 ```powershell
-.\lofiatc.ps1 -Player mpv
-.\lofiatc.ps1 -Player vlc
+lofiatc -Player mpv
+lofiatc -Player vlc
 ```
 
 <br>
@@ -354,11 +386,11 @@ Use `-ShowMap` to open an interactive browser map of all available ATC sources.
 
 ### Useful combinations
 ```powershell
-.\lofiatc.ps1 -ShowMap
-.\lofiatc.ps1 -ShowMap -NoWeather
-.\lofiatc.ps1 -ShowMap -Dark
-.\lofiatc.ps1 -ShowMap -Nearby -NearbyRadius 300
-.\lofiatc.ps1 -ShowMap -IncludeWebcamIfAvailable
+lofiatc -ShowMap
+lofiatc -ShowMap -NoWeather
+lofiatc -ShowMap -Dark
+lofiatc -ShowMap -Nearby -NearbyRadius 300
+lofiatc -ShowMap -IncludeWebcamIfAvailable
 ```
 
 <br>
@@ -367,7 +399,7 @@ Use `-ShowMap` to open an interactive browser map of all available ATC sources.
 Use `-CheckDependencies` to verify the current environment before running the full script.
 
 ```powershell
-.\lofiatc.ps1 -CheckDependencies
+lofiatc -CheckDependencies
 ```
 
 ### What it checks
@@ -412,15 +444,19 @@ Use `-CheckDependencies` to verify the current environment before running the fu
 - **Map selection feels stuck:** return to the terminal and press `Q` to cancel the map selection flow.
 - **Nearby airport lookup fails:** location access may be unavailable on your device; the script falls back to IP-based lookup, which is approximate.
 - **No nearby airports found:** try increasing `-NearbyRadius`, for example `-NearbyRadius 1000`.
-- **Not sure what is missing on your system?** Run `.\lofiatc.ps1 -CheckDependencies` to print a dependency report without starting playback.
+- **Not sure what is missing on your system?** Run `lofiatc -CheckDependencies` to print a dependency report without starting playback.
 
 <br>
 
 ## Clean Up / Uninstall
-You can safely delete the repo folder. Optional user files created:
-- `favorites.json`
-- `config.json`
-- locally updated `liveatc_sources.csv`
+Run the installer with `-Uninstall` to remove the installed app files and PowerShell module:
+```powershell
+& "$env:LOCALAPPDATA\lofiatc\install.ps1" -Uninstall
+```
+
+User data is left intact by default:
+- `$env:APPDATA\lofiatc\favorites.json`
+- `$env:APPDATA\lofiatc\config.json`
 
 <br>
 
