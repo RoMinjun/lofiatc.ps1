@@ -1,5 +1,4 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
-
 Function Get-METAR-TAF {
     param (
         [string]$ICAO,
@@ -87,7 +86,6 @@ Function Get-METAR-TAF {
 }
 
 # Function to decode METAR string into a structured object
-
 Function ConvertFrom-METAR {
     param (
         [string]$metar
@@ -184,7 +182,6 @@ Function ConvertFrom-METAR {
 }
 
 # Function to calculate the age of a METAR report in minutes based on the timestamp in the METAR string, returning null if the timestamp is missing or invalid
-
 Function Get-METARAgeMinutes {
     param(
         [string]$Metar
@@ -229,7 +226,6 @@ Function Get-METARAgeMinutes {
 }
 
 # Function to convert an IANA timezone ID to a .NET TimeZoneInfo object, with fallback mapping for common timezones
-
 Function ConvertTo-TimeZoneInfo {
     param(
         [string]$IanaId
@@ -249,7 +245,6 @@ Function ConvertTo-TimeZoneInfo {
 }
 
 # Function to fetch airport information from a cached dataset, loading it from a remote source if not already loaded, and return the info for a given ICAO code
-
 Function Get-AirportInfo {
     param(
         [string]$ICAO
@@ -272,7 +267,6 @@ Function Get-AirportInfo {
 }
 
 # Function to get the local date and time at an airport based on its ICAO code, using the airport's timezone information and handling errors gracefully
-
 Function Get-AirportDateTime {
     param ([string]$ICAO)
     try {
@@ -290,7 +284,6 @@ Function Get-AirportDateTime {
 }
 
 # Function to get the sunrise and sunset times for an airport based on its ICAO code, using the airport's geographic coordinates and timezone information
-
 Function Get-AirportSunriseSunset {
     param (
         [string]$ICAO
@@ -320,7 +313,6 @@ Function Get-AirportSunriseSunset {
 }
 
 # Function to determine how long ago the METAR report was updated based on the timestamp in the METAR string, handling time zone and date rollovers correctly
-
 Function Get-METAR-LastUpdatedTime {
     param (
         [string]$ICAO,
@@ -360,7 +352,6 @@ Function Get-METAR-LastUpdatedTime {
 }
 
 # Function to display a welcome message with airport information
-
 Function Get-MapWeatherData {
     param(
         [array]$AtcSources,

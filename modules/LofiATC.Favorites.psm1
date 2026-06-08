@@ -1,5 +1,4 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
-
 Function Get-Favorite {
     param([string]$path)
 
@@ -42,7 +41,6 @@ Function Get-Favorite {
 }
 
 # Function to save favorites back to the JSON file
-
 Function Save-Favorite {
     param([array]$favorites, [string]$path)
 
@@ -57,7 +55,6 @@ Function Save-Favorite {
 }
 
 # Function to add or update a favorite entry
-
 Function Add-Favorite {
     param(
         [string]$path,
@@ -89,7 +86,6 @@ Function Add-Favorite {
 }
 
 # Function to remove a favorite entry
-
 Function Remove-Favorite {
     param(
         [string]$path,
@@ -118,7 +114,6 @@ Function Remove-Favorite {
 }
 
 # Function to open the FlightAware radar page for a given ICAO code
-
 Function Select-FavoriteATC {
     param(
         [array]$favorites,
@@ -173,5 +168,3 @@ Function Select-FavoriteATC {
         return $null
     }
 }
-
-# Generic function to display a list of items and prompt the user to select one, with optional back navigation

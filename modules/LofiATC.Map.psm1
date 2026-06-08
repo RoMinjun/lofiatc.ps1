@@ -1,5 +1,4 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
-
 Function Invoke-MapChannelSelection {
     param(
         [hashtable]$Selection,
@@ -100,7 +99,6 @@ Function Invoke-MapChannelSelection {
 }
 
 # Function to handle various playback actions from the interactive map, such as stopping the ATC stream, stopping all media, restarting the current stream, or selecting a random stream
-
 Function Invoke-MapPlaybackAction {
     param(
         [string]$Action,
@@ -472,7 +470,6 @@ Function Invoke-MapPlaybackAction {
 }
 
 # Function to get a list of nearby airports within a specified radius
-
 Function Remove-StaleATCMapFiles {
     param(
         [int]$MaxAgeHours = 24
@@ -500,7 +497,6 @@ Function Remove-StaleATCMapFiles {
 
 # Function to generate and display an interactive ATC map based on the provided sources
 # user location, and preferences, and handle the selection of an ATC stream from the map
-
 Function Select-ATCMap {
     param (
         [array]$AtcSources,
@@ -607,7 +603,6 @@ Function Select-ATCMap {
 }
 
 # Resolves the external HTML template used by New-ATCMapHtml.
-
 Function Get-ATCMapHtmlTemplatePath {
     $scriptRoot = if ($PSScriptRoot) {
         $PSScriptRoot
@@ -626,7 +621,6 @@ Function Get-ATCMapHtmlTemplatePath {
 }
 
 # Converts a string to be safely embedded in JavaScript code by escaping special characters.
-
 Function ConvertTo-JsSafeString {
     param(
         [AllowNull()]
@@ -646,7 +640,6 @@ Function ConvertTo-JsSafeString {
 }
 
 # Converts a string to be safely embedded in HTML content by encoding special characters.
-
 Function ConvertTo-HtmlSafeString {
     param(
         [AllowNull()]
@@ -661,7 +654,6 @@ Function ConvertTo-HtmlSafeString {
 }
 
 # Generates an unguessable token used to bind browser map controls to the current local session.
-
 Function New-MapControlToken {
     $bytes = [byte[]]::new(32)
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -690,7 +682,6 @@ Function Test-MapControlToken {
 }
 
 # Fetches METAR data for all ICAOs in the provided sources, including fallbacks, and returns a map of ICAO to weather data and a map of ICAOs to their fallback lists.
-
 Function ConvertTo-MapMarkers {
     param(
         [array]$AtcSources,
@@ -909,7 +900,6 @@ Function ConvertTo-MapMarkers {
 # Generates the HTML content for the ATC map, embedding the provided JavaScript array of markers, user location, and other settings, 
 # then saves it to a temporary file and opens it in the default web browser. 
 # It also listens for channel selection events from the map and returns the selected ICAO and channel description.
-
 Function New-ATCMapHtml {
     param(
         [string]$JsArray,
@@ -1138,7 +1128,6 @@ Function Start-ATCMapServer {
 # Listens for incoming HTTP requests from the ATC map, waiting for a user to click on a channel.
 # It returns the selected ICAO code and channel description as a hashtable. The function also handles timeout
 # and optional cancellation via 'Q' key press when an interactive console is available.
-
 Function Select-ATCFromMap {
     param(
         [System.Net.HttpListener]$Listener,
@@ -1248,7 +1237,6 @@ Function Select-ATCFromMap {
 # Function to start a persistent session that continues to listen for map channel selections 
 # until the user cancels (via 'Q' key or closing the window). Each time a selection is made
 # it invokes the channel selection logic and updates the currently playing ATC stream accordingly.
-
 Function Start-PersistentATCMapSession {
     param(
         [System.Net.HttpListener]$Listener,

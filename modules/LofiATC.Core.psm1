@@ -1,5 +1,4 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
-
 Function Get-LofiATCGenreMap {
     return @{
         "Chillhop"      = "https://youtu.be/X4VbdwhkE10" # Lofi Girl original
@@ -162,7 +161,6 @@ Function Test-ConsoleKeyAvailable {
 }
 
 # Function to determine whether console key polling is safe in the current host/session
-
 Function Test-InteractiveConsoleAvailable {
     try {
         if ([Console]::IsInputRedirected -or [Console]::IsOutputRedirected) {
@@ -178,7 +176,6 @@ Function Test-InteractiveConsoleAvailable {
 }
 
 # Function to read a key from the console, with an option to intercept (not display) the key press
-
 Function Read-ConsoleKey {
     param(
         [switch]$Intercept
@@ -187,7 +184,6 @@ Function Read-ConsoleKey {
 }
 
 # Function to check the default application for .mp4
-
 Function Get-CurrentCoordinates {
     Write-Verbose "Attempting to load System.Device assembly..."
     $location = $null
@@ -257,7 +253,6 @@ Function Get-CurrentCoordinates {
 }
 
 # Helper function for IP-based fallback
-
 Function Get-IPLocation {
     try {
         $uri = "https://ipapi.co/json/"
@@ -286,7 +281,6 @@ Function Get-IPLocation {
 }
 
 # Function to determine the appropriate player based on user input, system defaults, and availability in PATH
-
 Function Import-ATCSource {
     param (
         [string]$csvPath
@@ -344,7 +338,6 @@ Function Open-Radar {
 }
 
 # Select a favorite ATC stream from the favorites list, showing play counts and channel info, and return the stream details if selected
-
 Function Select-Item {
     param (
         [string]$prompt,
@@ -378,7 +371,6 @@ Function Select-Item {
 }
 
 # Function to use fzf for item selection, returning the selected item or exiting if no selection is made
-
 Function Select-ItemFZF {
     param (
         [string]$prompt,
@@ -396,7 +388,6 @@ Function Select-ItemFZF {
 
 # Function to select an ATC stream based on continent, country, and optionally state/province, 
 # with support for webcam availability indication and channel selection if multiple channels exist for the same airport
-
 Function Select-ATCStream {
     param (
         [array]$atcSources, 
@@ -468,7 +459,6 @@ Function Select-ATCStream {
 }
 
 # Function to select an ATC stream using fzf for filtering, showing webcam availability and channel info in the selection list
-
 Function Select-ATCStreamFZF {
     param (
         [array]$atcSources
@@ -507,7 +497,6 @@ Function Select-ATCStreamFZF {
 }
 
 # Function to select a random ATC stream from the list of sources, optionally filtered by ICAO code if specified, and return the stream details
-
 Function Get-RandomATCStream {
     param (
         [array]$atcSources
@@ -778,7 +767,6 @@ Function Resolve-SelectedATCStream {
 }
 
 # Function to calculate the distance in kilometers between two sets of latitude and longitude coordinates using the Haversine formula
-
 Function Get-DistanceKm {
     param (
         [double]$Lat1,
@@ -796,7 +784,6 @@ Function Get-DistanceKm {
 }
 
 # Function to convert a distance in kilometers to nautical miles, with optional rounding to a specified number of decimal places
-
 Function ConvertTo-NauticalMiles {
     param(
         [double]$Kilometers,
@@ -808,7 +795,6 @@ Function ConvertTo-NauticalMiles {
 }
 
 # Function to fetch METAR and TAF data for a given ICAO code, with fallback options
-
 Function Write-Welcome {
     param (
         [object]$airportInfo,
@@ -937,7 +923,6 @@ Function Write-Welcome {
 }
 
 # Function to get the appropriate VLC volume argument based on the operating system and audio module
-
 Function Get-NearbyAirports {
     param (
         [object]$UserLocation,
@@ -968,7 +953,6 @@ Function Get-NearbyAirports {
 }
 
 # Removes old temporary LofiATC map files from the temp directory
-
 Function Add-DependencyResult {
     param(
         [string]$Name,

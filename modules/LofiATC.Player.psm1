@@ -31,7 +31,6 @@ Function Get-DefaultAppForMP4 {
 }
 
 # Main function to get user's location
-
 Function Resolve-Player {
     param(
         [string]$ExplicitPlayer
@@ -127,7 +126,6 @@ Function Resolve-Player {
 }
 
 # Function to resolve links correctly
-
 Function Resolve-StreamUrl {
     param([string]$url)
 
@@ -180,7 +178,6 @@ Function Resolve-StreamUrl {
 }
 
 # Function to check if the selected player is available
-
 Function Test-Player {
     param (
         [string]$player
@@ -223,7 +220,6 @@ Function Test-Player {
 }
 
 # Function to load the ATC sources from the CSV file
-
 Function Get-VLCVolumeArg {
     param (
         [int]$volume,
@@ -274,7 +270,6 @@ Function Get-VLCVolumeArg {
 }
 
 # Function to start a media player with the specified URL and arguments
-
 Function Start-Player {
     [CmdletBinding(
         SupportsShouldProcess = $true,
@@ -436,7 +431,6 @@ Function Start-LofiATCSession {
 
 # Function to start a media player process and return the process object for later management
 # with support for different players and argument configurations
-
 Function Start-PlayerProcess {
     [CmdletBinding()]
     param (
@@ -539,7 +533,6 @@ Function Start-PlayerProcess {
 
 # Function to stop a media player process gracefully
 # with error handling to avoid issues if the process has already exited or cannot be stopped
-
 Function Stop-ManagedProcess {
     param(
         [System.Diagnostics.Process]$Process
@@ -561,7 +554,6 @@ Function Stop-ManagedProcess {
 
 # Function to check if a media player process is still running, with error handling to account
 # for cases where the process may have already exited or is not accessible
-
 Function Test-ManagedProcessAlive {
     param(
         [System.Diagnostics.Process]$Process
@@ -578,7 +570,3 @@ Function Test-ManagedProcessAlive {
         return $false
     }
 }
-
-# Function to handle the selection of an ATC stream from the interactive map
-# starting the appropriate media player processes for the ATC audio
-# and webcam (if available and selected), and returning the details of the selected stream
