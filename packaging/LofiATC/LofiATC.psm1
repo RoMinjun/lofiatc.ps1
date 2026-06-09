@@ -159,7 +159,8 @@ Function Update-LofiATC {
     [CmdletBinding()]
     param(
         [string]$InstallRoot = (Get-LofiATCInstallRoot),
-        [string]$Ref = 'main'
+        [string]$Ref = 'main',
+        [string]$Repository = 'RoMinjun/lofiatc.ps1'
     )
 
     $gitDir = Join-Path $InstallRoot '.git'
@@ -168,13 +169,19 @@ Function Update-LofiATC {
         return
     }
 
-    $installScript = Join-Path $InstallRoot 'install.ps1'
-    if (Test-Path $installScript) {
-        & $installScript -InstallRoot $InstallRoot -Ref $Ref
+    $tempInstaller = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
+    $installerUrl = "https://raw.githubusercontent.com/$Repository/$Ref/install.ps1"
+
+    try {
+        Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
+        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository
         return
     }
-
-    throw "Cannot update app files automatically. Re-run the lofiatc install.ps1 installer."
+    finally {
+        if (Test-Path $tempInstaller) {
+            Remove-Item -Path $tempInstaller -Force
+        }
+    }
 }
 
 Function lofiatc {

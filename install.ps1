@@ -12,6 +12,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:LofiATCIsWindows = $env:OS -eq 'Windows_NT'
 
 Function Get-DefaultInstallRoot {
     if ($env:LOCALAPPDATA) {
@@ -19,10 +20,6 @@ Function Get-DefaultInstallRoot {
     }
 
     return (Join-Path $HOME '.local/share/lofiatc')
-}
-
-Function Test-LofiATCWindows {
-    return $env:OS -eq 'Windows_NT'
 }
 
 Function Get-DefaultModuleRoot {
@@ -39,7 +36,7 @@ Function Get-DefaultModuleRoot {
 }
 
 Function Get-DefaultShellShimPath {
-    if (Test-LofiATCWindows) {
+    if ($script:LofiATCIsWindows) {
         return $null
     }
 
@@ -198,7 +195,7 @@ if ($shadowingCommands.Count -gt 0) {
     }
 }
 
-if (-not (Test-LofiATCWindows) -and -not $SkipShellShim) {
+if (-not $script:LofiATCIsWindows -and -not $SkipShellShim) {
     Install-LofiATCShellShim -ShimPath $ShellShimPath -TargetScriptPath (Join-Path $InstallRoot 'lofiatc.ps1')
 }
 
@@ -208,7 +205,7 @@ if ($tempRoot -and (Test-Path $tempRoot)) {
 
 Write-Host "Installed lofiatc app files to $InstallRoot"
 Write-Host "Installed PowerShell command module to $ModuleRoot"
-if (Test-LofiATCWindows) {
+if ($script:LofiATCIsWindows) {
     Write-Host "Open a new PowerShell session, then run: lofiatc"
 }
 else {
