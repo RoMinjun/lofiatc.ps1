@@ -671,6 +671,7 @@ Function Resolve-SelectedATCStream {
         [array]$AtcSources,
         [array]$Favorites,
         [string]$CsvPath,
+        [string]$ScriptDir,
         [string]$FavoritesPath,
         [string]$ICAO,
         [int]$NearbyRadius,
@@ -749,6 +750,7 @@ Function Resolve-SelectedATCStream {
             -AtcSources $AtcSources `
             -Favorites $Favorites `
             -CsvPath $CsvPath `
+            -ScriptDir $ScriptDir `
             -UserLocation $currentUserLocation `
             -Radius $NearbyRadius `
             -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `

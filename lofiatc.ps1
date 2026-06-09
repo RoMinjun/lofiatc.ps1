@@ -216,6 +216,7 @@ try {
         -AtcSources $atcSources `
         -Favorites $favorites `
         -CsvPath $csvPath `
+        -ScriptDir $scriptDir `
         -FavoritesPath $favoritesJson `
         -ICAO $ICAO `
         -NearbyRadius $NearbyRadius `
