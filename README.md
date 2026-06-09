@@ -125,16 +125,29 @@ Open a new PowerShell session after installation, then run:
 lofiatc
 ```
 
-The installer copies the app files to `$env:LOCALAPPDATA\lofiatc` on Windows and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion:
+The installer copies the app files to a per-user install directory and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion on Windows, macOS, and Linux:
 ```powershell
 Get-Help lofiatc -Full
 lofiatc -Player <Tab>
 lofiatc -LofiGenre <Tab>
 ```
 
+Install locations:
+- Windows app files: `$env:LOCALAPPDATA\lofiatc`
+- macOS/Linux app files: `~/.local/share/lofiatc`
+- macOS/Linux shell launcher: `~/.local/bin/lofiatc`
+
+On macOS/Linux, the shell launcher lets you run `lofiatc` from bash/zsh/fish. PowerShell-native help and rich tab completion are available inside `pwsh`.
+
 Refresh the weekly LiveATC source list:
 ```powershell
 lofiatc -UpdateSources
+```
+
+When sources change, the update prints added and removed entries compared to the previously installed `liveatc_sources.csv`. By default it shows up to 50 added and 50 removed entries:
+```powershell
+lofiatc -UpdateSources -SourceDiffLimit 100
+lofiatc -UpdateSources -SourceDiffLimit 0   # show all changes
 ```
 
 Update the installed app files:
@@ -146,6 +159,11 @@ You can still clone the repository locally for development:
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
 cd lofiatc.ps1
+```
+
+To test an installer branch before it is merged to `main`, pass the same branch name as `-Ref`:
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref feature/install-module-command
 ```
 
 > [!NOTE]
@@ -261,6 +279,7 @@ Get-Help lofiatc -Full
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
 | `-UpdateSources` | switch | false | Refreshes the installed `liveatc_sources.csv` and exits. Available from the installed `lofiatc` command. |
+| `-SourceDiffLimit` | int | `50` | Limits added/removed source rows printed by `-UpdateSources`. Use `0` to show all. |
 
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
@@ -340,7 +359,7 @@ The script reads ATC streams from `atc_sources.csv`.
 > [!IMPORTANT]
 > ~~Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix.~~ A workaround is to use [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), but to keep it stealthy each request would take around 8 seconds (So it can take up hours to fully update the sources). So I wouldn't recommend trying to update yourself anymore. Instead I'll publish a more recent version every now and then. But if you really wish to update yourself, check the steps below.
 
-- Run `lofiatc -UpdateSources` to refresh the installed weekly `liveatc_sources.csv`.
+- Run `lofiatc -UpdateSources` to refresh the installed weekly `liveatc_sources.csv`. The command prints added and removed sources compared to the currently installed CSV.
 - For development, run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. By default it'll be called `liveatc_sources.csv`. This overrides the current `liveatc_sources.csv` file.
 - If a locally updated CSV exists, it is **preferred** over the `liveatc_sources.csv`.  
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
@@ -422,7 +441,8 @@ lofiatc -CheckDependencies
 <br>
 
 ## Platform Notes
-- **macOS/Linux:** Run with `pwsh`. On these platforms the script auto-detects **mpv** or **vlc** when `-Player` is omitted.
+- **macOS/Linux:** The installer creates a `~/.local/bin/lofiatc` launcher for normal shells and installs the `LofiATC` PowerShell module for `pwsh`. On these platforms the script auto-detects **mpv** or **vlc** when `-Player` is omitted.
+- **macOS/Linux PATH:** If `~/.local/bin` is not in `PATH`, add it to your shell profile to run `lofiatc` from bash/zsh/fish.
 - **Windows Execution Policy:** If execution is blocked, use:
   ```powershell
   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
@@ -445,6 +465,7 @@ lofiatc -CheckDependencies
 - **Nearby airport lookup fails:** location access may be unavailable on your device; the script falls back to IP-based lookup, which is approximate.
 - **No nearby airports found:** try increasing `-NearbyRadius`, for example `-NearbyRadius 1000`.
 - **Not sure what is missing on your system?** Run `lofiatc -CheckDependencies` to print a dependency report without starting playback.
+- **Tab completion does not show `lofiatc` parameters:** run `Get-Command lofiatc -All`. If an older `lofiatc.cmd`, `.exe`, or `.ps1` appears before the `LofiATC` function, remove the older command or add `Import-Module LofiATC` to your PowerShell profile.
 
 <br>
 
@@ -457,6 +478,8 @@ Run the installer with `-Uninstall` to remove the installed app files and PowerS
 User data is left intact by default:
 - `$env:APPDATA\lofiatc\favorites.json`
 - `$env:APPDATA\lofiatc\config.json`
+
+On macOS/Linux, the uninstaller also removes the `~/.local/bin/lofiatc` shell launcher when it was installed at the default path.
 
 <br>
 
