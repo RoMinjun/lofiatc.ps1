@@ -7,6 +7,7 @@ param(
     [string]$Repository = 'RoMinjun/lofiatc.ps1',
     [string]$SourcePath,
     [switch]$SkipShellShim,
+    [switch]$SkipPowerShellProfile,
     [switch]$Uninstall
 )
 
@@ -86,6 +87,65 @@ exec pwsh -NoProfile -File $quotedTarget "`$@"
     Write-Host "Installed shell launcher to $ShimPath"
 }
 
+Function Get-LofiATCPowerShellProfilePath {
+    if ($PROFILE -and $PROFILE.PSObject.Properties['CurrentUserCurrentHost']) {
+        return [string]$PROFILE.CurrentUserCurrentHost
+    }
+
+    return [string]$PROFILE
+}
+
+Function Install-LofiATCPowerShellProfileImport {
+    param([string]$ProfilePath)
+
+    if (-not $ProfilePath) {
+        return
+    }
+
+    $profileDir = Split-Path -Parent $ProfilePath
+    if ($profileDir -and -not (Test-Path $profileDir)) {
+        New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+    }
+
+    $profileContent = if (Test-Path $ProfilePath) {
+        Get-Content -Path $ProfilePath -Raw
+    }
+    else {
+        ''
+    }
+
+    if ($profileContent -match '(?m)^# >>> lofiatc module import$') {
+        Write-Host "PowerShell profile already imports LofiATC: $ProfilePath"
+        return
+    }
+
+    $profileBlock = @'
+
+# >>> lofiatc module import
+Import-Module LofiATC -ErrorAction SilentlyContinue
+# <<< lofiatc module import
+'@
+
+    Add-Content -Path $ProfilePath -Value $profileBlock
+    Write-Host "Added LofiATC import to PowerShell profile: $ProfilePath"
+}
+
+Function Remove-LofiATCPowerShellProfileImport {
+    param([string]$ProfilePath)
+
+    if (-not $ProfilePath -or -not (Test-Path $ProfilePath)) {
+        return
+    }
+
+    $profileContent = Get-Content -Path $ProfilePath -Raw
+    $updatedContent = $profileContent -replace '(?s)\r?\n?# >>> lofiatc module import\r?\nImport-Module LofiATC -ErrorAction SilentlyContinue\r?\n# <<< lofiatc module import\r?\n?', "`r`n"
+
+    if ($updatedContent -ne $profileContent) {
+        Set-Content -Path $ProfilePath -Value $updatedContent
+        Write-Host "Removed LofiATC import from PowerShell profile: $ProfilePath"
+    }
+}
+
 if (-not $InstallRoot) {
     $InstallRoot = Get-DefaultInstallRoot
 }
@@ -98,10 +158,16 @@ if (-not $ShellShimPath) {
     $ShellShimPath = Get-DefaultShellShimPath
 }
 
+$powerShellProfilePath = Get-LofiATCPowerShellProfilePath
+
 if ($Uninstall) {
     if (Test-Path $ModuleRoot) {
         Remove-Item -Path $ModuleRoot -Recurse -Force
         Write-Host "Removed PowerShell module: $ModuleRoot"
+    }
+
+    if (-not $SkipPowerShellProfile) {
+        Remove-LofiATCPowerShellProfileImport -ProfilePath $powerShellProfilePath
     }
 
     if ($ShellShimPath -and (Test-Path $ShellShimPath)) {
@@ -124,7 +190,8 @@ $runtimeFiles = @(
     'liveatc_sources.csv',
     'modules',
     'templates',
-    'install.ps1'
+    'install.ps1',
+    'uninstall.ps1'
 )
 
 $tempRoot = $null
@@ -193,6 +260,10 @@ if ($shadowingCommands.Count -gt 0) {
         $location = if ($command.Path) { $command.Path } else { $command.Source }
         Write-Warning "Conflicting command: $($command.CommandType) $($command.Name) $location"
     }
+}
+
+if (-not $SkipPowerShellProfile) {
+    Install-LofiATCPowerShellProfileImport -ProfilePath $powerShellProfilePath
 }
 
 if (-not $script:LofiATCIsWindows -and -not $SkipShellShim) {

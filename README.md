@@ -139,6 +139,8 @@ Install locations:
 
 On macOS/Linux, the shell launcher lets you run `lofiatc` from bash/zsh/fish. PowerShell-native help and rich tab completion are available inside `pwsh`.
 
+The installer also adds a marked `Import-Module LofiATC` line to your PowerShell profile so `lofiatc` resolves to the module function in new `pwsh` sessions. Use `-SkipPowerShellProfile` if you prefer to manage profile imports yourself.
+
 Refresh the weekly LiveATC source list:
 ```powershell
 lofiatc -UpdateSources
@@ -443,6 +445,7 @@ lofiatc -CheckDependencies
 ## Platform Notes
 - **macOS/Linux:** The installer creates a `~/.local/bin/lofiatc` launcher for normal shells and installs the `LofiATC` PowerShell module for `pwsh`. On these platforms the script auto-detects **mpv** or **vlc** when `-Player` is omitted.
 - **macOS/Linux PATH:** If `~/.local/bin` is not in `PATH`, add it to your shell profile to run `lofiatc` from bash/zsh/fish.
+- **PowerShell profile:** The installer adds `Import-Module LofiATC` to your PowerShell profile so tab completion works even when a shell launcher named `lofiatc` is also on `PATH`.
 - **Windows Execution Policy:** If execution is blocked, use:
   ```powershell
   Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
@@ -470,16 +473,24 @@ lofiatc -CheckDependencies
 <br>
 
 ## Clean Up / Uninstall
-Run the installer with `-Uninstall` to remove the installed app files and PowerShell module:
+Run the uninstaller to remove the installed app files, PowerShell module, profile import, and macOS/Linux shell launcher:
 ```powershell
-& "$env:LOCALAPPDATA\lofiatc\install.ps1" -Uninstall
+& "$env:LOCALAPPDATA\lofiatc\uninstall.ps1"
 ```
 
 User data is left intact by default:
 - `$env:APPDATA\lofiatc\favorites.json`
 - `$env:APPDATA\lofiatc\config.json`
 
-On macOS/Linux, the uninstaller also removes the `~/.local/bin/lofiatc` shell launcher when it was installed at the default path.
+To remove user data too:
+```powershell
+& "$env:LOCALAPPDATA\lofiatc\uninstall.ps1" -RemoveUserData
+```
+
+On macOS/Linux, use the installed path:
+```powershell
+& "$HOME/.local/share/lofiatc/uninstall.ps1"
+```
 
 <br>
 
