@@ -310,7 +310,10 @@ Function Get-IPLocation {
         Write-Verbose "Attempting IP-based geolocation fallback..."
         $location = Invoke-RestMethod -Uri $uri -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
 
-        if ($location.latitude -and $location.longitude) {
+        $hasLatitude = $location.PSObject.Properties['latitude'] -and $null -ne $location.latitude
+        $hasLongitude = $location.PSObject.Properties['longitude'] -and $null -ne $location.longitude
+
+        if ($hasLatitude -and $hasLongitude) {
             Write-Host "Using approximate location based on IP: $($location.city), $($location.country_name)." -ForegroundColor Yellow
             return [pscustomobject]@{
                 Latitude  = [double]$location.latitude

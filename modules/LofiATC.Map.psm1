@@ -807,7 +807,13 @@ Function ConvertTo-MapMarkers {
 
         }
 
-        $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
+        $favoriteMeasure = $Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum
+        $favCount = if ($favoriteMeasure.PSObject.Properties['Sum']) {
+            $favoriteMeasure.Sum
+        }
+        else {
+            0
+        }
         if ($null -eq $favCount) {
             $favCount = 0
         }
