@@ -174,7 +174,7 @@ Function Update-LofiATC {
 
     try {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
-        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository
+        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -SkipPowerShellProfile
         return
     }
     finally {
