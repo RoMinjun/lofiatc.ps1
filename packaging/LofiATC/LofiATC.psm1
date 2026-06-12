@@ -15,6 +15,41 @@ Function Get-LofiATCInstalledScriptPath {
     return (Join-Path $installRoot 'lofiatc.ps1')
 }
 
+Function Get-LofiATCInstallMetadata {
+    param([string]$InstallRoot = (Get-LofiATCInstallRoot))
+
+    $metadataPath = Join-Path $InstallRoot '.lofiatc-install.json'
+    if (-not (Test-Path $metadataPath)) {
+        return $null
+    }
+
+    try {
+        return (Get-Content -Path $metadataPath -Raw | ConvertFrom-Json)
+    }
+    catch {
+        Write-Warning "Could not read LofiATC install metadata at $metadataPath. Falling back to main."
+        return $null
+    }
+}
+
+Function Get-LofiATCInstallRef {
+    $metadata = Get-LofiATCInstallMetadata
+    if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Ref)) {
+        return [string]$metadata.Ref
+    }
+
+    return 'main'
+}
+
+Function Get-LofiATCInstallRepository {
+    $metadata = Get-LofiATCInstallMetadata
+    if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Repository)) {
+        return [string]$metadata.Repository
+    }
+
+    return 'RoMinjun/lofiatc.ps1'
+}
+
 Function Get-LofiATCSourceKey {
     param([pscustomobject]$Source)
 
@@ -126,11 +161,22 @@ Function Update-LofiATCSources {
     [CmdletBinding()]
     param(
         [string]$InstallRoot = (Get-LofiATCInstallRoot),
-        [string]$Ref = 'main',
+        [string]$Ref,
+        [string]$Repository,
         [int]$DiffLimit = 50
     )
 
-    $sourceUrl = "https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/$Ref/liveatc_sources.csv"
+    if ([string]::IsNullOrWhiteSpace($Ref)) {
+        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+        $Ref = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Ref)) { [string]$metadata.Ref } else { 'main' }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Repository)) {
+        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+        $Repository = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Repository)) { [string]$metadata.Repository } else { 'RoMinjun/lofiatc.ps1' }
+    }
+
+    $sourceUrl = "https://raw.githubusercontent.com/$Repository/$Ref/liveatc_sources.csv"
     $targetPath = Join-Path $InstallRoot 'liveatc_sources.csv'
     $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_sources_{0}.csv" -f ([guid]::NewGuid().ToString('N')))
 
@@ -198,6 +244,9 @@ Refreshes liveatc_sources.csv in the installed app directory and exits.
 
 .PARAMETER SourceDiffLimit
 Limits the number of added and removed sources printed by -UpdateSources. Use 0 to show all changes.
+
+.PARAMETER Ref
+Repository ref to use with -UpdateSources. Defaults to the ref recorded by the installer.
 #>
     [CmdletBinding()]
     param (
@@ -233,12 +282,14 @@ Limits the number of added and removed sources printed by -UpdateSources. Use 0 
         [Alias("Persistent")]
         [switch]$KeepOpen,
         [switch]$UpdateSources,
+        [string]$Ref = (Get-LofiATCInstallRef),
+        [string]$Repository = (Get-LofiATCInstallRepository),
         [ValidateRange(0,10000)]
         [int]$SourceDiffLimit = 50
     )
 
     if ($UpdateSources) {
-        Update-LofiATCSources -DiffLimit $SourceDiffLimit
+        Update-LofiATCSources -DiffLimit $SourceDiffLimit -Ref $Ref -Repository $Repository
         return
     }
 
@@ -249,7 +300,7 @@ Limits the number of added and removed sources printed by -UpdateSources. Use 0 
 
     $forwardedParameters = @{}
     foreach ($key in $PSBoundParameters.Keys) {
-        if ($key -ne 'UpdateSources' -and $key -ne 'SourceDiffLimit') {
+        if ($key -ne 'UpdateSources' -and $key -ne 'SourceDiffLimit' -and $key -ne 'Ref' -and $key -ne 'Repository') {
             $forwardedParameters[$key] = $PSBoundParameters[$key]
         }
     }

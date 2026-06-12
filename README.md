@@ -152,6 +152,11 @@ lofiatc -UpdateSources -SourceDiffLimit 100
 lofiatc -UpdateSources -SourceDiffLimit 0   # show all changes
 ```
 
+Source updates use the repository ref recorded during install. You can override it explicitly:
+```powershell
+lofiatc -UpdateSources -Ref feature/install-module-command
+```
+
 Update the installed app files:
 ```powershell
 Update-LofiATC

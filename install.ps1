@@ -44,6 +44,23 @@ Function Get-DefaultShellShimPath {
     return (Join-Path $HOME '.local/bin/lofiatc')
 }
 
+Function Write-LofiATCInstallMetadata {
+    param(
+        [string]$Path,
+        [string]$Repository,
+        [string]$Ref
+    )
+
+    $metadata = [pscustomobject]@{
+        Repository     = $Repository
+        Ref            = $Ref
+        InstalledAtUtc = [DateTime]::UtcNow.ToString('o')
+    }
+
+    $metadataPath = Join-Path $Path '.lofiatc-install.json'
+    $metadata | ConvertTo-Json | Set-Content -Path $metadataPath -Encoding UTF8
+}
+
 Function ConvertTo-ShellSingleQuotedString {
     param([string]$Value)
 
@@ -245,6 +262,7 @@ if (-not (Test-Path $moduleSource)) {
 
 New-Item -ItemType Directory -Path $ModuleRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $moduleSource '*') -Destination $ModuleRoot -Recurse -Force
+Write-LofiATCInstallMetadata -Path $InstallRoot -Repository $Repository -Ref $Ref
 
 $moduleManifest = Join-Path $ModuleRoot 'LofiATC.psd1'
 Import-Module $moduleManifest -Force -Global

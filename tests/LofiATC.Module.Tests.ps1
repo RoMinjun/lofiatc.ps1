@@ -4,6 +4,7 @@ Describe 'LofiATC module updater' {
     BeforeAll {
         $repoRoot = Split-Path -Parent $PSScriptRoot
         $moduleManifest = Join-Path $repoRoot 'packaging/LofiATC/LofiATC.psd1'
+        Remove-Module LofiATC -Force -ErrorAction SilentlyContinue
         Import-Module $moduleManifest -Force
     }
 
@@ -53,5 +54,33 @@ param(
         finally {
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
         }
+    }
+
+    It 'updates sources from the installed ref by default' {
+        $installRoot = Join-Path $TestDrive 'source-update'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        'ICAO,Channel Description,Stream URL' | Set-Content -Path (Join-Path $installRoot 'liveatc_sources.csv') -Encoding UTF8
+        [pscustomobject]@{
+            Repository = 'RoMinjun/lofiatc.ps1'
+            Ref        = 'feature/install-module-command'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
+
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [string]$OutFile,
+                [switch]$UseBasicParsing
+            )
+
+            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/liveatc_sources.csv'
+            @'
+ICAO,Channel Description,Stream URL
+KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
+'@ | Set-Content -Path $OutFile -Encoding UTF8
+        }
+
+        Update-LofiATCSources -InstallRoot $installRoot
+
+        Select-String -Path (Join-Path $installRoot 'liveatc_sources.csv') -Pattern 'KDKX' | Should -Not -BeNullOrEmpty
     }
 }
