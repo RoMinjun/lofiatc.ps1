@@ -168,6 +168,9 @@ Update the installed app files:
 Update-LofiATC
 ```
 
+The updater prints the commit hash after the update. Installer-based updates use the
+repository and ref recorded during installation unless `-Repository` or `-Ref` is supplied.
+
 You can still clone the repository locally for development:
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git

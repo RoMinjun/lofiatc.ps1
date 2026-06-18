@@ -18,6 +18,17 @@ Describe 'LofiATC module updater' {
         $argsPath = Join-Path $TestDrive 'installer-args.json'
         $env:LOFIATC_TEST_INSTALLER_ARGS = $argsPath
 
+        Mock Invoke-RestMethod -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [hashtable]$Headers
+            )
+
+            return [pscustomobject]@{
+                sha = 'afe8201234567890afe8201234567890afe82012'
+            }
+        }
+
         Mock Invoke-WebRequest -ModuleName LofiATC {
             param(
                 [string]$Uri,
@@ -25,11 +36,13 @@ Describe 'LofiATC module updater' {
                 [switch]$UseBasicParsing
             )
 
+            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/afe8201234567890afe8201234567890afe82012/install.ps1'
             @'
 param(
     [string]$InstallRoot,
     [string]$Ref,
     [string]$Repository,
+    [string]$Revision,
     [switch]$SkipPowerShellProfile
 )
 
@@ -37,22 +50,47 @@ param(
     InstallRoot = $InstallRoot
     Ref = $Ref
     Repository = $Repository
+    Revision = $Revision
     SkipPowerShellProfile = $SkipPowerShellProfile.IsPresent
 } | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
 '@ | Set-Content -Path $OutFile -Encoding UTF8
         }
 
         try {
-            Update-LofiATC -InstallRoot $installRoot -Ref 'feature/install-module-command' -Repository 'RoMinjun/lofiatc.ps1'
+            $output = Update-LofiATC -InstallRoot $installRoot -Ref 'feature/install-module-command' -Repository 'RoMinjun/lofiatc.ps1' 6>&1
 
             $installerArgs = Get-Content -Path $argsPath -Raw | ConvertFrom-Json
             $installerArgs.InstallRoot | Should -Be $installRoot
             $installerArgs.Ref | Should -Be 'feature/install-module-command'
             $installerArgs.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
+            $installerArgs.Revision | Should -Be 'afe8201234567890afe8201234567890afe82012'
             $installerArgs.SkipPowerShellProfile | Should -BeTrue
+            $output -join "`n" | Should -Match 'Updated commit: afe8201234567890afe8201234567890afe82012 \(ref: feature/install-module-command\)'
         }
         finally {
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'shows the checked-out commit after updating a Git installation' {
+        $installRoot = Join-Path $TestDrive 'git-update'
+        New-Item -ItemType Directory -Path (Join-Path $installRoot '.git') -Force | Out-Null
+
+        Mock git -ModuleName LofiATC {
+            $global:LASTEXITCODE = 0
+            if ($args -contains 'rev-parse') {
+                return 'db17a101234567890db17a101234567890db17a10'
+            }
+        }
+
+        $output = Update-LofiATC -InstallRoot $installRoot 6>&1
+
+        $output -join "`n" | Should -Match 'Updated commit: db17a101234567890db17a101234567890db17a10'
+        Should -Invoke git -ModuleName LofiATC -ParameterFilter {
+            $args -contains 'pull' -and $args -contains '--ff-only'
+        }
+        Should -Invoke git -ModuleName LofiATC -ParameterFilter {
+            $args -contains 'rev-parse' -and $args -contains 'HEAD'
         }
     }
 

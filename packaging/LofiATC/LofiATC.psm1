@@ -241,22 +241,54 @@ Function Update-LofiATC {
     [CmdletBinding()]
     param(
         [string]$InstallRoot = (Get-LofiATCInstallRoot),
-        [string]$Ref = 'main',
-        [string]$Repository = 'RoMinjun/lofiatc.ps1'
+        [string]$Ref,
+        [string]$Repository
     )
 
     $gitDir = Join-Path $InstallRoot '.git'
     if (Test-Path $gitDir) {
         git -C $InstallRoot pull --ff-only
+        if ($LASTEXITCODE -ne 0) {
+            throw "git pull failed with exit code $LASTEXITCODE."
+        }
+
+        $updatedCommit = git -C $InstallRoot rev-parse HEAD
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not determine the updated Git commit."
+        }
+
+        Write-Host "Updated commit: $($updatedCommit.Trim())"
         return
     }
 
+    if ([string]::IsNullOrWhiteSpace($Ref)) {
+        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+        $Ref = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Ref)) { [string]$metadata.Ref } else { 'main' }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Repository)) {
+        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+        $Repository = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Repository)) { [string]$metadata.Repository } else { 'RoMinjun/lofiatc.ps1' }
+    }
+
+    $updateCommit = $null
+    try {
+        $updateCommit = Resolve-LofiATCCommit -Repository $Repository -Ref $Ref
+    }
+    catch {
+        Write-Warning "Could not resolve '$Ref' to a commit hash. Updating by ref instead. $($_.Exception.Message)"
+    }
+
     $tempInstaller = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
-    $installerUrl = "https://raw.githubusercontent.com/$Repository/$Ref/install.ps1"
+    $installerRevision = if ($updateCommit) { $updateCommit } else { $Ref }
+    $installerUrl = "https://raw.githubusercontent.com/$Repository/$installerRevision/install.ps1"
 
     try {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
-        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -SkipPowerShellProfile
+        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -Revision $updateCommit -SkipPowerShellProfile
+        if ($updateCommit) {
+            Write-Host "Updated commit: $updateCommit (ref: $Ref)"
+        }
         return
     }
     finally {

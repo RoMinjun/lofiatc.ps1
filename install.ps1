@@ -5,6 +5,7 @@ param(
     [string]$ShellShimPath,
     [string]$Ref = 'main',
     [string]$Repository = 'RoMinjun/lofiatc.ps1',
+    [string]$Revision,
     [string]$SourcePath,
     [switch]$SkipShellShim,
     [switch]$SkipPowerShellProfile,
@@ -219,7 +220,12 @@ if (-not $sourceRoot) {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
     $zipPath = Join-Path $tempRoot 'lofiatc.zip'
-    $archiveUrl = "https://github.com/$Repository/archive/refs/heads/$Ref.zip"
+    $archiveUrl = if ($Revision) {
+        "https://github.com/$Repository/archive/$Revision.zip"
+    }
+    else {
+        "https://github.com/$Repository/archive/refs/heads/$Ref.zip"
+    }
     Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing
     Expand-Archive -Path $zipPath -DestinationPath $tempRoot -Force
 
