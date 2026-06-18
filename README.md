@@ -120,6 +120,12 @@ Install the `lofiatc` PowerShell command:
 irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | iex
 ```
 
+> [!NOTE]
+> If you wish to install a branch other than `main`, you can do that by passing `-Ref` followed by the branch name, see following example for `test` branch:
+> ```powershell
+> & ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref test
+> ```
+
 Open a new PowerShell session after installation, then run:
 ```powershell
 lofiatc
@@ -168,13 +174,8 @@ git clone https://github.com/RoMinjun/lofiatc.ps1.git
 cd lofiatc.ps1
 ```
 
-To test an installer branch before it is merged to `main`, pass the same branch name as `-Ref`:
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref feature/install-module-command
-```
-
 > [!NOTE]
-> If you prefer the older, lightweight `lofiatc.ps1` without the new features, switch to the `legacy` branch in this repository.
+> If you prefer the older, lightweight `lofiatc.ps1` without the new features, switch to the `legacy` branch in this repository. But keep in mind that this branch is considered deprecated.
 
 <br>
 
