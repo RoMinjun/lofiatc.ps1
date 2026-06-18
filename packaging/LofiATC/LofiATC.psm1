@@ -50,6 +50,29 @@ Function Get-LofiATCInstallRepository {
     return 'RoMinjun/lofiatc.ps1'
 }
 
+Function Resolve-LofiATCCommit {
+    param(
+        [string]$Repository,
+        [string]$Ref
+    )
+
+    if ($Ref -match '^[0-9a-fA-F]{40}$') {
+        return $Ref.ToLowerInvariant()
+    }
+
+    $escapedRef = [System.Uri]::EscapeDataString($Ref)
+    $commitUrl = "https://api.github.com/repos/$Repository/commits/$escapedRef"
+    $commit = Invoke-RestMethod -Uri $commitUrl -Headers @{
+        Accept = 'application/vnd.github+json'
+    }
+
+    if (-not $commit.sha) {
+        throw "GitHub did not return a commit hash for ref '$Ref'."
+    }
+
+    return [string]$commit.sha
+}
+
 Function Get-LofiATCSourceKey {
     param([pscustomobject]$Source)
 
@@ -176,7 +199,16 @@ Function Update-LofiATCSources {
         $Repository = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Repository)) { [string]$metadata.Repository } else { 'RoMinjun/lofiatc.ps1' }
     }
 
-    $sourceUrl = "https://raw.githubusercontent.com/$Repository/$Ref/liveatc_sources.csv"
+    $sourceCommit = $null
+    try {
+        $sourceCommit = Resolve-LofiATCCommit -Repository $Repository -Ref $Ref
+    }
+    catch {
+        Write-Warning "Could not resolve '$Ref' to a commit hash. Downloading by ref instead. $($_.Exception.Message)"
+    }
+
+    $sourceRevision = if ($sourceCommit) { $sourceCommit } else { $Ref }
+    $sourceUrl = "https://raw.githubusercontent.com/$Repository/$sourceRevision/liveatc_sources.csv"
     $targetPath = Join-Path $InstallRoot 'liveatc_sources.csv'
     $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_sources_{0}.csv" -f ([guid]::NewGuid().ToString('N')))
 
@@ -187,6 +219,10 @@ Function Update-LofiATCSources {
     Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing
 
     try {
+        if ($sourceCommit) {
+            Write-Host "Source commit: $sourceCommit (ref: $Ref)"
+        }
+
         $diff = Compare-LofiATCSourceCsv -OldPath $targetPath -NewPath $tempPath
         Write-LofiATCSourceDiff -Added $diff.Added -Removed $diff.Removed -Limit $DiffLimit
 

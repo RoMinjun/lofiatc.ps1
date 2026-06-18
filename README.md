@@ -146,7 +146,7 @@ Refresh the weekly LiveATC source list:
 lofiatc -UpdateSources
 ```
 
-When sources change, the update prints added and removed entries compared to the previously installed `liveatc_sources.csv`. By default it shows up to 50 added and 50 removed entries:
+The update prints the exact source commit hash, then lists added and removed entries compared to the previously installed `liveatc_sources.csv`. The hash is still shown when there are no source changes. By default it shows up to 50 added and 50 removed entries:
 ```powershell
 lofiatc -UpdateSources -SourceDiffLimit 100
 lofiatc -UpdateSources -SourceDiffLimit 0   # show all changes

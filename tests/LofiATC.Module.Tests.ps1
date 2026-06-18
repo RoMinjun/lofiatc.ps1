@@ -65,6 +65,18 @@ param(
             Ref        = 'feature/install-module-command'
         } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
 
+        Mock Invoke-RestMethod -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [hashtable]$Headers
+            )
+
+            $Uri | Should -Be 'https://api.github.com/repos/RoMinjun/lofiatc.ps1/commits/feature%2Finstall-module-command'
+            return [pscustomobject]@{
+                sha = 'afe8201234567890afe8201234567890afe82012'
+            }
+        }
+
         Mock Invoke-WebRequest -ModuleName LofiATC {
             param(
                 [string]$Uri,
@@ -72,15 +84,50 @@ param(
                 [switch]$UseBasicParsing
             )
 
-            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/liveatc_sources.csv'
+            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/afe8201234567890afe8201234567890afe82012/liveatc_sources.csv'
             @'
 ICAO,Channel Description,Stream URL
 KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
 '@ | Set-Content -Path $OutFile -Encoding UTF8
         }
 
-        Update-LofiATCSources -InstallRoot $installRoot
+        $output = Update-LofiATCSources -InstallRoot $installRoot 6>&1
 
         Select-String -Path (Join-Path $installRoot 'liveatc_sources.csv') -Pattern 'KDKX' | Should -Not -BeNullOrEmpty
+        $output -join "`n" | Should -Match 'Source commit: afe8201234567890afe8201234567890afe82012'
+    }
+
+    It 'shows the source commit when the downloaded CSV has no changes' {
+        $installRoot = Join-Path $TestDrive 'source-update-no-changes'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        @'
+ICAO,Channel Description,Stream URL
+KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
+'@ | Set-Content -Path (Join-Path $installRoot 'liveatc_sources.csv') -Encoding UTF8
+
+        Mock Invoke-RestMethod -ModuleName LofiATC {
+            return [pscustomobject]@{
+                sha = 'e72d16a1234567890e72d16a1234567890e72d16'
+            }
+        }
+
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [string]$OutFile,
+                [switch]$UseBasicParsing
+            )
+
+            @'
+ICAO,Channel Description,Stream URL
+KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
+'@ | Set-Content -Path $OutFile -Encoding UTF8
+        }
+
+        $output = Update-LofiATCSources -InstallRoot $installRoot -Ref main 6>&1
+        $text = $output -join "`n"
+
+        $text | Should -Match 'Source commit: e72d16a1234567890e72d16a1234567890e72d16 \(ref: main\)'
+        $text | Should -Match 'No added or removed sources\.'
     }
 }
