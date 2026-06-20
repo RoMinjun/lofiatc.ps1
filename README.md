@@ -171,6 +171,15 @@ Update-LofiATC
 The updater prints the commit hash as a clickable GitHub link in supported terminals after the update. Installer-based updates use the
 repository and ref recorded during installation unless `-Repository` or `-Ref` is supplied.
 
+Show the installed commit, ref, repository, and installation paths:
+```powershell
+lofiatc -Version
+# or
+Get-LofiATCVersion
+```
+
+Installs and updates are staged and validated before the active app and module directories are replaced. If committing the new installation fails, the previous directories are restored. Replacing the directories also removes files that no longer exist in the current package.
+
 You can still clone the repository locally for development:
 ```powershell
 git clone https://github.com/RoMinjun/lofiatc.ps1.git
@@ -290,6 +299,7 @@ Get-Help lofiatc -Full
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
 | `-UpdateSources` | switch | false | Refreshes the installed `liveatc_sources.csv` and exits. Available from the installed `lofiatc` command. |
+| `-Version` | switch | false | Shows the installed repository, ref, commit, timestamp, and installation paths, then exits. |
 | `-SourceDiffLimit` | int | `50` | Limits added/removed source rows printed by `-UpdateSources`. Use `0` to show all. |
 
 > [!TIP]

@@ -50,6 +50,43 @@ Function Get-LofiATCInstallRepository {
     return 'RoMinjun/lofiatc.ps1'
 }
 
+Function Get-LofiATCVersion {
+    [CmdletBinding()]
+    param([string]$InstallRoot = (Get-LofiATCInstallRoot))
+
+    $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+    if (-not $metadata) {
+        throw "LofiATC install metadata was not found at $(Join-Path $InstallRoot '.lofiatc-install.json')."
+    }
+
+    $commit = if ($metadata.PSObject.Properties['Commit']) {
+        [string]$metadata.Commit
+    }
+    else {
+        $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($commit) -and (Test-Path (Join-Path $InstallRoot '.git'))) {
+        $gitCommit = git -C $InstallRoot rev-parse HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($gitCommit)) {
+            $commit = $gitCommit.Trim()
+        }
+    }
+
+    return [pscustomobject]@{
+        Repository            = [string]$metadata.Repository
+        Ref                   = [string]$metadata.Ref
+        Commit                = $commit
+        InstalledAtUtc        = [string]$metadata.InstalledAtUtc
+        InstallRoot           = if ($metadata.PSObject.Properties['InstallRoot']) { [string]$metadata.InstallRoot } else { $InstallRoot }
+        ModuleRoot            = if ($metadata.PSObject.Properties['ModuleRoot']) { [string]$metadata.ModuleRoot } else { $null }
+        ShellShimPath         = if ($metadata.PSObject.Properties['ShellShimPath']) { [string]$metadata.ShellShimPath } else { $null }
+        ShellShimManaged      = if ($metadata.PSObject.Properties['ShellShimManaged']) { [bool]$metadata.ShellShimManaged } else { $null }
+        PowerShellProfilePath = if ($metadata.PSObject.Properties['PowerShellProfilePath']) { [string]$metadata.PowerShellProfilePath } else { $null }
+        ProfileManaged        = if ($metadata.PSObject.Properties['PowerShellProfileManaged']) { [bool]$metadata.PowerShellProfileManaged } else { $null }
+    }
+}
+
 Function Resolve-LofiATCCommit {
     param(
         [string]$Repository,
@@ -361,6 +398,9 @@ parameter completion, and ValidateSet completion for common options.
 .PARAMETER UpdateSources
 Refreshes liveatc_sources.csv in the installed app directory and exits.
 
+.PARAMETER Version
+Shows the installed repository, ref, commit, timestamp, and install paths.
+
 .PARAMETER SourceDiffLimit
 Limits the number of added and removed sources printed by -UpdateSources. Use 0 to show all changes.
 
@@ -401,11 +441,17 @@ Repository ref to use with -UpdateSources. Defaults to the ref recorded by the i
         [Alias("Persistent")]
         [switch]$KeepOpen,
         [switch]$UpdateSources,
+        [switch]$Version,
         [string]$Ref = (Get-LofiATCInstallRef),
         [string]$Repository = (Get-LofiATCInstallRepository),
         [ValidateRange(0,10000)]
         [int]$SourceDiffLimit = 50
     )
+
+    if ($Version) {
+        Get-LofiATCVersion
+        return
+    }
 
     if ($UpdateSources) {
         Update-LofiATCSources -DiffLimit $SourceDiffLimit -Ref $Ref -Repository $Repository
@@ -419,7 +465,7 @@ Repository ref to use with -UpdateSources. Defaults to the ref recorded by the i
 
     $forwardedParameters = @{}
     foreach ($key in $PSBoundParameters.Keys) {
-        if ($key -ne 'UpdateSources' -and $key -ne 'SourceDiffLimit' -and $key -ne 'Ref' -and $key -ne 'Repository') {
+        if ($key -ne 'UpdateSources' -and $key -ne 'Version' -and $key -ne 'SourceDiffLimit' -and $key -ne 'Ref' -and $key -ne 'Repository') {
             $forwardedParameters[$key] = $PSBoundParameters[$key]
         }
     }
@@ -427,4 +473,4 @@ Repository ref to use with -UpdateSources. Defaults to the ref recorded by the i
     & $scriptPath @forwardedParameters
 }
 
-Export-ModuleMember -Function lofiatc, Update-LofiATC, Update-LofiATCSources
+Export-ModuleMember -Function lofiatc, Update-LofiATC, Update-LofiATCSources, Get-LofiATCVersion

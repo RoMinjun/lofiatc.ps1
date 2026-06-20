@@ -7,7 +7,7 @@
     Copyright = '(c) RoMinjun. All rights reserved.'
     Description = 'PowerShell command wrapper for lofiatc.ps1.'
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('lofiatc', 'Update-LofiATC', 'Update-LofiATCSources')
+    FunctionsToExport = @('lofiatc', 'Update-LofiATC', 'Update-LofiATCSources', 'Get-LofiATCVersion')
     CmdletsToExport = @()
     VariablesToExport = @()
     AliasesToExport = @()

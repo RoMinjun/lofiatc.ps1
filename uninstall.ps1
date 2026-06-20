@@ -3,6 +3,7 @@ param(
     [string]$InstallRoot,
     [string]$ModuleRoot,
     [string]$ShellShimPath,
+    [string]$PowerShellProfilePath,
     [switch]$SkipPowerShellProfile,
     [switch]$RemoveUserData
 )
@@ -58,6 +59,10 @@ if ($ModuleRoot) {
 
 if ($ShellShimPath) {
     $uninstallParams.ShellShimPath = $ShellShimPath
+}
+
+if ($PowerShellProfilePath) {
+    $uninstallParams.PowerShellProfilePath = $PowerShellProfilePath
 }
 
 if ($SkipPowerShellProfile) {

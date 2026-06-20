@@ -197,4 +197,37 @@ KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
         $text | Should -Match '\(ref: main\)'
         $text | Should -Match 'No added or removed sources\.'
     }
+
+    It 'reports installed version and path metadata' {
+        $installRoot = Join-Path $TestDrive 'version-info'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        [pscustomobject]@{
+            Repository            = 'RoMinjun/lofiatc.ps1'
+            Ref                   = 'main'
+            Commit                = '1234567890abcdef1234567890abcdef12345678'
+            InstalledAtUtc        = '2026-06-20T12:00:00.0000000Z'
+            InstallRoot           = $installRoot
+            ModuleRoot            = 'C:\Modules\LofiATC'
+            ShellShimPath         = $null
+            PowerShellProfilePath = 'C:\Profiles\Microsoft.PowerShell_profile.ps1'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
+
+        $version = Get-LofiATCVersion -InstallRoot $installRoot
+
+        $version.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
+        $version.Ref | Should -Be 'main'
+        $version.Commit | Should -Be '1234567890abcdef1234567890abcdef12345678'
+        $version.InstallRoot | Should -Be $installRoot
+        $version.ModuleRoot | Should -Be 'C:\Modules\LofiATC'
+        $version.PowerShellProfilePath | Should -Be 'C:\Profiles\Microsoft.PowerShell_profile.ps1'
+
+        $env:LOFIATC_INSTALL_ROOT = $installRoot
+        try {
+            $commandVersion = lofiatc -Version
+            $commandVersion.Commit | Should -Be '1234567890abcdef1234567890abcdef12345678'
+        }
+        finally {
+            Remove-Item Env:\LOFIATC_INSTALL_ROOT -ErrorAction SilentlyContinue
+        }
+    }
 }
