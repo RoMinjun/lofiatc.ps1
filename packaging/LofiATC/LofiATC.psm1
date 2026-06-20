@@ -373,7 +373,18 @@ Function Update-LofiATC {
 
     try {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
-        & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -Revision $updateCommit -SkipPowerShellProfile
+        $installerParameters = @{
+            InstallRoot           = $InstallRoot
+            Ref                   = $Ref
+            Repository            = $Repository
+            Revision              = $updateCommit
+            SkipPowerShellProfile = $true
+        }
+        if (-not $updateCommit) {
+            $installerParameters.SkipCommitResolution = $true
+        }
+
+        & $tempInstaller @installerParameters
         if ($updateCommit) {
             Write-Host "Updated commit: $commitLink (ref: $Ref)"
         }

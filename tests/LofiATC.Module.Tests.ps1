@@ -54,6 +54,7 @@ param(
     [string]$Ref,
     [string]$Repository,
     [string]$Revision,
+    [switch]$SkipCommitResolution,
     [switch]$SkipPowerShellProfile
 )
 
@@ -62,6 +63,7 @@ param(
     Ref = $Ref
     Repository = $Repository
     Revision = $Revision
+    SkipCommitResolution = $SkipCommitResolution.IsPresent
     SkipPowerShellProfile = $SkipPowerShellProfile.IsPresent
 } | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
 $env:LOFIATC_TEST_INSTALLER_RAN = '1'
@@ -76,6 +78,7 @@ $env:LOFIATC_TEST_INSTALLER_RAN = '1'
             $installerArgs.Ref | Should -Be 'feature/install-module-command'
             $installerArgs.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
             $installerArgs.Revision | Should -Be 'afe8201234567890afe8201234567890afe82012'
+            $installerArgs.SkipCommitResolution | Should -BeFalse
             $installerArgs.SkipPowerShellProfile | Should -BeTrue
             $text = $output -join "`n"
             $text | Should -Match 'Updated commit:'
@@ -86,6 +89,58 @@ $env:LOFIATC_TEST_INSTALLER_RAN = '1'
         finally {
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_RAN -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'does not retry commit resolution in the installer after the updater API request fails' {
+        $installRoot = Join-Path $TestDrive 'lofiatc-api-fallback'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        $argsPath = Join-Path $TestDrive 'fallback-installer-args.json'
+        $env:LOFIATC_TEST_INSTALLER_ARGS = $argsPath
+
+        Mock Invoke-RestMethod -ModuleName LofiATC {
+            throw 'Response status code does not indicate success: 504 (Gateway Time-out).'
+        }
+
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [string]$OutFile,
+                [switch]$UseBasicParsing
+            )
+
+            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1'
+            @'
+param(
+    [string]$InstallRoot,
+    [string]$Ref,
+    [string]$Repository,
+    [string]$Revision,
+    [switch]$SkipCommitResolution,
+    [switch]$SkipPowerShellProfile
+)
+
+[pscustomobject]@{
+    Revision = $Revision
+    SkipCommitResolution = $SkipCommitResolution.IsPresent
+} | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
+'@ | Set-Content -Path $OutFile -Encoding UTF8
+        }
+
+        try {
+            $warnings = Update-LofiATC `
+                -InstallRoot $installRoot `
+                -Ref 'feature/install-module-command' `
+                -Repository 'RoMinjun/lofiatc.ps1' 3>&1
+
+            $installerArgs = Get-Content -Path $argsPath -Raw | ConvertFrom-Json
+            $installerArgs.Revision | Should -BeNullOrEmpty
+            $installerArgs.SkipCommitResolution | Should -BeTrue
+            @($warnings).Count | Should -Be 1
+            $warnings[0].ToString() | Should -Match "Could not resolve 'feature/install-module-command' to a commit hash"
+        }
+        finally {
+            Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
         }
     }
 

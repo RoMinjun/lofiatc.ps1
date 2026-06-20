@@ -8,6 +8,7 @@ param(
     [string]$Repository = 'RoMinjun/lofiatc.ps1',
     [string]$Revision,
     [string]$SourcePath,
+    [switch]$SkipCommitResolution,
     [switch]$SkipShellShim,
     [switch]$SkipPowerShellProfile,
     [switch]$Uninstall
@@ -99,7 +100,8 @@ Function Get-LofiATCSourceCommit {
         [string]$SourcePath,
         [string]$Repository,
         [string]$Ref,
-        [string]$Revision
+        [string]$Revision,
+        [switch]$SkipCommitResolution
     )
 
     if (-not [string]::IsNullOrWhiteSpace($Revision)) {
@@ -120,6 +122,10 @@ Function Get-LofiATCSourceCommit {
     }
 
     if ($SourcePath) {
+        return $null
+    }
+
+    if ($SkipCommitResolution) {
         return $null
     }
 
@@ -474,7 +480,12 @@ if (Test-LofiATCPathsOverlap -First $InstallRoot -Second $ModuleRoot) {
 }
 
 try {
-    $sourceCommit = Get-LofiATCSourceCommit -SourcePath $sourceRoot -Repository $Repository -Ref $Ref -Revision $Revision
+    $sourceCommit = Get-LofiATCSourceCommit `
+        -SourcePath $sourceRoot `
+        -Repository $Repository `
+        -Ref $Ref `
+        -Revision $Revision `
+        -SkipCommitResolution:$SkipCommitResolution
 
     if (-not $sourceRoot) {
         $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}" -f $transactionId)
