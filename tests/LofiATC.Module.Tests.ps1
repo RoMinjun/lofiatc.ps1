@@ -17,6 +17,7 @@ Describe 'LofiATC module updater' {
         New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
         $argsPath = Join-Path $TestDrive 'installer-args.json'
         $env:LOFIATC_TEST_INSTALLER_ARGS = $argsPath
+        $env:LOFIATC_TEST_INSTALLER_RAN = '0'
 
         Mock Invoke-RestMethod -ModuleName LofiATC {
             param(
@@ -27,6 +28,16 @@ Describe 'LofiATC module updater' {
             return [pscustomobject]@{
                 sha = 'afe8201234567890afe8201234567890afe82012'
             }
+        }
+
+        Mock Format-LofiATCCommitLink -ModuleName LofiATC {
+            param(
+                [string]$Repository,
+                [string]$Commit
+            )
+
+            $env:LOFIATC_TEST_INSTALLER_RAN | Should -Be '0'
+            return "$Commit (https://github.com/$Repository/commit/$Commit)"
         }
 
         Mock Invoke-WebRequest -ModuleName LofiATC {
@@ -53,6 +64,7 @@ param(
     Revision = $Revision
     SkipPowerShellProfile = $SkipPowerShellProfile.IsPresent
 } | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
+$env:LOFIATC_TEST_INSTALLER_RAN = '1'
 '@ | Set-Content -Path $OutFile -Encoding UTF8
         }
 
@@ -73,6 +85,7 @@ param(
         }
         finally {
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
+            Remove-Item Env:\LOFIATC_TEST_INSTALLER_RAN -ErrorAction SilentlyContinue
         }
     }
 

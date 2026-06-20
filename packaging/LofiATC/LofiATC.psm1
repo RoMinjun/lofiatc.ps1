@@ -327,12 +327,17 @@ Function Update-LofiATC {
     $tempInstaller = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
     $installerRevision = if ($updateCommit) { $updateCommit } else { $Ref }
     $installerUrl = "https://raw.githubusercontent.com/$Repository/$installerRevision/install.ps1"
+    $commitLink = if ($updateCommit) {
+        Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
+    }
+    else {
+        $null
+    }
 
     try {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
         & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -Revision $updateCommit -SkipPowerShellProfile
         if ($updateCommit) {
-            $commitLink = Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
             Write-Host "Updated commit: $commitLink (ref: $Ref)"
         }
         return
