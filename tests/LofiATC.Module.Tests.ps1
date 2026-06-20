@@ -65,7 +65,11 @@ param(
             $installerArgs.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
             $installerArgs.Revision | Should -Be 'afe8201234567890afe8201234567890afe82012'
             $installerArgs.SkipPowerShellProfile | Should -BeTrue
-            $output -join "`n" | Should -Match 'Updated commit: afe8201234567890afe8201234567890afe82012 \(ref: feature/install-module-command\)'
+            $text = $output -join "`n"
+            $text | Should -Match 'Updated commit:'
+            $text | Should -Match 'afe8201234567890afe8201234567890afe82012'
+            $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/afe8201234567890afe8201234567890afe82012'
+            $text | Should -Match '\(ref: feature/install-module-command\)'
         }
         finally {
             Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
@@ -81,11 +85,17 @@ param(
             if ($args -contains 'rev-parse') {
                 return 'db17a101234567890db17a101234567890db17a10'
             }
+            if ($args -contains 'get-url') {
+                return 'git@github.com:RoMinjun/lofiatc.ps1.git'
+            }
         }
 
         $output = Update-LofiATC -InstallRoot $installRoot 6>&1
 
-        $output -join "`n" | Should -Match 'Updated commit: db17a101234567890db17a101234567890db17a10'
+        $text = $output -join "`n"
+        $text | Should -Match 'Updated commit:'
+        $text | Should -Match 'db17a101234567890db17a101234567890db17a10'
+        $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/db17a101234567890db17a101234567890db17a10'
         Should -Invoke git -ModuleName LofiATC -ParameterFilter {
             $args -contains 'pull' -and $args -contains '--ff-only'
         }
@@ -132,7 +142,10 @@ KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
         $output = Update-LofiATCSources -InstallRoot $installRoot 6>&1
 
         Select-String -Path (Join-Path $installRoot 'liveatc_sources.csv') -Pattern 'KDKX' | Should -Not -BeNullOrEmpty
-        $output -join "`n" | Should -Match 'Source commit: afe8201234567890afe8201234567890afe82012'
+        $text = $output -join "`n"
+        $text | Should -Match 'Source commit:'
+        $text | Should -Match 'afe8201234567890afe8201234567890afe82012'
+        $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/afe8201234567890afe8201234567890afe82012'
     }
 
     It 'shows the source commit when the downloaded CSV has no changes' {
@@ -165,7 +178,10 @@ KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
         $output = Update-LofiATCSources -InstallRoot $installRoot -Ref main 6>&1
         $text = $output -join "`n"
 
-        $text | Should -Match 'Source commit: e72d16a1234567890e72d16a1234567890e72d16 \(ref: main\)'
+        $text | Should -Match 'Source commit:'
+        $text | Should -Match 'e72d16a1234567890e72d16a1234567890e72d16'
+        $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/e72d16a1234567890e72d16a1234567890e72d16'
+        $text | Should -Match '\(ref: main\)'
         $text | Should -Match 'No added or removed sources\.'
     }
 }

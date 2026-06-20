@@ -152,7 +152,7 @@ Refresh the weekly LiveATC source list:
 lofiatc -UpdateSources
 ```
 
-The update prints the exact source commit hash, then lists added and removed entries compared to the previously installed `liveatc_sources.csv`. The hash is still shown when there are no source changes. By default it shows up to 50 added and 50 removed entries:
+The update prints the exact source commit hash as a clickable GitHub link in supported terminals, then lists added and removed entries compared to the previously installed `liveatc_sources.csv`. Terminals without hyperlink support show the GitHub URL next to the hash. The hash is still shown when there are no source changes. By default it shows up to 50 added and 50 removed entries:
 ```powershell
 lofiatc -UpdateSources -SourceDiffLimit 100
 lofiatc -UpdateSources -SourceDiffLimit 0   # show all changes
@@ -168,7 +168,7 @@ Update the installed app files:
 Update-LofiATC
 ```
 
-The updater prints the commit hash after the update. Installer-based updates use the
+The updater prints the commit hash as a clickable GitHub link in supported terminals after the update. Installer-based updates use the
 repository and ref recorded during installation unless `-Repository` or `-Ref` is supplied.
 
 You can still clone the repository locally for development:

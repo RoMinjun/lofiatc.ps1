@@ -73,6 +73,43 @@ Function Resolve-LofiATCCommit {
     return [string]$commit.sha
 }
 
+Function Format-LofiATCCommitLink {
+    param(
+        [string]$Repository,
+        [string]$Commit
+    )
+
+    $commitUrl = "https://github.com/$Repository/commit/$Commit"
+    $supportsVirtualTerminal = (
+        $Host.UI -and
+        $Host.UI.PSObject.Properties['SupportsVirtualTerminal'] -and
+        $Host.UI.SupportsVirtualTerminal
+    )
+
+    if (-not $supportsVirtualTerminal) {
+        return "$Commit ($commitUrl)"
+    }
+
+    $escape = [char]27
+    return ('{0}]8;;{1}{0}\{2}{0}]8;;{0}\' -f $escape, $commitUrl, $Commit)
+}
+
+Function Get-LofiATCGitHubRepository {
+    param([string]$InstallRoot)
+
+    $remoteUrl = git -C $InstallRoot remote get-url origin 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteUrl)) {
+        return $null
+    }
+
+    $remoteUrl = $remoteUrl.Trim()
+    if ($remoteUrl -match 'github\.com[/:](?<repository>[^/:\s]+/[^/\s]+?)(?:\.git)?$') {
+        return $Matches.repository
+    }
+
+    return $null
+}
+
 Function Get-LofiATCSourceKey {
     param([pscustomobject]$Source)
 
@@ -220,7 +257,8 @@ Function Update-LofiATCSources {
 
     try {
         if ($sourceCommit) {
-            Write-Host "Source commit: $sourceCommit (ref: $Ref)"
+            $commitLink = Format-LofiATCCommitLink -Repository $Repository -Commit $sourceCommit
+            Write-Host "Source commit: $commitLink (ref: $Ref)"
         }
 
         $diff = Compare-LofiATCSourceCsv -OldPath $targetPath -NewPath $tempPath
@@ -257,7 +295,14 @@ Function Update-LofiATC {
             throw "Could not determine the updated Git commit."
         }
 
-        Write-Host "Updated commit: $($updatedCommit.Trim())"
+        $updatedCommit = $updatedCommit.Trim()
+        $gitRepository = Get-LofiATCGitHubRepository -InstallRoot $InstallRoot
+        if ([string]::IsNullOrWhiteSpace($gitRepository)) {
+            $gitRepository = Get-LofiATCInstallRepository
+        }
+
+        $commitLink = Format-LofiATCCommitLink -Repository $gitRepository -Commit $updatedCommit
+        Write-Host "Updated commit: $commitLink"
         return
     }
 
@@ -287,7 +332,8 @@ Function Update-LofiATC {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
         & $tempInstaller -InstallRoot $InstallRoot -Ref $Ref -Repository $Repository -Revision $updateCommit -SkipPowerShellProfile
         if ($updateCommit) {
-            Write-Host "Updated commit: $updateCommit (ref: $Ref)"
+            $commitLink = Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
+            Write-Host "Updated commit: $commitLink (ref: $Ref)"
         }
         return
     }
