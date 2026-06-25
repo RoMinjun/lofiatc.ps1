@@ -2983,3 +2983,7 @@
 "South America","Uruguay","Punta del Este","","Capitan Corbeta C A Curbelo International Airport","SULS","PDP","SULS Tower","https://www.liveatc.net/play/suls2_twr.pls","",""
 "South America","Uruguay","Salto","","Nueva Hesperides International Airport","SUSO","STY","SUSO Tower/Ramp","https://www.liveatc.net/play/suso1.pls","",""
 "South America","Venezuela","Ciudad Guayana","","Manuel Carlos Piar Guayana Airport","SVPR","PZO","SVPR Twr/App/FIR","https://www.liveatc.net/play/svpr2.pls","","SVBC"
+"North America","Canada","Niagara-on-the-Lake","Ontario","St. Catharines/Niagara District Airport","CYSN","YSN","CYSN Area Emergency/Guard","https://www.liveatc.net/play/cysn2_guard.pls","",""
+"North America","Canada","Niagara-on-the-Lake","Ontario","St. Catharines/Niagara District Airport","CYSN","YSN","CYSN ATIS","https://www.liveatc.net/play/cysn2_atis.pls","",""
+"North America","Canada","Niagara-on-the-Lake","Ontario","St. Catharines/Niagara District Airport","CYSN","YSN","CYSN Niagara Tours","https://www.liveatc.net/play/cysn2_tour.pls","",""
+"North America","Canada","Niagara-on-the-Lake","Ontario","St. Catharines/Niagara District Airport","CYSN","YSN","CYSN St Catharines Radio","https://www.liveatc.net/play/cysn2_radio.pls","",""
