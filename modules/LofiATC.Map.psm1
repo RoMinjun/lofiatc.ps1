@@ -108,6 +108,7 @@ Function Invoke-MapPlaybackAction {
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
+        [switch]$ShowLofiTrack,
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
         [string]$Target,
@@ -118,6 +119,28 @@ Function Invoke-MapPlaybackAction {
     )
 
     switch ($Action.ToLowerInvariant()) {
+        'lofi-track' {
+            if (-not $ShowLofiTrack) {
+                return @{
+                    ok        = $true
+                    available = $false
+                    track     = $null
+                    message   = 'Lofi track OCR is disabled.'
+                }
+            }
+
+            if (-not (Test-ManagedProcessAlive -Process $script:CurrentLofiProcess)) {
+                return @{
+                    ok        = $true
+                    available = $true
+                    track     = $null
+                    message   = 'Lofi playback is not active.'
+                }
+            }
+
+            return Get-LofiTrackOcr -Source $LofiMusicUrl
+        }
+
         'stop-atc' {
             Stop-ManagedProcess -Process $script:CurrentATCProcess
             Stop-ManagedProcess -Process $script:CurrentWebcamProcess
@@ -136,6 +159,9 @@ Function Invoke-MapPlaybackAction {
             Stop-ManagedProcess -Process $script:CurrentLofiProcess
 
             $script:CurrentLofiProcess = $null
+            $script:StableLofiTrack = $null
+            $script:StableLofiTrackSource = $null
+            $script:LastAnnouncedLofiTrack = $null
 
             return @{
                 ok      = $true
@@ -365,11 +391,15 @@ Function Invoke-MapPlaybackAction {
             $script:CurrentATCProcess = $null
             $script:CurrentWebcamProcess = $null
             $script:CurrentLofiProcess = $null
+            $script:StableLofiTrack = $null
+            $script:StableLofiTrackSource = $null
+            $script:LastAnnouncedLofiTrack = $null
             $script:CurrentMapSelection = $null
 
             return @{
                 ok      = $true
                 stopped = $true
+                lofi    = $false
                 message = 'All playback stopped.'
             }
         }
@@ -513,6 +543,7 @@ Function Select-ATCMap {
         [int]$ATCVolume,
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
+        [switch]$ShowLofiTrack,
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
         [switch]$StartRandom,
@@ -560,6 +591,7 @@ Function Select-ATCMap {
         -StartRandom:$StartRandom `
         -ATCVolume $ATCVolume `
         -LofiVolume $LofiVolume `
+        -ShowLofiTrack:$ShowLofiTrack `
         -MapControlToken $mapControlToken `
         -LazyWeather:$lazyWeather
 
@@ -586,6 +618,7 @@ Function Select-ATCMap {
             -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
             -NoLofiMusic:$NoLofiMusic `
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -ShowLofiTrack:$ShowLofiTrack `
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
             -FavoritesPath $FavoritesPath `
@@ -925,6 +958,7 @@ Function New-ATCMapHtml {
         [switch]$Dark,
         [int]$Port,
         [switch]$KeepOpen,
+        [switch]$ShowLofiTrack,
         [switch]$StartRandom,
         [int]$ATCVolume,
         [int]$LofiVolume,
@@ -1020,6 +1054,13 @@ Function New-ATCMapHtml {
         'false'
     }
 
+    $showLofiTrackJs = if ($KeepOpen -and $ShowLofiTrack) {
+        'true'
+    }
+    else {
+        'false'
+    }
+
     $lazyWeatherJs = if ($LazyWeather) {
         'true'
     }
@@ -1048,7 +1089,20 @@ Function New-ATCMapHtml {
     }
 
     $playbackControls = if ($KeepOpen) {
+        $lofiTrackPanel = if ($ShowLofiTrack) {
 @"
+        <div class="np-lofi-track" aria-live="polite">
+            <span class="np-lofi-track-label">Lofi track</span>
+            <span id="np-lofi-track-text">Detecting...</span>
+        </div>
+"@
+        }
+        else {
+            ''
+        }
+
+@"
+$lofiTrackPanel
         <div class="np-actions">
             <button type="button" id="np-restart" class="np-btn">Restart</button>
             <button type="button" id="np-random" class="np-btn">Random</button>
@@ -1100,6 +1154,7 @@ Function New-ATCMapHtml {
         '{{USER_LON}}'              = [string]$userLon
         '{{USER_RADIUS_METERS}}'    = [string]$userRad
         '{{START_RANDOM_JS}}'       = $startRandomJs
+        '{{SHOW_LOFI_TRACK_JS}}'    = $showLofiTrackJs
     }
 
     foreach ($placeholder in $templateValues.Keys) {
@@ -1260,6 +1315,7 @@ Function Start-PersistentATCMapSession {
         [switch]$IncludeWebcamIfAvailable,
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
+        [switch]$ShowLofiTrack,
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
         [string]$FavoritesPath,
@@ -1341,6 +1397,7 @@ Function Start-PersistentATCMapSession {
                             -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
                             -NoLofiMusic:$NoLofiMusic `
                             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+                            -ShowLofiTrack:$ShowLofiTrack `
                             -LofiMusicUrl $LofiMusicUrl `
                             -LofiVolume $LofiVolume `
                             -Target $req.QueryString["target"] `
@@ -1349,7 +1406,9 @@ Function Start-PersistentATCMapSession {
                             -ChannelIndex $actionChannelIndex `
                             -FavoritesPath $FavoritesPath
 
-                        Write-Host $payload.message -ForegroundColor Green
+                        if ($req.QueryString["action"] -ne 'lofi-track') {
+                            Write-Host $payload.message -ForegroundColor Green
+                        }
                     }
                     catch {
                         $payload = @{

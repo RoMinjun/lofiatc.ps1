@@ -310,6 +310,29 @@
             text-overflow: ellipsis;
         }
 
+        .np-lofi-track {
+            display: grid;
+            gap: 2px;
+            margin: 10px 0 2px;
+            padding: 8px 0;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            min-width: 0;
+        }
+
+        .np-lofi-track-label {
+            color: #e94560;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        #np-lofi-track-text {
+            color: var(--text-primary);
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
         .np-eq {
             display: flex;
             align-items: end;
@@ -435,6 +458,44 @@
         .main-img { max-width: 600px; width: 85%; border-radius: 12px; border: 2px solid #e94560; margin-top: 25px; box-shadow: 0 0 20px rgba(233, 69, 96, 0.3); }
         .bg-gif { position: absolute; bottom: 0; left: 0; width: 100%; height: 25vh; object-fit: cover; opacity: 0.4; z-index: 1; pointer-events: none; mix-blend-mode: multiply;}
         body.dark-mode .bg-gif { mix-blend-mode: screen; }
+
+        @media (max-width: 600px) {
+            #brand-overlay,
+            #map-search,
+            #legend-overlay,
+            #now-playing-overlay,
+            #credit-overlay {
+                backdrop-filter: none;
+            }
+
+            #search-container {
+                top: 140px;
+                left: 60px;
+                right: 20px;
+            }
+
+            #map-search {
+                box-sizing: border-box;
+                width: 100%;
+            }
+
+            #legend-overlay {
+                top: 195px;
+                right: 20px;
+                bottom: 50%;
+                max-width: calc(100vw - 40px);
+                overflow-y: auto;
+            }
+
+            #now-playing-overlay {
+                left: 20px;
+                right: 20px;
+                min-width: 0;
+                max-width: none;
+                max-height: 35vh;
+                overflow-y: auto;
+            }
+        }
     </style>
 </head>
 <body{{DARK_MODE_CLASS}}>
@@ -533,6 +594,9 @@
         var currentPlayingPulse = null;
         var currentPlayingPulseTimer = null;
         var currentPlayingItem = null;
+        var showLofiTrack = {{SHOW_LOFI_TRACK_JS}};
+        var lofiTrackPollTimer = null;
+        var lofiTrackPollPending = false;
 
         function setNowPlaying(data) {
             var overlay = document.getElementById('now-playing-overlay');
@@ -553,6 +617,35 @@
 
             overlay.classList.add('active');
             overlay.classList.add('playing');
+
+            if (showLofiTrack && data && data.lofi) {
+                pollLofiTrack();
+            }
+        }
+
+        function pollLofiTrack() {
+            if (!showLofiTrack || lofiTrackPollPending) return;
+
+            var trackText = document.getElementById('np-lofi-track-text');
+            if (!trackText) return;
+
+            lofiTrackPollPending = true;
+            fetch(controlUrl('?action=lofi-track'), { method: 'GET' })
+                .then(function(res) { return res.json(); })
+                .then(function(data) {
+                    if (data && data.track) {
+                        trackText.textContent = data.track;
+                    } else {
+                        trackText.textContent = (data && data.message) || 'Track title unavailable';
+                    }
+                })
+                .catch(function(err) {
+                    console.error('Lofi track OCR failed', err);
+                    trackText.textContent = 'Track detection unavailable';
+                })
+                .finally(function() {
+                    lofiTrackPollPending = false;
+                });
         }
 
         function clearNowPlayingPulse() {
@@ -786,6 +879,11 @@
             })
             .then(function(data) {
                 if (data && data.ok) {
+                    if (data.lofi === false && showLofiTrack) {
+                        var trackText = document.getElementById('np-lofi-track-text');
+                        if (trackText) trackText.textContent = 'Lofi playback is not active.';
+                    }
+
                     if (data.stopped) {
                         setPlaybackStopped(data.message);
                     } else if (data.icao) {
@@ -901,6 +999,11 @@
 
         bindVolumeSlider('np-atc-volume', 'np-atc-volume-value', 'atc');
         bindVolumeSlider('np-lofi-volume', 'np-lofi-volume-value', 'lofi');
+
+        if (showLofiTrack) {
+            pollLofiTrack();
+            lofiTrackPollTimer = setInterval(pollLofiTrack, 10000);
+        }
 
         if ({{KEEP_OPEN_JS}}) {
             document.getElementById('now-playing-overlay').classList.add('active');
@@ -1769,4 +1872,3 @@
     </script>
 </body>
 </html>
-

@@ -177,6 +177,291 @@ Function Resolve-StreamUrl {
     return $resolvedUrl
 }
 
+Function ConvertFrom-LofiTrackOcrText {
+    param(
+        [AllowEmptyString()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $null
+    }
+
+    $ignoredPatterns = @(
+        '^lofi\s*girl$',
+        '^lofi\s+hip\s+hop\s+radio',
+        '^beats\s+to\s+(relax|study)',
+        '^@?lofigirl$'
+    )
+
+    $lines = @(
+        $Text -split "`r?`n" |
+            ForEach-Object { ($_ -replace '\s+', ' ').Trim(' ', '|', '_') } |
+            Where-Object {
+                $line = $_
+                -not [string]::IsNullOrWhiteSpace($line) -and
+                $line -match '[\p{L}\p{Nd}]' -and
+                -not ($ignoredPatterns | Where-Object { $line -match $_ })
+            }
+    )
+
+    if ($lines.Count -eq 0) {
+        return $null
+    }
+
+    return ($lines | Select-Object -First 2) -join ' - '
+}
+
+Function ConvertFrom-LofiTrackOcrTsv {
+    param(
+        [AllowEmptyString()]
+        [string]$Text,
+        [double]$MinimumConfidence = 50
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return $null
+    }
+
+    try {
+        $rows = @($Text | ConvertFrom-Csv -Delimiter "`t")
+    }
+    catch {
+        return $null
+    }
+
+    $lineKeys = [System.Collections.Generic.List[string]]::new()
+    $wordsByLine = @{}
+    foreach ($row in $rows) {
+        if ([string]$row.level -ne '5' -or [string]::IsNullOrWhiteSpace([string]$row.text)) {
+            continue
+        }
+
+        $confidence = 0.0
+        if (-not [double]::TryParse(
+            [string]$row.conf,
+            [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$confidence
+        ) -or $confidence -lt $MinimumConfidence) {
+            continue
+        }
+
+        $lineKey = '{0}:{1}:{2}:{3}' -f $row.page_num, $row.block_num, $row.par_num, $row.line_num
+        if (-not $wordsByLine.ContainsKey($lineKey)) {
+            $wordsByLine[$lineKey] = [System.Collections.Generic.List[object]]::new()
+            $lineKeys.Add($lineKey)
+        }
+        $wordsByLine[$lineKey].Add($row)
+    }
+
+    $lines = foreach ($lineKey in $lineKeys) {
+        $lineWords = @($wordsByLine[$lineKey] | Sort-Object { [int]$_.left })
+        $accepted = [System.Collections.Generic.List[string]]::new()
+        $previousRight = $null
+        foreach ($word in $lineWords) {
+            $left = [int]$word.left
+            $height = [int]$word.height
+            if ($null -ne $previousRight -and ($left - $previousRight) -gt [Math]::Max(90, $height * 3)) {
+                break
+            }
+
+            $accepted.Add(([string]$word.text).Trim())
+            $previousRight = $left + [int]$word.width
+        }
+
+        if ($accepted.Count -gt 0) {
+            $accepted -join ' '
+        }
+    }
+
+    return ConvertFrom-LofiTrackOcrText -Text ($lines -join "`n")
+}
+
+Function Write-LofiTrackUpdate {
+    param([string]$Track)
+
+    if ([string]::IsNullOrWhiteSpace($Track) -or $Track -eq $script:LastAnnouncedLofiTrack) {
+        return
+    }
+
+    Write-Host "Lofi track: $Track" -ForegroundColor Cyan
+    $script:LastAnnouncedLofiTrack = $Track
+}
+
+Function Resolve-StableLofiTrack {
+    param(
+        [string]$Track,
+        [string]$Source
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Track)) {
+        return $null
+    }
+
+    if ($script:StableLofiTrackSource -ne $Source) {
+        $script:StableLofiTrack = $null
+        $script:StableLofiTrackSource = $Source
+        $script:LastAnnouncedLofiTrack = $null
+    }
+
+    if (-not $script:StableLofiTrack) {
+        $script:StableLofiTrack = $Track
+        return $Track
+    }
+
+    $titlePattern = '\s+-\s+.*$'
+    $stableTitle = ($script:StableLofiTrack -replace $titlePattern, '') -replace '[^\p{L}\p{Nd}]', ''
+    $detectedTitle = ($Track -replace $titlePattern, '') -replace '[^\p{L}\p{Nd}]', ''
+
+    if ($stableTitle.Equals($detectedTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $script:StableLofiTrack
+    }
+
+    $script:StableLofiTrack = $Track
+    return $Track
+}
+
+Function Resolve-LofiOcrVideoUrl {
+    param(
+        [string]$Source,
+        [int]$CacheMinutes = 10
+    )
+
+    $now = Get-Date
+    if (
+        $script:CurrentLofiOcrVideoUrl -and
+        $script:CurrentLofiOcrVideoSource -eq $Source -and
+        $script:CurrentLofiOcrVideoResolvedAt -and
+        (($now - $script:CurrentLofiOcrVideoResolvedAt).TotalMinutes -lt $CacheMinutes)
+    ) {
+        return $script:CurrentLofiOcrVideoUrl
+    }
+
+    $resolverPath = Test-CommandAvailable -CommandName 'yt-dlp'
+    if (-not $resolverPath) {
+        $resolverPath = Test-CommandAvailable -CommandName 'youtube-dl'
+    }
+    if (-not $resolverPath) {
+        throw 'yt-dlp or youtube-dl is required for Lofi track OCR.'
+    }
+
+    $resolved = & $resolverPath `
+        -g `
+        --no-warnings `
+        --skip-download `
+        -f 'best[height<=720]/best' `
+        -- `
+        $Source 2>$null
+
+    $videoUrl = @($resolved | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($videoUrl)) {
+        throw 'Could not resolve a video stream for Lofi track OCR.'
+    }
+
+    $script:CurrentLofiOcrVideoUrl = [string]$videoUrl
+    $script:CurrentLofiOcrVideoSource = $Source
+    $script:CurrentLofiOcrVideoResolvedAt = $now
+
+    return $script:CurrentLofiOcrVideoUrl
+}
+
+Function Get-LofiTrackOcr {
+    param(
+        [string]$Source,
+        [int]$CacheSeconds = 8
+    )
+
+    $now = Get-Date
+    if (
+        $script:CurrentLofiTrackResult -and
+        $script:CurrentLofiTrackCheckedAt -and
+        (($now - $script:CurrentLofiTrackCheckedAt).TotalSeconds -lt $CacheSeconds)
+    ) {
+        return $script:CurrentLofiTrackResult
+    }
+
+    $ffmpegPath = Test-CommandAvailable -CommandName 'ffmpeg'
+    $tesseractPath = Resolve-TesseractPath
+
+    if (-not $ffmpegPath -or -not $tesseractPath) {
+        $missing = @()
+        if (-not $ffmpegPath) { $missing += 'ffmpeg' }
+        if (-not $tesseractPath) { $missing += 'Tesseract OCR' }
+
+        $script:CurrentLofiTrackResult = @{
+            ok        = $true
+            available = $false
+            track     = $null
+            message   = "Install $($missing -join ' and ') to enable Lofi track OCR."
+        }
+        $script:CurrentLofiTrackCheckedAt = $now
+        return $script:CurrentLofiTrackResult
+    }
+
+    $tempBasePath = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_ocr_{0}" -f ([guid]::NewGuid().ToString('N')))
+    $capturePath = "$tempBasePath.png"
+    $ocrOutputPath = "$tempBasePath.tsv"
+
+    try {
+        $videoUrl = Resolve-LofiOcrVideoUrl -Source $Source
+        $videoFilter = 'crop=iw*0.32:ih*0.10:iw*0.07:ih*0.045,scale=1240:-1,format=gray,eq=contrast=1.8:brightness=0.05'
+
+        & $ffmpegPath `
+            -hide_banner `
+            -loglevel error `
+            -nostdin `
+            -rw_timeout 15000000 `
+            -y `
+            -i $videoUrl `
+            -frames:v 1 `
+            -vf $videoFilter `
+            $capturePath 2>$null | Out-Null
+        $ffmpegExitCode = $LASTEXITCODE
+
+        if ($ffmpegExitCode -ne 0 -or -not (Test-Path -LiteralPath $capturePath)) {
+            $script:CurrentLofiOcrVideoUrl = $null
+            throw 'Could not capture the Lofi Girl title overlay.'
+        }
+
+        & $tesseractPath $capturePath $tempBasePath --psm 6 tsv 2>$null | Out-Null
+        $ocrExitCode = $LASTEXITCODE
+        if ($ocrExitCode -ne 0 -or -not (Test-Path -LiteralPath $ocrOutputPath)) {
+            throw 'Tesseract could not read the Lofi Girl title overlay.'
+        }
+
+        $ocrText = [System.IO.File]::ReadAllText($ocrOutputPath, [System.Text.Encoding]::UTF8)
+        $track = ConvertFrom-LofiTrackOcrTsv -Text $ocrText
+        $track = Resolve-StableLofiTrack -Track $track -Source $Source
+        Write-LofiTrackUpdate -Track $track
+        $script:CurrentLofiTrackResult = @{
+            ok        = $true
+            available = $true
+            track     = $track
+            message   = if ($track) { 'Lofi track detected.' } else { 'Track title is not currently visible.' }
+        }
+    }
+    catch {
+        $script:CurrentLofiTrackResult = @{
+            ok        = $false
+            available = $true
+            track     = $null
+            message   = $_.Exception.Message
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $capturePath) {
+            Remove-Item -LiteralPath $capturePath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $ocrOutputPath) {
+            Remove-Item -LiteralPath $ocrOutputPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    $script:CurrentLofiTrackCheckedAt = $now
+    return $script:CurrentLofiTrackResult
+}
+
 # Function to check if the selected player is available
 Function Test-Player {
     param (

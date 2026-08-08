@@ -77,6 +77,14 @@ Function Initialize-LofiATCState {
 
     $script:CurrentATCVolume = $null
     $script:CurrentLofiVolume = $null
+    $script:CurrentLofiTrackResult = $null
+    $script:CurrentLofiTrackCheckedAt = $null
+    $script:LastAnnouncedLofiTrack = $null
+    $script:StableLofiTrack = $null
+    $script:StableLofiTrackSource = $null
+    $script:CurrentLofiOcrVideoUrl = $null
+    $script:CurrentLofiOcrVideoSource = $null
+    $script:CurrentLofiOcrVideoResolvedAt = $null
 }
 
 Function Get-LofiATCIgnoredConfigParameterNames {
@@ -692,7 +700,8 @@ Function Resolve-SelectedATCStream {
         [switch]$NoWeather,
         [switch]$Dark,
         [switch]$NoLofiMusic,
-        [switch]$PlayLofiGirlVideo
+        [switch]$PlayLofiGirlVideo,
+        [switch]$ShowLofiTrack
     )
 
     $currentUserLocation = $null
@@ -764,6 +773,7 @@ Function Resolve-SelectedATCStream {
             -ATCVolume $ATCVolume `
             -NoLofiMusic:$NoLofiMusic `
             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+            -ShowLofiTrack:$ShowLofiTrack `
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
             -StartRandom:$RandomATC `
@@ -1043,6 +1053,69 @@ Function Test-CommandAvailable {
     return $cmd.Name
 }
 
+Function Resolve-TesseractPath {
+    $commandPath = Test-CommandAvailable -CommandName 'tesseract'
+    if ($commandPath) {
+        return $commandPath
+    }
+
+    if (-not $script:OnWindows) {
+        return $null
+    }
+
+    $uninstallRoots = @(
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+        'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+    )
+    foreach ($root in $uninstallRoots) {
+        $installEntries = Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue
+        foreach ($entry in $installEntries) {
+            $properties = Get-ItemProperty -LiteralPath $entry.PSPath -ErrorAction SilentlyContinue
+            if (-not $properties -or $properties.DisplayName -notmatch 'Tesseract') {
+                continue
+            }
+
+            $installDirectory = $properties.InstallLocation
+            if (-not $installDirectory -and $properties.DisplayIcon) {
+                $displayIcon = ([string]$properties.DisplayIcon).Trim('"') -replace ',\d+$', ''
+                $installDirectory = Split-Path -Parent $displayIcon
+            }
+
+            if ($installDirectory) {
+                $registeredPath = Join-Path $installDirectory 'tesseract.exe'
+                if (Test-Path -LiteralPath $registeredPath -PathType Leaf) {
+                    return $registeredPath
+                }
+            }
+        }
+    }
+
+    $candidates = @(
+        $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Tesseract-OCR\tesseract.exe' }),
+        $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'Tesseract-OCR\tesseract.exe' }),
+        $(if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA 'Programs\Tesseract-OCR\tesseract.exe' }),
+        $(if ($env:SCOOP) { Join-Path $env:SCOOP 'apps\tesseract\current\tesseract.exe' }),
+        $(if ($env:USERPROFILE) { Join-Path $env:USERPROFILE 'scoop\apps\tesseract\current\tesseract.exe' })
+    ) | Where-Object { $_ }
+
+    $candidatePath = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+    if ($candidatePath) {
+        return $candidatePath
+    }
+
+    if ($env:LOCALAPPDATA) {
+        $wingetRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+        $wingetPath = Get-ChildItem -LiteralPath $wingetRoot -Filter 'tesseract.exe' -File -Recurse -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+        if ($wingetPath) {
+            return $wingetPath
+        }
+    }
+
+    return $null
+}
+
 Function Test-UrlReachable {
     param(
         [string]$Url,
@@ -1094,7 +1167,8 @@ Function Test-LofiATCDependencies {
         [string]$ScriptDir,
         [string]$SelectedPlayer,
         [switch]$UseFZF,
-        [switch]$ShowMap
+        [switch]$ShowMap,
+        [switch]$ShowLofiTrack
     )
 
     $results = @()
@@ -1219,6 +1293,31 @@ Function Test-LofiATCDependencies {
         -Required $false `
         -Status $(if ($youtubeDlPath) { 'OK' } else { 'Warning' }) `
         -Details $(if ($youtubeDlPath) { $youtubeDlPath } else { 'Not found; fallback for YouTube URL resolution.' }) `
+        -Category 'Optional Tool'
+
+    $ffmpegPath = Test-CommandAvailable -CommandName 'ffmpeg'
+    $tesseractPath = Resolve-TesseractPath
+    $ocrResolverPath = if ($ytdlpPath) { $ytdlpPath } else { $youtubeDlPath }
+
+    $results += Add-DependencyResult `
+        -Name 'Lofi OCR stream resolver' `
+        -Required ([bool]$ShowLofiTrack) `
+        -Status $(if ($ocrResolverPath) { 'OK' } elseif ($ShowLofiTrack) { 'Missing' } else { 'Warning' }) `
+        -Details $(if ($ocrResolverPath) { $ocrResolverPath } else { 'Install yt-dlp or youtube-dl to resolve the livestream video.' }) `
+        -Category 'Optional Tool'
+
+    $results += Add-DependencyResult `
+        -Name 'ffmpeg (Lofi OCR)' `
+        -Required ([bool]$ShowLofiTrack) `
+        -Status $(if ($ffmpegPath) { 'OK' } elseif ($ShowLofiTrack) { 'Missing' } else { 'Warning' }) `
+        -Details $(if ($ffmpegPath) { $ffmpegPath } else { 'ffmpeg not found in PATH; required to capture the title overlay.' }) `
+        -Category 'Optional Tool'
+
+    $results += Add-DependencyResult `
+        -Name 'tesseract (Lofi OCR)' `
+        -Required ([bool]$ShowLofiTrack) `
+        -Status $(if ($tesseractPath) { 'OK' } elseif ($ShowLofiTrack) { 'Missing' } else { 'Warning' }) `
+        -Details $(if ($tesseractPath) { $tesseractPath } else { 'Tesseract OCR not found in PATH or a standard Windows install location.' }) `
         -Category 'Optional Tool'
 
     if ($IsLinux) {

@@ -417,6 +417,9 @@ Limits the number of added and removed sources printed by -UpdateSources. Use 0 
 
 .PARAMETER Ref
 Repository ref to use with -UpdateSources. Defaults to the ref recorded by the installer.
+
+.PARAMETER ShowLofiTrack
+Uses OCR to show the current Lofi Girl track in persistent map mode.
 #>
     [CmdletBinding()]
     param (
@@ -424,6 +427,7 @@ Repository ref to use with -UpdateSources. Defaults to the ref recorded by the i
         [switch]$NoLofiMusic,
         [switch]$RandomATC,
         [switch]$PlayLofiGirlVideo,
+        [switch]$ShowLofiTrack,
         [switch]$UseFZF,
         [switch]$UseBaseCSV,
         [switch]$UseFavorite,

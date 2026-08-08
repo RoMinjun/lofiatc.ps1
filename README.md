@@ -81,6 +81,10 @@ Ensure you have the following installed before running the script:
     Install with:
     - Windows: `winget install --id=yt-dlp.yt-dlp -e`
     - Debian based distros: `sudo apt install yt-dlp`
+- **ffmpeg and Tesseract OCR** *(optional, required for `-ShowLofiTrack`)*:
+    - Windows: install Tesseract with `winget install --id tesseract-ocr.tesseract`. Install ffmpeg with your preferred package manager and ensure it is in `PATH`. Tesseract is detected from `PATH`, its installer registration, common standalone/Scoop locations, or its WinGet package directory.
+    - macOS: `brew install ffmpeg tesseract`
+    - Debian based distros: `sudo apt install ffmpeg tesseract-ocr`
 - **git** *(for installing repo)*:
     Install with:
     - Windows: `winget install --id Git.Git -e --source winget`
@@ -244,6 +248,9 @@ lofiatc -ShowMap -Nearby
 # Open the map and include webcam-enabled feeds where available
 lofiatc -ShowMap -IncludeWebcamIfAvailable
 
+# Show the current Lofi Girl track using OCR in persistent map mode
+lofiatc -ShowMap -KeepOpen -ShowLofiTrack
+
 # Nearby airport selection without the map
 lofiatc -Nearby
 
@@ -287,6 +294,7 @@ Get-Help lofiatc -Full
 | `-LofiSource`   | string    | Lofi Girl YouTube stream | Custom URL or file path for the lofi audio/video source. |
 | `-LofiGenre`    | string    | none    | Choose a built-in lofi genre preset. Ignored when `-LofiSource` is supplied. |
 | `-PlayLofiGirlVideo` | switch | false | Plays the Lofi Girl video instead of audio-only lofi playback. |
+| `-ShowLofiTrack` | switch | false | Uses OCR to show the current Lofi Girl track in persistent map mode. Requires `-ShowMap -KeepOpen`, yt-dlp or youtube-dl, ffmpeg, and Tesseract OCR. |
 | `-SaveConfig`   | switch    | false   | Saves the current flags/values to your user `config.json`. |
 | `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
@@ -449,7 +457,7 @@ lofiatc -CheckDependencies
 
 ### What it checks
 - supported media players available in `PATH`
-- optional tools such as `fzf`, `yt-dlp`, and `youtube-dl`
+- optional tools such as `fzf`, `yt-dlp`, `youtube-dl`, `ffmpeg`, and Tesseract OCR
 - ATC source CSV availability
 - `config.json` / `favorites.json` presence and JSON validity
 - optional browser/map helpers such as `xdg-open` on Linux or `open` on macOS

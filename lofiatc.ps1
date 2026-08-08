@@ -18,6 +18,9 @@ choose a random channel for that airport.
 .PARAMETER PlayLofiGirlVideo
 Play the Lofi Girl video instead of just the audio.
 
+.PARAMETER ShowLofiTrack
+Uses OCR to show the current Lofi Girl track in persistent map mode. Requires yt-dlp or youtube-dl, ffmpeg, and Tesseract OCR.
+
 .PARAMETER UseFZF
 Use fzf for searching and filtering channels.
 
@@ -87,6 +90,7 @@ param (
     [switch]$NoLofiMusic,
     [switch]$RandomATC,
     [switch]$PlayLofiGirlVideo,
+    [switch]$ShowLofiTrack,
     [switch]$UseFZF,
     [switch]$UseBaseCSV,
     [switch]$UseFavorite,
@@ -165,7 +169,8 @@ try {
             -ScriptDir $scriptDir `
             -SelectedPlayer $Player `
             -UseFZF:$UseFZF `
-            -ShowMap:$ShowMap
+            -ShowMap:$ShowMap `
+            -ShowLofiTrack:$ShowLofiTrack
 
         Write-DependencyReport -Results $dependencyResults
 
@@ -179,6 +184,14 @@ try {
 
     # Resolve player from parameters or config
     $Player = Resolve-Player -explicitPlayer $Player
+
+    if ($ShowLofiTrack -and -not $CheckDependencies -and (-not $ShowMap -or -not $KeepOpen)) {
+        throw '-ShowLofiTrack requires -ShowMap -KeepOpen.'
+    }
+
+    if ($ShowLofiTrack -and -not $CheckDependencies -and $NoLofiMusic) {
+        throw '-ShowLofiTrack cannot be used with -NoLofiMusic.'
+    }
 
     # Save config if specified, excluding common PowerShell parameters and any that were directly provided to override config values
     if ($SaveConfig) {
@@ -234,7 +247,8 @@ try {
         -NoWeather:$NoWeather `
         -Dark:$Dark `
         -NoLofiMusic:$NoLofiMusic `
-        -PlayLofiGirlVideo:$PlayLofiGirlVideo
+        -PlayLofiGirlVideo:$PlayLofiGirlVideo `
+        -ShowLofiTrack:$ShowLofiTrack
 
     Start-LofiATCSession `
         -SelectedATC $selection.SelectedATC `
