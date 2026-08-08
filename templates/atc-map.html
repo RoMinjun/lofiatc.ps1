@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta charset="UTF-8">
     <title>LofiATC Global Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
@@ -522,9 +523,9 @@
                 <input type="checkbox" id="toggle-weather"> Weather Radar
             </label>
             <div class="radar-toolbar">
-                <button type="button" id="radar-back" class="radar-btn" title="Go 10 minutes earlier">◀ Older</button>
+                <button type="button" id="radar-back" class="radar-btn" title="Go 10 minutes earlier">&#9664; Older</button>
                 <button type="button" id="radar-live" class="radar-btn" title="Jump to latest radar frame">Live</button>
-                <button type="button" id="radar-forward" class="radar-btn" title="Go 10 minutes later">Newer ▶</button>
+                <button type="button" id="radar-forward" class="radar-btn" title="Go 10 minutes later">Newer &#9654;</button>
             </div>
             <input type="range" id="radar-timeline" min="0" max="0" step="1" value="0" disabled>
             <div class="radar-scale">
