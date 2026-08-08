@@ -284,6 +284,9 @@ Get-Help lofiatc -Full
 | `-OpenRadar`    | switch    | false   | Opens the selected airport’s FlightAware radar in your browser. |
 | `-ATCVolume`    | int 0–100 | `65`    | ATC stream volume. |
 | `-LofiVolume`   | int 0–100 | `50`    | Lofi Girl volume. |
+| `-LofiSource`   | string    | Lofi Girl YouTube stream | Custom URL or file path for the lofi audio/video source. |
+| `-LofiGenre`    | string    | none    | Choose a built-in lofi genre preset. Ignored when `-LofiSource` is supplied. |
+| `-PlayLofiGirlVideo` | switch | false | Plays the Lofi Girl video instead of audio-only lofi playback. |
 | `-SaveConfig`   | switch    | false   | Saves the current flags/values to your user `config.json`. |
 | `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
@@ -294,12 +297,15 @@ Get-Help lofiatc -Full
 | `-ShowMap`      | switch    | false   | Opens an interactive browser map of available ATC sources. |
 | `-NoWeather`    | switch    | false   | Skips live weather/METAR fetching for the map to improve load speed. |
 | `-Dark`         | switch    | false   | Starts the interactive map in dark mode. |
+| `-KeepOpen` / `-Persistent` | switch | false | Keeps the interactive map open after selecting a channel so you can make repeated selections. |
 | `-NoLofiMusic`  | switch    | false   | Disables the lofi stream and only plays ATC audio. |
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
 | `-UpdateSources` | switch | false | Refreshes the installed `liveatc_sources.csv` and exits. Available from the installed `lofiatc` command. |
 | `-Version` | switch | false | Shows the installed repository, ref, commit, timestamp, and installation paths, then exits. |
 | `-SourceDiffLimit` | int | `50` | Limits added/removed source rows printed by `-UpdateSources`. Use `0` to show all. |
+| `-Ref` | string | installed ref | Repository ref used by `-UpdateSources`. Available from the installed `lofiatc` command. |
+| `-Repository` | string | installed repository | GitHub `owner/repo` used by `-UpdateSources`. Available from the installed `lofiatc` command. |
 
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
@@ -380,7 +386,7 @@ The script reads ATC streams from `atc_sources.csv`.
 > ~~Don't try manually update the sources. LiveATC has added a challenge page, so for now the update script doesn't work. Working on a fix.~~ A workaround is to use [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), but to keep it stealthy each request would take around 8 seconds (So it can take up hours to fully update the sources). So I wouldn't recommend trying to update yourself anymore. Instead I'll publish a more recent version every now and then. But if you really wish to update yourself, check the steps below.
 
 - Run `lofiatc -UpdateSources` to refresh the installed weekly `liveatc_sources.csv`. The command prints added and removed sources compared to the currently installed CSV.
-- For development, run `tools/UpdateATCSources.ps1` to generate/refresh a **local** `atc_sources.csv`. By default it'll be called `liveatc_sources.csv`. This overrides the current `liveatc_sources.csv` file.
+- For development, run `tools/UpdateATCSources.ps1` to generate/refresh a local `liveatc_sources.csv` by default. Use `-OutputCsvPath` for a custom output path or `-InPlace` with `-SortOnly` to rewrite the input CSV.
 - If a locally updated CSV exists, it is **preferred** over the `liveatc_sources.csv`.  
 - Use `-UseBaseCSV` to ignore `liveatc_sources.csv` and use the base CSV.
 
@@ -519,7 +525,7 @@ The source code in this repository is licensed under the MIT License. See
 ## Third-Party Notice
 This project may reference third-party services and content, including
 LiveATC.net. Such third-party content is not covered by this repository's
-license. See [NOTICE](./NOTICE).
+license. See [ACKNOWLEDGMENTS](./ACKNOWLEDGMENTS.md).
 
 ## Contributing
 PRs welcome! Popular contributions:
