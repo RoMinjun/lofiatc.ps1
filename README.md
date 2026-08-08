@@ -31,10 +31,11 @@ An alternative to [lofiatc](https://www.lofiatc.com) built with PowerShell and d
 
 | Search, weather, and filters | Persistent playback and Lofi track OCR |
 |:---:|:---:|
-| ![Dark map centered on Switzerland with live weather markers and map filters](docs/screenshots/map-search-switzerland.jpg) | ![Persistent map showing the active airport and detected Lofi Girl track](docs/screenshots/persistent-playback-ocr.jpg) |
+| ![Dark map centered on Switzerland with live weather markers and map filters](https://raw.githubusercontent.com/RoMinjun/images/main/lofiatc.ps1/map-search-switzerland.jpg) | ![Persistent map showing the active airport and detected Lofi Girl track](https://raw.githubusercontent.com/RoMinjun/images/main/lofiatc.ps1/persistent-playback-ocr.jpg) |
 | Search by airport, ICAO, city, country, or channel while retaining live weather context. | Keep the map open while switching ATC channels and viewing the detected Lofi Girl track. |
 
 ---
+<br>
 
 ![Made with VHS](https://vhs.charm.sh/vhs-1LOxW9YtwAj6V4n7FfNSAh.gif)
 
