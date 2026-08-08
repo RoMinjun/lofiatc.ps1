@@ -99,6 +99,52 @@ Function Get-LofiATCIgnoredConfigParameterNames {
     )
 }
 
+Function Get-LofiATCUserDataPath {
+    if ($env:LOFIATC_USER_DATA) {
+        return $env:LOFIATC_USER_DATA
+    }
+
+    if ($env:APPDATA) {
+        return (Join-Path $env:APPDATA 'lofiatc')
+    }
+
+    if ($env:XDG_CONFIG_HOME) {
+        return (Join-Path $env:XDG_CONFIG_HOME 'lofiatc')
+    }
+
+    return (Join-Path $HOME '.config/lofiatc')
+}
+
+Function Resolve-LofiATCUserFilePath {
+    param(
+        [string]$FileName,
+        [string]$ScriptDir
+    )
+
+    $userDataDir = Get-LofiATCUserDataPath
+    $userPath = Join-Path $userDataDir $FileName
+    $legacyPath = Join-Path $ScriptDir $FileName
+
+    if (Test-Path $userPath) {
+        return $userPath
+    }
+
+    if (Test-Path $legacyPath) {
+        return $legacyPath
+    }
+
+    return $userPath
+}
+
+Function Initialize-LofiATCUserDataPath {
+    $userDataDir = Get-LofiATCUserDataPath
+    if (-not (Test-Path $userDataDir)) {
+        New-Item -ItemType Directory -Path $userDataDir -Force | Out-Null
+    }
+
+    return $userDataDir
+}
+
 Function Import-LofiATCConfig {
     param(
         [string]$ConfigPath,
@@ -150,6 +196,11 @@ Function Export-LofiATCConfig {
         if ($null -ne $value -and $value -ne "") {
             $config[$name] = $value
         }
+    }
+
+    $configDir = Split-Path -Parent $ConfigPath
+    if ($configDir -and -not (Test-Path $configDir)) {
+        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
     $config | ConvertTo-Json | Set-Content -Path $ConfigPath
@@ -259,7 +310,10 @@ Function Get-IPLocation {
         Write-Verbose "Attempting IP-based geolocation fallback..."
         $location = Invoke-RestMethod -Uri $uri -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
 
-        if ($location.latitude -and $location.longitude) {
+        $hasLatitude = $location.PSObject.Properties['latitude'] -and $null -ne $location.latitude
+        $hasLongitude = $location.PSObject.Properties['longitude'] -and $null -ne $location.longitude
+
+        if ($hasLatitude -and $hasLongitude) {
             Write-Host "Using approximate location based on IP: $($location.city), $($location.country_name)." -ForegroundColor Yellow
             return [pscustomobject]@{
                 Latitude  = [double]$location.latitude
@@ -620,6 +674,7 @@ Function Resolve-SelectedATCStream {
         [array]$AtcSources,
         [array]$Favorites,
         [string]$CsvPath,
+        [string]$ScriptDir,
         [string]$FavoritesPath,
         [string]$ICAO,
         [int]$NearbyRadius,
@@ -698,6 +753,7 @@ Function Resolve-SelectedATCStream {
             -AtcSources $AtcSources `
             -Favorites $Favorites `
             -CsvPath $CsvPath `
+            -ScriptDir $ScriptDir `
             -UserLocation $currentUserLocation `
             -Radius $NearbyRadius `
             -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
@@ -1045,8 +1101,8 @@ Function Test-LofiATCDependencies {
 
     $baseCsv = Join-Path $ScriptDir 'atc_sources.csv'
     $liveCsv = Join-Path $ScriptDir 'liveatc_sources.csv'
-    $favoritesJson = Join-Path $ScriptDir 'favorites.json'
-    $configJson = Join-Path $ScriptDir 'config.json'
+    $favoritesJson = Resolve-LofiATCUserFilePath -FileName 'favorites.json' -ScriptDir $ScriptDir
+    $configJson = Resolve-LofiATCUserFilePath -FileName 'config.json' -ScriptDir $ScriptDir
 
     $hasCsv = (Test-Path $baseCsv) -or (Test-Path $liveCsv)
     $results += Add-DependencyResult `

@@ -453,14 +453,21 @@ Function Get-MapWeatherData {
                 try {
                     $stats.VatsimRequests++
                     $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
-                    $vRaw = $vRes.Content.Trim()
+                    $vRaw = if ($null -ne $vRes -and $vRes.PSObject.Properties['Content']) {
+                        [string]$vRes.Content
+                    }
+                    else {
+                        [string]$vRes
+                    }
+
+                    $vRaw = $vRaw.Trim()
                 }
                 finally {
                     $vatsimTimer.Stop()
                     $stats.VatsimMs += [int]$vatsimTimer.ElapsedMilliseconds
                 }
 
-                if ($vRaw -match "\b$mIcao\b") {
+                if (-not [string]::IsNullOrWhiteSpace($vRaw) -and $vRaw -match "\b$([regex]::Escape($mIcao))\b") {
                     $fcat = "VFR"
                     if ($vRaw -match "\bM?1/4SM|\bM?1/2SM|\bM?3/4SM") {
                         $fcat = "LIFR"

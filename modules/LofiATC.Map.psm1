@@ -502,6 +502,7 @@ Function Select-ATCMap {
         [array]$AtcSources,
         [array]$Favorites,
         [string]$CsvPath,
+        [string]$ScriptDir,
         [object]$UserLocation,
         [int]$Radius,
         [switch]$IncludeWebcamIfAvailable,
@@ -548,6 +549,7 @@ Function Select-ATCMap {
     $htmlContent = New-ATCMapHtml `
         -JsArray $jsArray `
         -CsvName $csvName `
+        -ScriptDir $ScriptDir `
         -UserLocation $UserLocation `
         -Radius $Radius `
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
@@ -604,8 +606,13 @@ Function Select-ATCMap {
 
 # Resolves the external HTML template used by New-ATCMapHtml.
 Function Get-ATCMapHtmlTemplatePath {
-    $scriptRoot = if ($PSScriptRoot) {
-        $PSScriptRoot
+    param([string]$ScriptDir)
+
+    $scriptRoot = if ($ScriptDir) {
+        $ScriptDir
+    }
+    elseif ($PSScriptRoot) {
+        Split-Path -Parent $PSScriptRoot
     }
     else {
         (Get-Location).Path
@@ -800,7 +807,13 @@ Function ConvertTo-MapMarkers {
 
         }
 
-        $favCount = ($Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum).Sum
+        $favoriteMeasure = $Favorites | Where-Object { $_.ICAO -eq $icaoCode } | Measure-Object -Property Count -Sum
+        $favCount = if ($favoriteMeasure.PSObject.Properties['Sum']) {
+            $favoriteMeasure.Sum
+        }
+        else {
+            0
+        }
         if ($null -eq $favCount) {
             $favCount = 0
         }
@@ -904,6 +917,7 @@ Function New-ATCMapHtml {
     param(
         [string]$JsArray,
         [string]$CsvName,
+        [string]$ScriptDir,
         [object]$UserLocation,
         [int]$Radius,
         [switch]$IncludeWebcamIfAvailable,
@@ -1062,7 +1076,7 @@ Function New-ATCMapHtml {
         ""
     }
 
-    $templatePath = Get-ATCMapHtmlTemplatePath
+    $templatePath = Get-ATCMapHtmlTemplatePath -ScriptDir $ScriptDir
     $template = [System.IO.File]::ReadAllText($templatePath, [System.Text.Encoding]::UTF8)
 
     $templateValues = [ordered]@{

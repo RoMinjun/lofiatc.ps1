@@ -44,6 +44,11 @@ Function Get-Favorite {
 Function Save-Favorite {
     param([array]$favorites, [string]$path)
 
+    $favoriteDir = Split-Path -Parent $path
+    if ($favoriteDir -and -not (Test-Path $favoriteDir)) {
+        New-Item -ItemType Directory -Path $favoriteDir -Force | Out-Null
+    }
+
     $items = @($favorites)
 
     if ($items.Count -eq 0) {
