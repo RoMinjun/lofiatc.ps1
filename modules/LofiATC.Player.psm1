@@ -216,6 +216,18 @@ Function Test-Player {
         throw "$player is not installed or not available in PATH. Please install $player to proceed."
     }
 
+    if ($script:OnWindows -and $player -eq 'VLC') {
+        $scoopShimPath = [System.IO.Path]::ChangeExtension($fullPath, '.shim')
+
+        if (Test-Path -LiteralPath $scoopShimPath) {
+            $shimMetadata = Get-Content -LiteralPath $scoopShimPath -Raw -ErrorAction SilentlyContinue
+
+            if ($shimMetadata -match '(?m)^\s*path\s*=\s*"(?<Target>[^"]+)"\s*$' -and (Test-Path -LiteralPath $matches.Target)) {
+                $fullPath = $matches.Target
+            }
+        }
+    }
+
     return $fullPath
 }
 
@@ -292,7 +304,7 @@ Function Start-Player {
 
     $playerArgs = switch ($player) {
         "VLC" {
-            $vlcArgs = "`"$url`""; if ($noVideo) {
+            $vlcArgs = "`"$url`" --no-one-instance"; if ($noVideo) {
                 $vlcArgs += " --no-video"
             }
             if ($script:OnWindows) {
@@ -446,7 +458,7 @@ Function Start-PlayerProcess {
 
     $playerArgs = switch ($Player) {
         "VLC" {
-            $vlcArgs = "`"$Url`""
+            $vlcArgs = "`"$Url`" --no-one-instance"
             if ($NoVideo) {
                 $vlcArgs += " --no-video"
             }

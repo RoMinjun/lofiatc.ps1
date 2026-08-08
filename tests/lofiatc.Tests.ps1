@@ -112,6 +112,41 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Test-Player' {
+        BeforeEach {
+            $script:OnWindows = $true
+        }
+
+        It 'resolves a Scoop VLC shim to the real executable' {
+            $shimExe = Join-Path $TestDrive 'scoop/shims/vlc.exe'
+            $shimMetadata = Join-Path $TestDrive 'scoop/shims/vlc.shim'
+            $realVlc = Join-Path $TestDrive 'scoop/apps/vlc/current/vlc.exe'
+
+            New-Item -ItemType Directory -Path (Split-Path $shimExe) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path $realVlc) -Force | Out-Null
+            New-Item -ItemType File -Path $shimExe, $realVlc -Force | Out-Null
+            Set-Content -LiteralPath $shimMetadata -Value "path = `"$realVlc`""
+
+            Mock Get-Command {
+                [pscustomobject]@{ Path = $shimExe }
+            } -ParameterFilter { $Name -eq 'vlc.exe' }
+
+            Test-Player -player 'VLC' | Should -Be $realVlc
+        }
+
+        It 'keeps a normal VLC executable path unchanged' {
+            $realVlc = Join-Path $TestDrive 'VideoLAN/VLC/vlc.exe'
+            New-Item -ItemType Directory -Path (Split-Path $realVlc) -Force | Out-Null
+            New-Item -ItemType File -Path $realVlc -Force | Out-Null
+
+            Mock Get-Command {
+                [pscustomobject]@{ Path = $realVlc }
+            } -ParameterFilter { $Name -eq 'vlc.exe' }
+
+            Test-Player -player 'VLC' | Should -Be $realVlc
+        }
+    }
+
     Context 'Distance and unit conversion' {
         It 'returns zero distance for identical coordinates' {
             Get-DistanceKm -Lat1 51.47 -Lon1 -0.4543 -Lat2 51.47 -Lon2 -0.4543 | Should -Be 0
@@ -469,10 +504,7 @@ Describe 'lofiatc.ps1 helper functions' {
 
             Mock Stop-ManagedProcess {}
             Mock Start-PlayerProcess {
-                [pscustomobject]@{
-                    FakeProcess = $true
-                    HasExited   = $false
-                }
+                [System.Diagnostics.Process]::new()
             }
             Mock Test-ManagedProcessAlive {
                 $false
@@ -511,6 +543,29 @@ Describe 'lofiatc.ps1 helper functions' {
             $script:CurrentLofiProcess | Should -BeNullOrEmpty
 
             Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'keeps existing lofi playback when switching airport channels' {
+            Mock Test-ManagedProcessAlive {
+                $null -ne $Process
+            }
+
+            1..2 | ForEach-Object {
+                Invoke-MapChannelSelection `
+                    -Selection @{ ICAO = 'EHAM'; ChannelIndex = 0 } `
+                    -AtcSources $script:mapAtcSources `
+                    -Player 'MPV' `
+                    -ATCVolume 65 `
+                    -LofiVolume 50 `
+                    -LofiMusicUrl 'http://example.test/lofi' | Out-Null
+            }
+
+            Should -Invoke Start-PlayerProcess -Times 2 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/eham-tower'
+            }
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/lofi'
+            }
         }
 
         It 'stores ATC volume for the next selected channel when no channel is active' {
@@ -862,6 +917,29 @@ KLAX,Tower,http://example.com/stream
             $result = Get-VLCVolumeArg -volume 90 -NoAudio
 
             $result.Value | Should -Be 0
+        }
+    }
+
+    Context 'Start-PlayerProcess' {
+        BeforeEach {
+            $script:OnWindows = $true
+
+            Mock Resolve-StreamUrl { $Url }
+            Mock Test-Player { 'C:\Program Files\VideoLAN\VLC\vlc.exe' }
+            Mock Start-Process { [System.Diagnostics.Process]::new() }
+        }
+
+        It 'starts VLC as a separate instance so managed lofi playback remains trackable' {
+            Start-PlayerProcess `
+                -Url 'http://example.test/lofi' `
+                -Player 'VLC' `
+                -NoVideo `
+                -BasicArgs `
+                -Volume 50 | Out-Null
+
+            Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+                $ArgumentList -match '--no-one-instance'
+            }
         }
     }
 
