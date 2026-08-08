@@ -9,12 +9,20 @@ on:
       - enhancement/**
     paths:
       - 'lofiatc.ps1'
-      - 'tests/lofiatc.Tests.ps1'
+      - 'install.ps1'
+      - 'uninstall.ps1'
+      - 'modules/**/*.psm1'
+      - 'packaging/**/*.ps*1'
+      - 'tests/**/*.Tests.ps1'
 
   pull_request:
     paths:
       - 'lofiatc.ps1'
-      - 'tests/lofiatc.Tests.ps1'
+      - 'install.ps1'
+      - 'uninstall.ps1'
+      - 'modules/**/*.psm1'
+      - 'packaging/**/*.ps*1'
+      - 'tests/**/*.Tests.ps1'
 
     
 jobs:
@@ -35,4 +43,4 @@ jobs:
         shell: pwsh
         run: |
           $env:LOFIATC_TEST_MODE = '1'
-          Invoke-Pester ./tests/lofiatc.Tests.ps1 -CI
+          Invoke-Pester ./tests -CI

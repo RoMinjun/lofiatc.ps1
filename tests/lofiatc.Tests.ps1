@@ -41,6 +41,150 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Lofi track OCR' {
+        BeforeEach {
+            $script:CurrentLofiTrackResult = $null
+            $script:CurrentLofiTrackCheckedAt = $null
+            $script:LastAnnouncedLofiTrack = $null
+            $script:StableLofiTrack = $null
+            $script:StableLofiTrackSource = $null
+            $script:CurrentLofiOcrVideoUrl = $null
+            $script:CurrentLofiOcrVideoSource = $null
+            $script:CurrentLofiOcrVideoResolvedAt = $null
+        }
+
+        It 'normalizes the artist and title while ignoring Lofi Girl branding' {
+            $ocrText = "Lofi Girl`nidealism`nSnowfall"
+
+            ConvertFrom-LofiTrackOcrText -Text $ocrText | Should -Be 'idealism - Snowfall'
+        }
+
+        It 'ignores symbol-only lines before selecting the title and artist' {
+            $ocrText = "\`nWind Tales`nDimension 32 x Cosmic Koala"
+
+            ConvertFrom-LofiTrackOcrText -Text $ocrText |
+                Should -Be 'Wind Tales - Dimension 32 x Cosmic Koala'
+        }
+
+        It 'discards low-confidence separator glyphs from structured OCR output' {
+            $ocrTsv = @'
+level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	text
+5	1	1	1	1	1	13	29	100	36	96.0	Felt
+5	1	1	1	1	2	125	29	70	36	96.0	the
+5	1	1	1	1	3	210	29	110	36	96.0	Same
+5	1	1	1	1	4	765	35	90	30	33.4	oman
+5	1	1	1	2	1	13	88	90	30	93.0	Softy
+'@
+
+            ConvertFrom-LofiTrackOcrTsv -Text $ocrTsv | Should -Be 'Felt the Same - Softy'
+        }
+
+        It 'discards detached separator glyphs even when their OCR confidence is high' {
+            $ocrTsv = @'
+level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	text
+5	1	1	1	1	1	13	29	100	36	96.0	Felt
+5	1	1	1	1	2	125	29	70	36	96.0	the
+5	1	1	1	1	3	210	29	110	36	96.0	Same
+5	1	1	1	1	4	765	35	90	30	82.0	n}»
+5	1	1	1	2	1	13	88	90	30	93.0	Softy
+'@
+
+            ConvertFrom-LofiTrackOcrTsv -Text $ocrTsv | Should -Be 'Felt the Same - Softy'
+        }
+
+        It 'writes a detected track to the terminal only when it changes' {
+            Mock Write-Host
+
+            Write-LofiTrackUpdate -Track 'Felt the Same - Softy'
+            Write-LofiTrackUpdate -Track 'Felt the Same - Softy'
+            Write-LofiTrackUpdate -Track 'For The Roses - Hoogway'
+
+            Should -Invoke Write-Host -Times 2 -Exactly
+            Should -Invoke Write-Host -Times 1 -Exactly -ParameterFilter {
+                $Object -eq 'Lofi track: Felt the Same - Softy' -and $ForegroundColor -eq 'Cyan'
+            }
+            Should -Invoke Write-Host -Times 1 -Exactly -ParameterFilter {
+                $Object -eq 'Lofi track: For The Roses - Hoogway' -and $ForegroundColor -eq 'Cyan'
+            }
+        }
+
+        It 'keeps the first artist detection while the song title remains the same' {
+            $source = 'https://youtu.be/example'
+
+            Resolve-StableLofiTrack -Track 'Early Days - trxxshed x cxit' -Source $source |
+                Should -Be 'Early Days - trxxshed x cxit'
+            Resolve-StableLofiTrack -Track 'Early Days - uxxshed x cxit' -Source $source |
+                Should -Be 'Early Days - trxxshed x cxit'
+            Resolve-StableLofiTrack -Track 'Early Days - x cxit' -Source $source |
+                Should -Be 'Early Days - trxxshed x cxit'
+        }
+
+        It 'accepts a detection immediately when the song title changes' {
+            $source = 'https://youtu.be/example'
+
+            Resolve-StableLofiTrack -Track 'Early Days - trxxshed x cxit' -Source $source | Out-Null
+
+            Resolve-StableLofiTrack -Track 'For The Roses - Hoogway' -Source $source |
+                Should -Be 'For The Roses - Hoogway'
+        }
+
+        It 'reports missing OCR tools without throwing' {
+            Mock Test-CommandAvailable { $null }
+            Mock Resolve-TesseractPath { $null }
+
+            $result = Get-LofiTrackOcr -Source 'https://youtu.be/example'
+
+            $result.ok | Should -BeTrue
+            $result.available | Should -BeFalse
+            $result.message | Should -Match 'ffmpeg.*Tesseract'
+        }
+
+        It 'finds Tesseract in its standard Windows install directory when it is not in PATH' {
+            $script:OnWindows = $true
+            Mock Test-CommandAvailable { $null }
+            Mock Test-Path {
+                $LiteralPath -eq 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+            }
+
+            Resolve-TesseractPath | Should -Be 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+        }
+
+        It 'finds Tesseract from a registered custom installer location' {
+            $script:OnWindows = $true
+            Mock Test-CommandAvailable { $null }
+            Mock Get-ChildItem {
+                [pscustomobject]@{ PSPath = 'TestRegistry:\Tesseract-OCR' }
+            } -ParameterFilter { $LiteralPath -like 'HKCU:*' }
+            Mock Get-ChildItem { @() } -ParameterFilter { $LiteralPath -like 'HKLM:*' }
+            Mock Get-ItemProperty {
+                [pscustomobject]@{
+                    DisplayName     = 'Tesseract-OCR'
+                    InstallLocation = 'D:\Tools\OCR'
+                    DisplayIcon     = $null
+                }
+            }
+            Mock Test-Path { $LiteralPath -eq 'D:\Tools\OCR\tesseract.exe' }
+
+            Resolve-TesseractPath | Should -Be 'D:\Tools\OCR\tesseract.exe'
+        }
+
+        It 'returns a recent cached OCR result without invoking tools again' {
+            $script:CurrentLofiTrackResult = @{
+                ok        = $true
+                available = $true
+                track     = 'artist - title'
+                message   = 'Lofi track detected.'
+            }
+            $script:CurrentLofiTrackCheckedAt = Get-Date
+            Mock Test-CommandAvailable { throw 'Tool lookup should not run for a cache hit.' }
+
+            $result = Get-LofiTrackOcr -Source 'https://youtu.be/example'
+
+            $result.track | Should -Be 'artist - title'
+            Should -Invoke Test-CommandAvailable -Times 0 -Exactly
+        }
+    }
+
     Context 'Resolve-Player' {
         BeforeEach {
             $script:OnWindows = $false
@@ -109,6 +253,41 @@ Describe 'lofiatc.ps1 helper functions' {
             Mock Get-Command { $null } -ParameterFilter { $Name -eq 'mpc-hc64.exe' }
 
             Resolve-Player -explicitPlayer '' | Should -Be 'Potplayer'
+        }
+    }
+
+    Context 'Test-Player' {
+        BeforeEach {
+            $script:OnWindows = $true
+        }
+
+        It 'resolves a Scoop VLC shim to the real executable' {
+            $shimExe = Join-Path $TestDrive 'scoop/shims/vlc.exe'
+            $shimMetadata = Join-Path $TestDrive 'scoop/shims/vlc.shim'
+            $realVlc = Join-Path $TestDrive 'scoop/apps/vlc/current/vlc.exe'
+
+            New-Item -ItemType Directory -Path (Split-Path $shimExe) -Force | Out-Null
+            New-Item -ItemType Directory -Path (Split-Path $realVlc) -Force | Out-Null
+            New-Item -ItemType File -Path $shimExe, $realVlc -Force | Out-Null
+            Set-Content -LiteralPath $shimMetadata -Value "path = `"$realVlc`""
+
+            Mock Get-Command {
+                [pscustomobject]@{ Path = $shimExe }
+            } -ParameterFilter { $Name -eq 'vlc.exe' }
+
+            Test-Player -player 'VLC' | Should -Be $realVlc
+        }
+
+        It 'keeps a normal VLC executable path unchanged' {
+            $realVlc = Join-Path $TestDrive 'VideoLAN/VLC/vlc.exe'
+            New-Item -ItemType Directory -Path (Split-Path $realVlc) -Force | Out-Null
+            New-Item -ItemType File -Path $realVlc -Force | Out-Null
+
+            Mock Get-Command {
+                [pscustomobject]@{ Path = $realVlc }
+            } -ParameterFilter { $Name -eq 'vlc.exe' }
+
+            Test-Player -player 'VLC' | Should -Be $realVlc
         }
     }
 
@@ -469,10 +648,7 @@ Describe 'lofiatc.ps1 helper functions' {
 
             Mock Stop-ManagedProcess {}
             Mock Start-PlayerProcess {
-                [pscustomobject]@{
-                    FakeProcess = $true
-                    HasExited   = $false
-                }
+                [System.Diagnostics.Process]::new()
             }
             Mock Test-ManagedProcessAlive {
                 $false
@@ -511,6 +687,49 @@ Describe 'lofiatc.ps1 helper functions' {
             $script:CurrentLofiProcess | Should -BeNullOrEmpty
 
             Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'returns OCR track data only when Lofi track display is enabled' {
+            Mock Get-LofiTrackOcr {
+                @{ ok = $true; available = $true; track = 'artist - title'; message = 'Lofi track detected.' }
+            }
+            Mock Test-ManagedProcessAlive { $true }
+            $script:CurrentLofiProcess = [System.Diagnostics.Process]::new()
+
+            $disabled = Invoke-MapPlaybackAction `
+                -Action 'lofi-track' `
+                -LofiMusicUrl 'https://youtu.be/example'
+            $enabled = Invoke-MapPlaybackAction `
+                -Action 'lofi-track' `
+                -LofiMusicUrl 'https://youtu.be/example' `
+                -ShowLofiTrack
+
+            $disabled.available | Should -BeFalse
+            $enabled.track | Should -Be 'artist - title'
+            Should -Invoke Get-LofiTrackOcr -Times 1 -Exactly
+        }
+
+        It 'keeps existing lofi playback when switching airport channels' {
+            Mock Test-ManagedProcessAlive {
+                $null -ne $Process
+            }
+
+            1..2 | ForEach-Object {
+                Invoke-MapChannelSelection `
+                    -Selection @{ ICAO = 'EHAM'; ChannelIndex = 0 } `
+                    -AtcSources $script:mapAtcSources `
+                    -Player 'MPV' `
+                    -ATCVolume 65 `
+                    -LofiVolume 50 `
+                    -LofiMusicUrl 'http://example.test/lofi' | Out-Null
+            }
+
+            Should -Invoke Start-PlayerProcess -Times 2 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/eham-tower'
+            }
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/lofi'
+            }
         }
 
         It 'stores ATC volume for the next selected channel when no channel is active' {
@@ -566,7 +785,42 @@ Describe 'lofiatc.ps1 helper functions' {
         }
     }
 
+    Context 'Map control token' {
+        It 'generates URL-safe random tokens' {
+            $first = New-MapControlToken
+            $second = New-MapControlToken
+
+            $first | Should -Match '^[A-Za-z0-9_-]{43}$'
+            $second | Should -Match '^[A-Za-z0-9_-]{43}$'
+            $first | Should -Not -Be $second
+        }
+
+        It 'accepts only the expected non-empty token' {
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken 'expected-token' | Should -BeTrue
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken 'wrong-token' | Should -BeFalse
+            Test-MapControlToken -ExpectedToken 'expected-token' -ProvidedToken '' | Should -BeFalse
+            Test-MapControlToken -ExpectedToken '' -ProvidedToken 'expected-token' | Should -BeFalse
+        }
+    }
+
     Context 'Generated map HTML for added controls' {
+        It 'loads the external map HTML template and replaces all placeholders' {
+            Get-ATCMapHtmlTemplatePath | Should -Be (Join-Path $repoRoot 'templates\atc-map.html')
+
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match '<!DOCTYPE html>'
+            $html | Should -Not -Match '\{\{[A-Z0-9_]+\}\}'
+        }
+
         It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
             $html = New-ATCMapHtml `
                 -JsArray '[]' `
@@ -578,7 +832,8 @@ Describe 'lofiatc.ps1 helper functions' {
                 -KeepOpen `
                 -StartRandom `
                 -ATCVolume 65 `
-                -LofiVolume 50
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
 
             $html | Should -Match 'id="np-stop-lofi"'
             $html | Should -Match 'id="np-atc-volume"'
@@ -586,7 +841,81 @@ Describe 'lofiatc.ps1 helper functions' {
             $html | Should -Match 'action=set-volume'
             $html | Should -Match 'action=favorite-toggle'
             $html | Should -Match 'action=airport-favorite-toggle'
+            $html | Should -Match "var mapControlToken = 'test-token'"
+            $html | Should -Match "token=' \+ encodeURIComponent\(mapControlToken\)"
             $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'includes the Lofi OCR panel and polling script when enabled' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -ShowLofiTrack `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
+
+            $html | Should -Match 'id="np-lofi-track-text"'
+            $html | Should -Match 'var showLofiTrack = true'
+            $html | Should -Match "action=lofi-track"
+            $html | Should -Match 'lofiTrackPollPending'
+            $html | Should -Match 'setInterval\(pollLofiTrack, 10000\)'
+            $html | Should -Not -Match '\{\{SHOW_LOFI_TRACK_JS\}\}'
+        }
+
+        It 'escapes raw METAR text before adding it to popup HTML' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'function escapeHtml'
+            $html | Should -Match 'escapeHtml\(m.rawOb\)'
+        }
+
+        It 'lazy-loads RainViewer radar only after the radar toggle is enabled' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'if \(e\.target\.checked && !radarFramesLoaded\)'
+            $html | Should -Match 'startRadarRefreshTimer\(\)'
+            $html | Should -Not -Match '(?s)loadRadarFrames\(\);\s*setInterval\(loadRadarFrames, 600000\)'
+        }
+
+        It 'lazy-loads map METAR data through the local control endpoint' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LazyWeather
+
+            $html | Should -Match ([regex]::Escape("controlUrl('?action=weather')"))
+            $html | Should -Match 'applyWeatherMarkerUpdates'
+            $html | Should -Match 'loadMapWeatherData\(\);'
+            $html | Should -Match 'Loading weather stations'
+            $html | Should -Match 'Weather stations loaded'
         }
 
         It 'emits channel and airport favorite links in marker JSON when favorite actions are enabled' {
@@ -755,6 +1084,27 @@ KLAX,Tower,http://example.com/stream
             ($withFzf | Where-Object Name -eq 'fzf').Required | Should -BeTrue
             ($withFzf | Where-Object Name -eq 'fzf').Status | Should -Be 'Missing'
         }
+
+        It 'requires the OCR toolchain only when Lofi track display is requested' {
+            Mock Test-CommandAvailable {
+                switch ($CommandName) {
+                    'mpv' { '/usr/bin/mpv' }
+                    'yt-dlp' { '/usr/bin/yt-dlp' }
+                    'ffmpeg' { '/usr/bin/ffmpeg' }
+                    'tesseract' { $null }
+                    default { $null }
+                }
+            }
+            Mock Resolve-TesseractPath { $null }
+
+            $withoutOcr = Test-LofiATCDependencies -ScriptDir $script:scriptDir
+            $withOcr = Test-LofiATCDependencies -ScriptDir $script:scriptDir -ShowLofiTrack
+
+            ($withoutOcr | Where-Object Name -eq 'tesseract (Lofi OCR)').Required | Should -BeFalse
+            ($withOcr | Where-Object Name -eq 'ffmpeg (Lofi OCR)').Status | Should -Be 'OK'
+            ($withOcr | Where-Object Name -eq 'tesseract (Lofi OCR)').Required | Should -BeTrue
+            ($withOcr | Where-Object Name -eq 'tesseract (Lofi OCR)').Status | Should -Be 'Missing'
+        }
     }
 
     Context 'Get-VLCVolumeArg' {
@@ -774,6 +1124,29 @@ KLAX,Tower,http://example.com/stream
             $result = Get-VLCVolumeArg -volume 90 -NoAudio
 
             $result.Value | Should -Be 0
+        }
+    }
+
+    Context 'Start-PlayerProcess' {
+        BeforeEach {
+            $script:OnWindows = $true
+
+            Mock Resolve-StreamUrl { $Url }
+            Mock Test-Player { 'C:\Program Files\VideoLAN\VLC\vlc.exe' }
+            Mock Start-Process { [System.Diagnostics.Process]::new() }
+        }
+
+        It 'starts VLC as a separate instance so managed lofi playback remains trackable' {
+            Start-PlayerProcess `
+                -Url 'http://example.test/lofi' `
+                -Player 'VLC' `
+                -NoVideo `
+                -BasicArgs `
+                -Volume 50 | Out-Null
+
+            Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+                $ArgumentList -match '--no-one-instance'
+            }
         }
     }
 
@@ -887,9 +1260,131 @@ KLAX,Tower,http://example.com/stream
             $result | Should -Not -BeNullOrEmpty
             $result.WeatherMap.Count | Should -Be 0
             $result.IcaoToFallbacks.Count | Should -Be 0
+            $result.Stats.NoaaStations | Should -Be 0
+            $result.Stats.VatsimStations | Should -Be 0
 
             Should -Not -Invoke Invoke-RestMethod
             Should -Not -Invoke Invoke-WebRequest
+        }
+
+        It 'fetches NOAA METARs in endpoint-safe chunks' {
+            $sources = 1..201 | ForEach-Object {
+                [pscustomobject]@{
+                    ICAO        = ('K{0:D3}' -f $_)
+                    NearbyICAOs = ''
+                }
+            }
+
+            Mock Invoke-RestMethod { @() }
+            Mock Invoke-WebRequest { throw 'Should not be called' }
+            Mock Write-Warning {}
+
+            Get-MapWeatherData -AtcSources $sources | Out-Null
+
+            Should -Invoke Invoke-RestMethod -Times 3 -Exactly
+            Should -Not -Invoke Invoke-WebRequest
+        }
+
+        It 'uses VATSIM fallback when requested for missing primary METARs' {
+            $sources = @(
+                [pscustomobject]@{ ICAO = 'KAAA'; NearbyICAOs = 'KCCC' },
+                [pscustomobject]@{ ICAO = 'KBBB'; NearbyICAOs = '' }
+            )
+
+            Mock Invoke-RestMethod {
+                @(
+                    [pscustomobject]@{
+                        icaoId = 'KCCC'
+                        rawOb  = 'KCCC 121650Z 18012KT 9999 FEW020 18/12 Q1013'
+                        fltcat = 'VFR'
+                        wdir   = 180
+                        wspd   = 12
+                    }
+                )
+            }
+            Mock Invoke-WebRequest {
+                param($Uri)
+
+                if ($Uri -like '*id=KAAA') {
+                    [pscustomobject]@{ Content = 'KAAA 121650Z 18012KT 9999 FEW020 18/12 Q1013' }
+                }
+                else {
+                    [pscustomobject]@{ Content = 'No METAR available' }
+                }
+            }
+            Mock Write-Warning {}
+
+            $result = Get-MapWeatherData -AtcSources $sources -UseVatsimFallback
+
+            Should -Invoke Invoke-WebRequest -Times 2 -Exactly
+            $result.WeatherMap.ContainsKey('KAAA') | Should -BeTrue
+            $result.WeatherMap['KAAA'].Source | Should -Be 'VATSIM'
+            $result.WeatherMap.ContainsKey('KCCC') | Should -BeTrue
+            $result.WeatherMap['KCCC'].Source | Should -Be 'NOAA'
+            $result.WeatherMap.ContainsKey('KBBB') | Should -BeFalse
+            $result.Stats.NoaaStations | Should -Be 1
+            $result.Stats.VatsimStations | Should -Be 1
+            $result.Stats.NoaaRequests | Should -Be 1
+            $result.Stats.VatsimRequests | Should -Be 2
+        }
+
+        It 'builds lazy weather marker payloads' {
+            $script:AirportData = [pscustomobject]@{
+                KAAA = [pscustomobject]@{
+                    lat = 10
+                    lon = 20
+                }
+            }
+
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'KAAA'
+                    IATA                  = ''
+                    City                  = 'Test City'
+                    Country               = 'Test Country'
+                    Continent             = ''
+                    'State/Province'      = ''
+                    'Airport Name'        = 'Test Airport'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'http://example.test/stream'
+                    'Webcam URL'          = ''
+                    NearbyICAOs           = ''
+                }
+            )
+
+            Mock Get-MapWeatherData {
+                @{
+                    WeatherMap = @{
+                        KAAA = @{
+                            fcat   = 'VFR'
+                            wdir   = 180
+                            wspd   = 12
+                            rawOb  = 'KAAA 121650Z 18012KT 9999 FEW020 18/12 Q1013'
+                            ageMin = 10
+                            source = 'NOAA'
+                            wxIcao = 'KAAA'
+                        }
+                    }
+                    IcaoToFallbacks = @{}
+                    Stats = [pscustomobject]@{
+                        NoaaStations   = 1
+                        VatsimStations = 0
+                        NoaaMs         = 123
+                        VatsimMs       = 0
+                        NoaaRequests   = 1
+                        VatsimRequests = 0
+                    }
+                }
+            }
+
+            $payload = New-MapWeatherPayload -AtcSources $sources -Favorites @()
+
+            $payload.ok | Should -BeTrue
+            $payload.message | Should -Be 'Weather stations loaded: 1 NOAA, 0 VATSIM.'
+            $payload.stats.NoaaStations | Should -Be 1
+            $payload.markers.Count | Should -Be 1
+            $payload.markers[0].icao | Should -Be 'KAAA'
+            $payload.markers[0].fcat | Should -Be 'VFR'
         }
     }
 
@@ -925,64 +1420,6 @@ KLAX,Tower,http://example.com/stream
             $result | Should -Not -BeNullOrEmpty
             $result.icao | Should -Be 'KLAX'
             Should -Not -Invoke Invoke-RestMethod
-        }
-    }
-
-    Context 'Select-ATCFromMap cancellation path' {
-        It 'throws OperationCanceledException when Q is pressed' {
-            $server = Start-ATCMapServer -StartPort 59999 -MaxRetries 20
-            $listener = $server.Listener
-
-            Mock Start-Sleep {}
-            Mock Write-Host {}
-            Mock Test-InteractiveConsoleAvailable { $true }
-            Mock Test-ConsoleKeyAvailable { $true }
-            Mock Read-ConsoleKey {
-                [pscustomobject]@{ Key = 'Q' }
-            }
-
-            try {
-                $thrown = $null
-
-                try {
-                    Select-ATCFromMap -Listener $listener -TimeoutSeconds 5
-                }
-                catch {
-                    $thrown = $_.Exception
-                }
-
-                $thrown | Should -Not -BeNullOrEmpty
-
-                $allTypes = @(
-                    $thrown.GetType().FullName
-                    if ($thrown.InnerException) { $thrown.InnerException.GetType().FullName }
-                )
-
-                $allTypes | Should -Contain 'System.OperationCanceledException'
-            }
-            finally {
-                try { $listener.Stop() } catch {}
-                try { $listener.Close() } catch {}
-            }
-        }
-    }
-
-    Context 'Select-ATCFromMap non-interactive host path' {
-        It 'times out cleanly when console cancellation is unavailable' {
-            $server = Start-ATCMapServer -StartPort 59998 -MaxRetries 20
-            $listener = $server.Listener
-
-            Mock Write-Host {}
-            Mock Test-InteractiveConsoleAvailable { $false }
-            Mock Start-Sleep {}
-
-            try {
-                { Select-ATCFromMap -Listener $listener -TimeoutSeconds 0 } | Should -Throw '*Timed out waiting for a map selection*'
-            }
-            finally {
-                try { $listener.Stop() } catch {}
-                try { $listener.Close() } catch {}
-            }
         }
     }
 
