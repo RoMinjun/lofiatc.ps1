@@ -89,6 +89,24 @@ Ensure you have the following installed before running the script:
   Install with:
   - Windows: `winget install --id=junegunn.fzf -e`
   - Debian based distros: `sudo apt install fzf`
+---
+
+## Install
+Install the `lofiatc` PowerShell command:
+```powershell
+irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | iex
+```
+
+> [!NOTE]
+> If you wish to install a branch other than `main`, you can do that by passing `-Ref` followed by the branch name, see following example for `test` branch:
+> ```powershell
+> & ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref test
+> ```
+
+Open a new PowerShell session after installation, then run:
+```powershell
+lofiatc
+```
 
 ### Optional preflight check
 After installing, you can verify required tools and optional integrations with:
@@ -111,25 +129,6 @@ lofiatc -CheckDependencies -Player VLC
 - optional tools like `fzf`, `yt-dlp`, and `youtube-dl`
 - local files such as `config.json`, `favorites.json`, and ATC source CSVs
 - optional network/service checks for airport and weather endpoints
-
----
-
-## Install
-Install the `lofiatc` PowerShell command:
-```powershell
-irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | iex
-```
-
-> [!NOTE]
-> If you wish to install a branch other than `main`, you can do that by passing `-Ref` followed by the branch name, see following example for `test` branch:
-> ```powershell
-> & ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref test
-> ```
-
-Open a new PowerShell session after installation, then run:
-```powershell
-lofiatc
-```
 
 The installer copies the app files to a per-user install directory and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion on Windows, macOS, and Linux:
 ```powershell
