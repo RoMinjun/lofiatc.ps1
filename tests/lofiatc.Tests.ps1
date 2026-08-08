@@ -865,6 +865,9 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Match "action=lofi-track"
             $html | Should -Match 'lofiTrackPollPending'
             $html | Should -Match 'setInterval\(pollLofiTrack, 10000\)'
+            $html | Should -Match '<meta charset="UTF-8">'
+            $html | Should -Match '&#9664; Older'
+            $html | Should -Match 'Newer &#9654;'
             $html | Should -Not -Match '\{\{SHOW_LOFI_TRACK_JS\}\}'
         }
 
