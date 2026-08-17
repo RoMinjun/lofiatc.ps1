@@ -407,7 +407,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
     Context 'Named configuration profiles' {
         BeforeEach {
             $script:previousUserDataPath = $env:LOFIATC_USER_DATA
-            $env:LOFIATC_USER_DATA = Join-Path $TestDrive 'user-data'
+            $env:LOFIATC_USER_DATA = Join-Path $TestDrive ('user-data-' + [guid]::NewGuid().ToString('N'))
         }
 
         AfterEach {
@@ -476,6 +476,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
             $profile.Player | Should -Be 'MPV'
             $profile.ATCVolume | Should -Be 35
+            (Get-Content -LiteralPath ($profilePath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
             @(Get-ChildItem -LiteralPath (Split-Path -Parent $profilePath) -Filter '*.tmp').Count | Should -Be 0
         }
 

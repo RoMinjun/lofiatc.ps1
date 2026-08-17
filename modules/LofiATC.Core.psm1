@@ -223,6 +223,7 @@ Function Write-LofiATCJsonFileAtomically {
 
     $fileName = Split-Path -Leaf $Path
     $temporaryPath = Join-Path $directory ('.{0}.{1}.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
+    $backupPath = $Path + '.bak'
 
     try {
         $json = $InputObject | ConvertTo-Json
@@ -233,7 +234,11 @@ Function Write-LofiATCJsonFileAtomically {
         $null = Get-Content -LiteralPath $temporaryPath -Raw | ConvertFrom-Json
 
         if (Test-Path -LiteralPath $Path) {
-            [System.IO.File]::Replace($temporaryPath, $Path, $null)
+            if (Test-Path -LiteralPath $backupPath) {
+                Remove-Item -LiteralPath $backupPath -Force
+            }
+
+            [System.IO.File]::Replace($temporaryPath, $Path, $backupPath)
         }
         else {
             [System.IO.File]::Move($temporaryPath, $Path)

@@ -544,6 +544,8 @@ $profileNameCompleter = {
         }
 }
 
-Register-ArgumentCompleter -CommandName lofiatc -ParameterName Profile, SaveProfile, RemoveProfile -ScriptBlock $profileNameCompleter
+foreach ($profileParameterName in @('Profile', 'SaveProfile', 'RemoveProfile')) {
+    Register-ArgumentCompleter -CommandName lofiatc -ParameterName $profileParameterName -ScriptBlock $profileNameCompleter
+}
 
 Export-ModuleMember -Function lofiatc, Update-LofiATC, Update-LofiATCSources, Get-LofiATCVersion
