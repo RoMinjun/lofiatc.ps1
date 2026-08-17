@@ -12,6 +12,42 @@ Describe 'LofiATC module updater' {
         Remove-Module LofiATC -Force -ErrorAction SilentlyContinue
     }
 
+    It 'exposes and validates named profile parameters on the installed command' {
+        $parameters = (Get-Command lofiatc).Parameters
+
+        $parameters.Keys | Should -Contain 'Profile'
+        $parameters.Keys | Should -Contain 'SaveProfile'
+        $parameters.Keys | Should -Contain 'ListProfiles'
+        $parameters.Keys | Should -Contain 'RemoveProfile'
+
+        $profilePattern = @($parameters.Profile.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidatePatternAttribute] })[0]
+        $profilePattern.RegexPattern | Should -Be '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+    }
+
+    It 'completes saved profile names' {
+        $previousUserDataPath = $env:LOFIATC_USER_DATA
+        $env:LOFIATC_USER_DATA = Join-Path $TestDrive 'completion-user-data'
+        $profilesPath = Join-Path $env:LOFIATC_USER_DATA 'profiles'
+        New-Item -ItemType Directory -Path $profilesPath -Force | Out-Null
+        '{}' | Set-Content -Path (Join-Path $profilesPath 'Work.json') -Encoding UTF8
+        '{}' | Set-Content -Path (Join-Path $profilesPath 'Home.json') -Encoding UTF8
+
+        try {
+            $inputScript = 'lofiatc -Profile Wo'
+            $completion = TabExpansion2 $inputScript $inputScript.Length
+            @($completion.CompletionMatches.CompletionText) | Should -Contain 'Work'
+            @($completion.CompletionMatches.CompletionText) | Should -Not -Contain 'Home'
+        }
+        finally {
+            if ($null -eq $previousUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $previousUserDataPath
+            }
+        }
+    }
+
     It 'runs the downloaded installer without mutating the PowerShell profile' {
         $installRoot = Join-Path $TestDrive 'lofiatc'
         New-Item -ItemType Directory -Path $installRoot -Force | Out-Null

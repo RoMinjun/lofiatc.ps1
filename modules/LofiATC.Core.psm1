@@ -103,7 +103,11 @@ Function Get-LofiATCIgnoredConfigParameterNames {
         'PipelineVariable',
         'SaveConfig',
         'LoadConfig',
-        'ConfigPath'
+        'ConfigPath',
+        'Profile',
+        'SaveProfile',
+        'ListProfiles',
+        'RemoveProfile'
     )
 }
 
@@ -153,10 +157,100 @@ Function Initialize-LofiATCUserDataPath {
     return $userDataDir
 }
 
+Function Test-LofiATCProfileName {
+    param(
+        [string]$Name
+    )
+
+    return (-not [string]::IsNullOrWhiteSpace($Name) -and $Name -match '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+}
+
+Function Get-LofiATCProfilesPath {
+    param(
+        [switch]$Create
+    )
+
+    $profilesPath = Join-Path (Get-LofiATCUserDataPath) 'profiles'
+    if ($Create -and -not (Test-Path -LiteralPath $profilesPath)) {
+        New-Item -ItemType Directory -Path $profilesPath -Force | Out-Null
+    }
+
+    return $profilesPath
+}
+
+Function Resolve-LofiATCProfilePath {
+    param(
+        [string]$Name,
+        [switch]$CreateDirectory
+    )
+
+    if (-not (Test-LofiATCProfileName -Name $Name)) {
+        throw "Profile name '$Name' is invalid. Use 1-64 letters, numbers, underscores, or hyphens, starting with a letter or number."
+    }
+
+    $profilesPath = Get-LofiATCProfilesPath -Create:$CreateDirectory
+    return (Join-Path $profilesPath ($Name + '.json'))
+}
+
+Function Get-LofiATCProfile {
+    $profilesPath = Get-LofiATCProfilesPath
+    if (-not (Test-Path -LiteralPath $profilesPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $profilesPath -Filter '*.json' -File |
+        Where-Object { Test-LofiATCProfileName -Name $_.BaseName } |
+        Sort-Object -Property BaseName |
+        ForEach-Object {
+            [pscustomobject]@{
+                Name          = $_.BaseName
+                Path          = $_.FullName
+                LastWriteTime = $_.LastWriteTime
+            }
+        }
+}
+
+Function Write-LofiATCJsonFileAtomically {
+    param(
+        [object]$InputObject,
+        [string]$Path
+    )
+
+    $directory = Split-Path -Parent $Path
+    if ($directory -and -not (Test-Path -LiteralPath $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+
+    $fileName = Split-Path -Leaf $Path
+    $temporaryPath = Join-Path $directory ('.{0}.{1}.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
+
+    try {
+        $json = $InputObject | ConvertTo-Json
+        $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
+
+        # Validate the complete temporary file before it can replace user data.
+        $null = Get-Content -LiteralPath $temporaryPath -Raw | ConvertFrom-Json
+
+        if (Test-Path -LiteralPath $Path) {
+            [System.IO.File]::Replace($temporaryPath, $Path, $null)
+        }
+        else {
+            [System.IO.File]::Move($temporaryPath, $Path)
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+    }
+}
+
 Function Import-LofiATCConfig {
     param(
         [string]$ConfigPath,
-        [hashtable]$BoundParameters
+        [hashtable]$BoundParameters,
+        [int]$VariableScope = 1
     )
 
     if (-not (Test-Path $ConfigPath)) {
@@ -174,7 +268,7 @@ Function Import-LofiATCConfig {
         }
 
         if (-not $BoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne "") {
-            Set-Variable -Name $name -Value $prop.Value -Scope 1
+            Set-Variable -Name $name -Value $prop.Value -Scope $VariableScope
         }
     }
 
@@ -184,7 +278,9 @@ Function Import-LofiATCConfig {
 Function Export-LofiATCConfig {
     param(
         [string]$CommandPath,
-        [string]$ConfigPath
+        [string]$ConfigPath,
+        [switch]$Atomic,
+        [int]$VariableScope = 1
     )
 
     $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
@@ -196,7 +292,7 @@ Function Export-LofiATCConfig {
             continue
         }
 
-        $value = Get-Variable -Name $name -ValueOnly -Scope 1
+        $value = Get-Variable -Name $name -ValueOnly -Scope $VariableScope
         if ($value -is [System.Management.Automation.SwitchParameter]) {
             $value = [bool]$value
         }
@@ -211,8 +307,51 @@ Function Export-LofiATCConfig {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    if ($Atomic) {
+        Write-LofiATCJsonFileAtomically -InputObject $config -Path $ConfigPath
+    }
+    else {
+        $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    }
     Write-Information "Saved config to $ConfigPath"
+}
+
+Function Import-LofiATCProfile {
+    param(
+        [string]$Name,
+        [hashtable]$BoundParameters
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        throw "Profile '$Name' was not found. Use -ListProfiles to view saved profiles."
+    }
+
+    Import-LofiATCConfig -ConfigPath $profilePath -BoundParameters $BoundParameters -VariableScope 2
+}
+
+Function Export-LofiATCProfile {
+    param(
+        [string]$Name,
+        [string]$CommandPath
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name -CreateDirectory
+    Export-LofiATCConfig -CommandPath $CommandPath -ConfigPath $profilePath -Atomic -VariableScope 2
+}
+
+Function Remove-LofiATCProfile {
+    param(
+        [string]$Name
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        throw "Profile '$Name' was not found. Use -ListProfiles to view saved profiles."
+    }
+
+    Remove-Item -LiteralPath $profilePath -Force
+    Write-Information "Removed profile '$Name' from $profilePath"
 }
 
 Function Test-ConsoleKeyAvailable {

@@ -237,6 +237,14 @@ lofiatc -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45
 # Load your last-used settings, but override to open radar this time
 lofiatc -LoadConfig -OpenRadar
 
+# Save and reuse a named setup; explicit values still override the profile
+lofiatc -SaveProfile Work -ShowMap -KeepOpen -ATCVolume 70
+lofiatc -Profile Work -ATCVolume 80
+
+# List or remove named profiles without starting playback
+lofiatc -ListProfiles
+lofiatc -RemoveProfile Work
+
 # Force a specific player
 lofiatc -Player mpv
 lofiatc -Player vlc
@@ -306,6 +314,10 @@ Get-Help lofiatc -Full
 | `-SaveConfig`   | switch    | false   | Saves the current flags/values to your user `config.json`. |
 | `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
+| `-Profile`      | string    | none    | Loads a named profile from the user data directory. CLI flags override profile values. |
+| `-SaveProfile`  | string    | none    | Saves the current flags/values as a named profile. |
+| `-ListProfiles` | switch    | false   | Lists saved profiles and exits without starting playback. |
+| `-RemoveProfile` | string   | none    | Removes a named profile and exits without starting playback. |
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
 | `-ICAO`         | string    | none    | Select a specific airport by ICAO code. If multiple channels exist, you’ll be prompted unless `-RandomATC` is used. |
 | `-Nearby`       | switch    | false   | Uses your current location to show or select nearby airports. |
@@ -352,7 +364,25 @@ Even if your config has `OpenRadar: false`, you can re-enable it with:
 lofiatc -LoadConfig -OpenRadar
 ```
 
-By default, installed runs store `config.json` and `favorites.json` in your user data folder:
+### Named profiles
+
+Named profiles let you keep several reusable setups while preserving the existing `config.json` behavior. Profile names are 1–64 letters, numbers, underscores, or hyphens and must start with a letter or number.
+
+```powershell
+# Create or replace a profile, then continue with the selected session
+lofiatc -SaveProfile Work -ShowMap -KeepOpen -ATCVolume 70 -LofiVolume 45
+
+# Load it; the explicit volume wins over the saved value
+lofiatc -Profile Work -ATCVolume 80
+
+# Manage profiles without launching players or a browser
+lofiatc -ListProfiles
+lofiatc -RemoveProfile Work
+```
+
+The installed PowerShell command completes saved names for `-Profile`, `-SaveProfile`, and `-RemoveProfile`. Named profiles are written through a validated temporary file before replacement and are stored in the `profiles` subdirectory of the user data folder.
+
+By default, installed runs store `config.json`, `favorites.json`, and named profiles in your user data folder:
 - Windows: `$env:APPDATA\lofiatc`
 - macOS/Linux: `$XDG_CONFIG_HOME/lofiatc` or `~/.config/lofiatc`
 
