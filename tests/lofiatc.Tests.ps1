@@ -449,7 +449,12 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
   "Player": "VLC",
   "OpenRadar": true,
   "ATCVolume": 70,
-  "LofiVolume": 45
+  "LofiVolume": 45,
+  "SelectedChannel": {
+    "ICAO": "EHAM",
+    "ChannelDescription": "EHAM Tower",
+    "StreamUrl": "https://example.com/eham-twr"
+  }
 }
 '@ | Set-Content -Path (Join-Path $profilesPath 'Work.json') -Encoding UTF8
 
@@ -459,12 +464,114 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $LofiVolume = 50
             $boundParameters = @{ Player = $true }
 
-            Import-LofiATCProfile -Name 'Work' -BoundParameters $boundParameters
+            $profileChannel = Import-LofiATCProfile -Name 'Work' -BoundParameters $boundParameters
 
             $Player | Should -Be 'MPV'
             $OpenRadar | Should -BeTrue
             $ATCVolume | Should -Be 70
             $LofiVolume | Should -Be 45
+            $profileChannel.ICAO | Should -Be 'EHAM'
+            $profileChannel.ChannelDescription | Should -Be 'EHAM Tower'
+        }
+
+        It 'saves the selected ATC channel in the profile' {
+            $commandPath = Join-Path $TestDrive 'profile-command.ps1'
+            'param([string]$Player)' | Set-Content -LiteralPath $commandPath -Encoding UTF8
+            $Player = 'MPV'
+            $selectedATC = @{
+                AirportInfo = [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                }
+            }
+
+            Export-LofiATCProfile `
+                -Name 'Work' `
+                -CommandPath $commandPath `
+                -SelectedATC $selectedATC `
+                -InformationAction SilentlyContinue
+
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work'
+            $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            $profile.Player | Should -Be 'MPV'
+            $profile.SelectedChannel.ICAO | Should -Be 'EHAM'
+            $profile.SelectedChannel.ChannelDescription | Should -Be 'EHAM Tower'
+            $profile.SelectedChannel.StreamUrl | Should -Be 'https://example.com/eham-twr'
+        }
+
+        It 'restores the saved channel without invoking channel selection' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                    'Webcam URL'          = ''
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Select-ATCStreamByICAO { throw 'Interactive channel selection should not run.' }
+
+            $selection = Resolve-SelectedATCStream `
+                -AtcSources $sources `
+                -ProfileChannel $savedChannel
+
+            $selection.SelectedATC.AirportInfo.'Channel Description' | Should -Be 'EHAM Tower'
+            Should -Invoke Select-ATCStreamByICAO -Times 0 -Exactly
+        }
+
+        It 'matches a saved channel by description when its stream URL changes' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/new-eham-twr'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/old-eham-twr'
+            }
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected.StreamUrl | Should -Be 'https://example.com/new-eham-twr'
+        }
+
+        It 'warns and returns to normal selection when the saved channel disappeared' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Write-Warning
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected | Should -BeNullOrEmpty
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Saved channel.*EHAM Tower.*no longer available'
+            }
         }
 
         It 'writes valid JSON atomically and leaves no temporary files' {
@@ -517,6 +624,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $ignored | Should -Contain 'SaveProfile'
             $ignored | Should -Contain 'ListProfiles'
             $ignored | Should -Contain 'RemoveProfile'
+            $ignored | Should -Contain 'SelectedChannel'
         }
     }
 

@@ -69,7 +69,7 @@ Optional path for the saved configuration file. Defaults to user data when insta
 Load a named profile from the user data directory. Explicit command-line values take precedence.
 
 .PARAMETER SaveProfile
-Save the current options as a named profile in the user data directory.
+Save the current options and selected ATC channel as a named profile in the user data directory.
 
 .PARAMETER ListProfiles
 List saved named profiles and exit without starting playback.
@@ -208,8 +208,9 @@ try {
         Import-LofiATCConfig -ConfigPath $ConfigPath -BoundParameters $PSBoundParameters
     }
 
+    $profileChannel = $null
     if ($Profile) {
-        Import-LofiATCProfile -Name $Profile -BoundParameters $PSBoundParameters
+        $profileChannel = Import-LofiATCProfile -Name $Profile -BoundParameters $PSBoundParameters
     }
 
     if ($ICAO) {
@@ -255,7 +256,7 @@ try {
         Export-LofiATCConfig -CommandPath $MyInvocation.MyCommand.Path -ConfigPath $ConfigPath
     }
 
-    if ($SaveProfile) {
+    if ($SaveProfile -and $ShowMap -and $KeepOpen) {
         Export-LofiATCProfile -Name $SaveProfile -CommandPath $MyInvocation.MyCommand.Path
     }
 
@@ -297,6 +298,7 @@ try {
         -ATCVolume $ATCVolume `
         -LofiVolume $LofiVolume `
         -LofiMusicUrl $lofiMusicUrl `
+        -ProfileChannel $profileChannel `
         -Nearby:$Nearby `
         -ShowMap:$ShowMap `
         -KeepOpen:$KeepOpen `
@@ -309,6 +311,13 @@ try {
         -NoLofiMusic:$NoLofiMusic `
         -PlayLofiGirlVideo:$PlayLofiGirlVideo `
         -ShowLofiTrack:$ShowLofiTrack
+
+    if ($SaveProfile) {
+        Export-LofiATCProfile `
+            -Name $SaveProfile `
+            -CommandPath $MyInvocation.MyCommand.Path `
+            -SelectedATC $selection.SelectedATC
+    }
 
     Start-LofiATCSession `
         -SelectedATC $selection.SelectedATC `

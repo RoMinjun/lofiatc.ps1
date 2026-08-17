@@ -107,7 +107,8 @@ Function Get-LofiATCIgnoredConfigParameterNames {
         'Profile',
         'SaveProfile',
         'ListProfiles',
-        'RemoveProfile'
+        'RemoveProfile',
+        'SelectedChannel'
     )
 }
 
@@ -285,7 +286,8 @@ Function Export-LofiATCConfig {
         [string]$CommandPath,
         [string]$ConfigPath,
         [switch]$Atomic,
-        [int]$VariableScope = 1
+        [int]$VariableScope = 1,
+        [hashtable]$AdditionalValues
     )
 
     $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
@@ -304,6 +306,12 @@ Function Export-LofiATCConfig {
 
         if ($null -ne $value -and $value -ne "") {
             $config[$name] = $value
+        }
+    }
+
+    if ($AdditionalValues) {
+        foreach ($name in $AdditionalValues.Keys) {
+            $config[$name] = $AdditionalValues[$name]
         }
     }
 
@@ -333,16 +341,87 @@ Function Import-LofiATCProfile {
     }
 
     Import-LofiATCConfig -ConfigPath $profilePath -BoundParameters $BoundParameters -VariableScope 2
+
+    $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+    if ($profile.PSObject.Properties['SelectedChannel']) {
+        return $profile.SelectedChannel
+    }
+}
+
+Function Get-LofiATCProfileChannelData {
+    param(
+        [object]$SelectedATC
+    )
+
+    if (-not $SelectedATC -or -not $SelectedATC.AirportInfo) {
+        return $null
+    }
+
+    return [ordered]@{
+        ICAO               = [string]$SelectedATC.AirportInfo.ICAO
+        ChannelDescription = [string]$SelectedATC.AirportInfo.'Channel Description'
+        StreamUrl          = [string]$SelectedATC.AirportInfo.'Stream URL'
+    }
 }
 
 Function Export-LofiATCProfile {
     param(
         [string]$Name,
-        [string]$CommandPath
+        [string]$CommandPath,
+        [object]$SelectedATC
     )
 
     $profilePath = Resolve-LofiATCProfilePath -Name $Name -CreateDirectory
-    Export-LofiATCConfig -CommandPath $CommandPath -ConfigPath $profilePath -Atomic -VariableScope 2
+    $additionalValues = @{}
+    $selectedChannel = Get-LofiATCProfileChannelData -SelectedATC $SelectedATC
+    if ($selectedChannel) {
+        $additionalValues.SelectedChannel = $selectedChannel
+    }
+
+    Export-LofiATCConfig `
+        -CommandPath $CommandPath `
+        -ConfigPath $profilePath `
+        -Atomic `
+        -VariableScope 2 `
+        -AdditionalValues $additionalValues
+}
+
+Function Resolve-LofiATCProfileChannel {
+    param(
+        [array]$AtcSources,
+        [object]$SelectedChannel
+    )
+
+    if (-not $SelectedChannel -or
+        [string]::IsNullOrWhiteSpace([string]$SelectedChannel.ICAO) -or
+        [string]::IsNullOrWhiteSpace([string]$SelectedChannel.ChannelDescription)) {
+        return $null
+    }
+
+    $matches = @($AtcSources | Where-Object {
+        $_.ICAO -eq $SelectedChannel.ICAO -and
+        $_.'Channel Description' -eq $SelectedChannel.ChannelDescription
+    })
+
+    $match = $matches | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$SelectedChannel.StreamUrl) -and
+        $_.'Stream URL' -eq $SelectedChannel.StreamUrl
+    } | Select-Object -First 1
+
+    if (-not $match) {
+        $match = $matches | Select-Object -First 1
+    }
+
+    if (-not $match) {
+        Write-Warning "Saved channel '$($SelectedChannel.ICAO) - $($SelectedChannel.ChannelDescription)' is no longer available. Falling back to normal selection."
+        return $null
+    }
+
+    return @{
+        StreamUrl   = $match.'Stream URL'
+        WebcamUrl   = $match.'Webcam URL'
+        AirportInfo = $match
+    }
 }
 
 Function Remove-LofiATCProfile {
@@ -834,6 +913,7 @@ Function Resolve-SelectedATCStream {
         [int]$ATCVolume,
         [int]$LofiVolume,
         [string]$LofiMusicUrl,
+        [object]$ProfileChannel,
         [switch]$Nearby,
         [switch]$ShowMap,
         [switch]$KeepOpen,
@@ -935,7 +1015,18 @@ Function Resolve-SelectedATCStream {
 
     $selectedATC = $null
 
-    if ($ICAO) {
+    $profileChannelMatchesICAO = (
+        -not $ICAO -or
+        -not $ProfileChannel -or
+        [string]$ProfileChannel.ICAO -eq $ICAO
+    )
+    $profileSelectionOverridden = $Nearby -or $ShowMap -or $RandomATC -or $UseFavorite
+
+    if ($ProfileChannel -and $profileChannelMatchesICAO -and -not $profileSelectionOverridden) {
+        $selectedATC = Resolve-LofiATCProfileChannel -AtcSources $AtcSources -SelectedChannel $ProfileChannel
+    }
+
+    if (-not $selectedATC -and $ICAO) {
         $selectedATC = Select-ATCStreamByICAO `
             -AtcSources $AtcSources `
             -ICAO $ICAO `

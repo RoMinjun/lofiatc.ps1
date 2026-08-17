@@ -238,7 +238,7 @@ lofiatc -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45
 lofiatc -LoadConfig -OpenRadar
 
 # Save and reuse a named setup; explicit values still override the profile
-lofiatc -SaveProfile Work -ShowMap -KeepOpen -ATCVolume 70
+lofiatc -SaveProfile Work -ATCVolume 70
 lofiatc -Profile Work -ATCVolume 80
 
 # List or remove named profiles without starting playback
@@ -315,7 +315,7 @@ Get-Help lofiatc -Full
 | `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
 | `-Profile`      | string    | none    | Loads a named profile from the user data directory. CLI flags override profile values. |
-| `-SaveProfile`  | string    | none    | Saves the current flags/values as a named profile. |
+| `-SaveProfile`  | string    | none    | Saves the current flags/values and selected ATC channel as a named profile. |
 | `-ListProfiles` | switch    | false   | Lists saved profiles and exits without starting playback. |
 | `-RemoveProfile` | string   | none    | Removes a named profile and exits without starting playback. |
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
@@ -369,8 +369,8 @@ lofiatc -LoadConfig -OpenRadar
 Named profiles let you keep several reusable setups while preserving the existing `config.json` behavior. Profile names are 1–64 letters, numbers, underscores, or hyphens and must start with a letter or number.
 
 ```powershell
-# Create or replace a profile, then continue with the selected session
-lofiatc -SaveProfile Work -ShowMap -KeepOpen -ATCVolume 70 -LofiVolume 45
+# Create or replace a profile, then choose the channel to remember
+lofiatc -SaveProfile Work -ATCVolume 70 -LofiVolume 45
 
 # Load it; the explicit volume wins over the saved value
 lofiatc -Profile Work -ATCVolume 80
@@ -379,6 +379,8 @@ lofiatc -Profile Work -ATCVolume 80
 lofiatc -ListProfiles
 lofiatc -RemoveProfile Work
 ```
+
+The selected ATC channel is saved with the profile, so `-Profile Work` can start that feed without asking for a channel again. If the saved feed is no longer available, LofiATC warns and falls back to the normal selection flow. Explicit selection modes such as `-RandomATC`, `-Nearby`, `-ShowMap`, and `-UseFavorite` take precedence over the saved channel.
 
 The installed PowerShell command completes saved names for `-Profile`, `-SaveProfile`, and `-RemoveProfile`. Named profiles are written through a validated temporary file before replacement and are stored in the `profiles` subdirectory of the user data folder.
 

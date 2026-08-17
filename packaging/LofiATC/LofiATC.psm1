@@ -425,7 +425,7 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
 Loads a named configuration profile. Explicit command-line values take precedence.
 
 .PARAMETER SaveProfile
-Saves the current options as a named configuration profile.
+Saves the current options and selected ATC channel as a named configuration profile.
 
 .PARAMETER ListProfiles
 Lists saved named profiles without starting playback.
