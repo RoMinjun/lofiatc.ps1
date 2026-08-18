@@ -75,8 +75,16 @@ Describe 'LofiATC module updater' {
 
             $scriptCommand = Get-Command $scriptEntryPoint
             $wrapperCommand = Get-Command lofiatc
+            $wrapperParseTokens = $null
+            $wrapperParseErrors = $null
+            $wrapperAst = [System.Management.Automation.Language.Parser]::ParseInput(
+                $wrapperCommand.Definition,
+                [ref]$wrapperParseTokens,
+                [ref]$wrapperParseErrors
+            )
+            $wrapperParseErrors | Should -BeNullOrEmpty
             $scriptAstParameters = Get-TestParameterAstMap -ParamBlock $scriptAst.ParamBlock
-            $wrapperAstParameters = Get-TestParameterAstMap -ParamBlock $wrapperCommand.ScriptBlock.Ast.ParamBlock
+            $wrapperAstParameters = Get-TestParameterAstMap -ParamBlock $wrapperAst.ParamBlock
             $scriptNames = @($scriptAstParameters.Keys | Sort-Object)
             $forwardedWrapperNames = @(
                 $wrapperAstParameters.Keys |
