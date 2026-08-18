@@ -404,6 +404,230 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
     }
 
+    Context 'Named configuration profiles' {
+        BeforeEach {
+            $script:previousUserDataPath = $env:LOFIATC_USER_DATA
+            $env:LOFIATC_USER_DATA = Join-Path $TestDrive ('user-data-' + [guid]::NewGuid().ToString('N'))
+        }
+
+        AfterEach {
+            if ($null -eq $script:previousUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $script:previousUserDataPath
+            }
+        }
+
+        It 'exposes named profile operations on the script entrypoint' {
+            $parameters = (Get-Command $scriptPath).Parameters
+
+            $parameters.Keys | Should -Contain 'Profile'
+            $parameters.Keys | Should -Contain 'SaveProfile'
+            $parameters.Keys | Should -Contain 'ListProfiles'
+            $parameters.Keys | Should -Contain 'RemoveProfile'
+        }
+
+        It 'resolves profile names beneath the user data directory' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work_2' -CreateDirectory
+            $expectedPath = Join-Path (Join-Path $env:LOFIATC_USER_DATA 'profiles') 'Work_2.json'
+
+            $profilePath | Should -Be $expectedPath
+            Test-Path -LiteralPath (Split-Path -Parent $profilePath) | Should -BeTrue
+        }
+
+        It 'rejects profile names that could escape the profile directory' {
+            { Resolve-LofiATCProfilePath -Name '../work' } | Should -Throw '*Profile name*invalid*'
+            { Resolve-LofiATCProfilePath -Name 'work/profile' } | Should -Throw '*Profile name*invalid*'
+            { Resolve-LofiATCProfilePath -Name '.hidden' } | Should -Throw '*Profile name*invalid*'
+        }
+
+        It 'loads profile values while preserving explicit command-line values' {
+            $profilesPath = Get-LofiATCProfilesPath -Create
+            @'
+{
+  "Player": "VLC",
+  "OpenRadar": true,
+  "ATCVolume": 70,
+  "LofiVolume": 45,
+  "SelectedChannel": {
+    "ICAO": "EHAM",
+    "ChannelDescription": "EHAM Tower",
+    "StreamUrl": "https://example.com/eham-twr"
+  }
+}
+'@ | Set-Content -Path (Join-Path $profilesPath 'Work.json') -Encoding UTF8
+
+            $Player = 'MPV'
+            $OpenRadar = $false
+            $ATCVolume = 65
+            $LofiVolume = 50
+            $boundParameters = @{ Player = $true }
+
+            $profileChannel = Import-LofiATCProfile -Name 'Work' -BoundParameters $boundParameters
+
+            $Player | Should -Be 'MPV'
+            $OpenRadar | Should -BeTrue
+            $ATCVolume | Should -Be 70
+            $LofiVolume | Should -Be 45
+            $profileChannel.ICAO | Should -Be 'EHAM'
+            $profileChannel.ChannelDescription | Should -Be 'EHAM Tower'
+        }
+
+        It 'saves the selected ATC channel in the profile' {
+            $commandPath = Join-Path $TestDrive 'profile-command.ps1'
+            'param([string]$Player)' | Set-Content -LiteralPath $commandPath -Encoding UTF8
+            $Player = 'MPV'
+            $selectedATC = @{
+                AirportInfo = [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                }
+            }
+
+            Export-LofiATCProfile `
+                -Name 'Work' `
+                -CommandPath $commandPath `
+                -SelectedATC $selectedATC `
+                -InformationAction SilentlyContinue
+
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work'
+            $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            $profile.Player | Should -Be 'MPV'
+            $profile.SelectedChannel.ICAO | Should -Be 'EHAM'
+            $profile.SelectedChannel.ChannelDescription | Should -Be 'EHAM Tower'
+            $profile.SelectedChannel.StreamUrl | Should -Be 'https://example.com/eham-twr'
+        }
+
+        It 'restores the saved channel without invoking channel selection' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                    'Webcam URL'          = ''
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Select-ATCStreamByICAO { throw 'Interactive channel selection should not run.' }
+
+            $selection = Resolve-SelectedATCStream `
+                -AtcSources $sources `
+                -ProfileChannel $savedChannel
+
+            $selection.SelectedATC.AirportInfo.'Channel Description' | Should -Be 'EHAM Tower'
+            Should -Invoke Select-ATCStreamByICAO -Times 0 -Exactly
+        }
+
+        It 'matches a saved channel by description when its stream URL changes' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/new-eham-twr'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/old-eham-twr'
+            }
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected.StreamUrl | Should -Be 'https://example.com/new-eham-twr'
+        }
+
+        It 'warns and returns to normal selection when the saved channel disappeared' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Write-Warning
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected | Should -BeNullOrEmpty
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Saved channel.*EHAM Tower.*no longer available'
+            }
+        }
+
+        It 'writes valid JSON atomically and leaves no temporary files' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work' -CreateDirectory
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'VLC' } -Path $profilePath
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV'; ATCVolume = 35 } -Path $profilePath
+
+            $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            $profile.Player | Should -Be 'MPV'
+            $profile.ATCVolume | Should -Be 35
+            (Get-Content -LiteralPath ($profilePath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath (Split-Path -Parent $profilePath) -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'preserves the active profile and cleans up when a write fails' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work' -CreateDirectory
+            '{"Player":"VLC"}' | Set-Content -LiteralPath $profilePath -Encoding UTF8
+            Mock ConvertTo-Json { throw 'Simulated serialization failure.' }
+
+            { Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $profilePath } |
+                Should -Throw '*Simulated serialization failure*'
+
+            (Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath (Split-Path -Parent $profilePath) -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'lists profiles in name order and removes only the selected profile' {
+            $profilesPath = Get-LofiATCProfilesPath -Create
+            '{}' | Set-Content -Path (Join-Path $profilesPath 'Zulu.json') -Encoding UTF8
+            '{}' | Set-Content -Path (Join-Path $profilesPath 'Alpha.json') -Encoding UTF8
+
+            (@((Get-LofiATCProfile).Name) -join ',') | Should -Be 'Alpha,Zulu'
+
+            Remove-LofiATCProfile -Name 'Alpha' -InformationAction SilentlyContinue
+
+            Test-Path -LiteralPath (Join-Path $profilesPath 'Alpha.json') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $profilesPath 'Zulu.json') | Should -BeTrue
+        }
+
+        It 'reports a missing profile instead of continuing with defaults' {
+            { Import-LofiATCProfile -Name 'Missing' -BoundParameters @{} } |
+                Should -Throw "*Profile 'Missing' was not found*"
+        }
+
+        It 'excludes profile management parameters from saved profile data' {
+            $ignored = Get-LofiATCIgnoredConfigParameterNames
+
+            $ignored | Should -Contain 'Profile'
+            $ignored | Should -Contain 'SaveProfile'
+            $ignored | Should -Contain 'ListProfiles'
+            $ignored | Should -Contain 'RemoveProfile'
+            $ignored | Should -Contain 'SelectedChannel'
+        }
+    }
+
     Context 'Favorites persistence' {
         BeforeEach {
             $script:testDrivePath = Join-Path $TestDrive 'favorites.json'

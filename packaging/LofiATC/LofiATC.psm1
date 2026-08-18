@@ -420,6 +420,18 @@ Repository ref to use with -UpdateSources. Defaults to the ref recorded by the i
 
 .PARAMETER ShowLofiTrack
 Uses OCR to show the current Lofi Girl track in persistent map mode.
+
+.PARAMETER Profile
+Loads a named configuration profile. Explicit command-line values take precedence.
+
+.PARAMETER SaveProfile
+Saves the current options and selected ATC channel as a named configuration profile.
+
+.PARAMETER ListProfiles
+Lists saved named profiles without starting playback.
+
+.PARAMETER RemoveProfile
+Removes a named configuration profile without starting playback.
 #>
     [CmdletBinding()]
     param (
@@ -445,6 +457,13 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
         [switch]$LoadConfig,
         [switch]$SaveConfig,
         [string]$ConfigPath,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$Profile,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$SaveProfile,
+        [switch]$ListProfiles,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$RemoveProfile,
         [switch]$OpenRadar,
         [switch]$Nearby,
         [ValidateRange(1,5000)]
@@ -486,6 +505,47 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
     }
 
     & $scriptPath @forwardedParameters
+}
+
+$profileNameCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if ($env:LOFIATC_USER_DATA) {
+        $userDataPath = $env:LOFIATC_USER_DATA
+    }
+    elseif ($env:APPDATA) {
+        $userDataPath = Join-Path $env:APPDATA 'lofiatc'
+    }
+    elseif ($env:XDG_CONFIG_HOME) {
+        $userDataPath = Join-Path $env:XDG_CONFIG_HOME 'lofiatc'
+    }
+    else {
+        $userDataPath = Join-Path $HOME '.config/lofiatc'
+    }
+
+    $profilesPath = Join-Path $userDataPath 'profiles'
+    if (-not (Test-Path -LiteralPath $profilesPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $profilesPath -Filter '*.json' -File |
+        Where-Object {
+            $_.BaseName -match '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' -and
+            $_.BaseName -like ($wordToComplete + '*')
+        } |
+        Sort-Object -Property BaseName |
+        ForEach-Object {
+            New-Object System.Management.Automation.CompletionResult(
+                $_.BaseName,
+                $_.BaseName,
+                [System.Management.Automation.CompletionResultType]::ParameterValue,
+                "Saved LofiATC profile '$($_.BaseName)'"
+            )
+        }
+}
+
+foreach ($profileParameterName in @('Profile', 'SaveProfile', 'RemoveProfile')) {
+    Register-ArgumentCompleter -CommandName lofiatc -ParameterName $profileParameterName -ScriptBlock $profileNameCompleter
 }
 
 Export-ModuleMember -Function lofiatc, Update-LofiATC, Update-LofiATCSources, Get-LofiATCVersion

@@ -365,6 +365,7 @@ Do not add a dependency solely to avoid writing a small amount of straightforwar
 
 Keep changes easy to review.
 
+- Before starting work on a GitHub issue, create a new dedicated branch from the requested base branch (or the repository default when none is specified) and link it to the issue, preferably with `gh issue develop`. If the issue is in the project board's `Ready` status, move it to `In progress` when work begins.
 - One logical change per branch/PR.
 - Avoid unrelated cleanup.
 - Do not rewrite large CSVs unless the task requires data changes.
