@@ -7,25 +7,48 @@ Function Get-Favorite {
     }
 
     try {
-        $data = Get-Content -Path $path -Raw | ConvertFrom-Json
+        $result = Read-LofiATCFavoriteFile -Path $path
+        return @($result.Items)
     }
     catch {
-        return @()
+        Write-Warning "Favorites file at '$path' is malformed or invalid and was left unchanged: $($_.Exception.Message)"
     }
 
-    if ($null -eq $data) {
-        return @()
+    $backupPath = $path + '.bak'
+    if (Test-Path -LiteralPath $backupPath) {
+        try {
+            $result = Read-LofiATCFavoriteFile -Path $backupPath
+            Write-Warning "Recovered favorites from backup '$backupPath'."
+            return @($result.Items)
+        }
+        catch {
+            Write-Warning "Favorites backup at '$backupPath' is also malformed or invalid: $($_.Exception.Message)"
+        }
     }
 
+    return @()
+}
+
+Function Read-LofiATCFavoriteFile {
+    param([string]$Path)
+
+    $rawJson = Get-Content -LiteralPath $Path -Raw
+    $data = $rawJson | ConvertFrom-Json
     $items = @($data)
 
-    if ($items.Count -eq 1 -and $items[0] -is [string]) {
-        return @()
+    if ($null -eq $data) {
+        if ($rawJson.Trim() -ne '[]') {
+            throw 'The file does not contain a JSON favorites array.'
+        }
+        $items = @()
+    }
+    elseif ($items.Count -eq 1 -and $items[0] -is [string]) {
+        throw 'The file does not contain a JSON favorites array.'
     }
 
     foreach ($f in $items) {
         if (-not $f.PSObject.Properties['ICAO'] -or -not $f.PSObject.Properties['Channel']) {
-            return @()
+            throw 'A favorite entry is missing its ICAO or Channel value.'
         }
 
         if (-not $f.PSObject.Properties['Count']) {
@@ -37,7 +60,7 @@ Function Get-Favorite {
         }
     }
 
-    return $items
+    return [pscustomobject]@{ Items = @($items) }
 }
 
 # Function to save favorites back to the JSON file
@@ -49,14 +72,11 @@ Function Save-Favorite {
         New-Item -ItemType Directory -Path $favoriteDir -Force | Out-Null
     }
 
-    $items = @($favorites)
-
-    if ($items.Count -eq 0) {
-        '[]' | Set-Content -Path $path
-        return
+    $items = [object[]]@($favorites)
+    Write-LofiATCJsonFileAtomically -InputObject $items -Path $path -FileValidator {
+        param($CandidatePath)
+        $null = Read-LofiATCFavoriteFile -Path $CandidatePath
     }
-
-    $items | ConvertTo-Json -Depth 5 | Set-Content -Path $path
 }
 
 # Function to add or update a favorite entry

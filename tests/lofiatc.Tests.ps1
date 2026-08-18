@@ -415,6 +415,90 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
     }
 
+    Context 'Recoverable JSON persistence' {
+        It 'keeps the previous JSON as a last-known-good backup' {
+            $jsonPath = Join-Path $TestDrive 'recoverable-config.json'
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'VLC' } -Path $jsonPath
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $jsonPath
+
+            (Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            (Get-Content -LiteralPath ($jsonPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'uses atomic replacement for normal saved configuration' {
+            $commandPath = Join-Path $TestDrive 'config-command.ps1'
+            $configPath = Join-Path $TestDrive 'saved-config.json'
+            'param([string]$Player)' | Set-Content -LiteralPath $commandPath -Encoding UTF8
+            $Player = 'VLC'
+
+            Export-LofiATCConfig -CommandPath $commandPath -ConfigPath $configPath -VariableScope 1
+            $Player = 'MPV'
+            Export-LofiATCConfig -CommandPath $commandPath -ConfigPath $configPath -VariableScope 1
+
+            (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            (Get-Content -LiteralPath ($configPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+        }
+
+        It 'preserves malformed active JSON before replacing it' {
+            $jsonPath = Join-Path $TestDrive 'malformed-config.json'
+            '{broken-json' | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+            Mock Write-Warning
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $jsonPath
+
+            (Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            $corruptBackups = @(Get-ChildItem -LiteralPath $TestDrive -Filter 'malformed-config.json.corrupt-*.bak')
+            $corruptBackups.Count | Should -Be 1
+            (Get-Content -LiteralPath $corruptBackups[0].FullName -Raw) | Should -Match 'broken-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'malformed or invalid.*preserved'
+            }
+        }
+
+        It 'preserves the active file and cleans temporary files when replacement fails' {
+            $script:failedConfigPath = Join-Path $TestDrive 'failed-config.json'
+            '{"Player":"VLC"}' | Set-Content -LiteralPath $script:failedConfigPath -Encoding UTF8
+            Mock Move-LofiATCFileAtomically {
+                param($SourcePath, $DestinationPath)
+
+                if ($DestinationPath -eq ($script:failedConfigPath + '.bak')) {
+                    [System.IO.File]::Move($SourcePath, $DestinationPath)
+                    return
+                }
+
+                throw 'Simulated replacement failure.'
+            }
+
+            { Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $script:failedConfigPath } |
+                Should -Throw '*Simulated replacement failure*'
+
+            (Get-Content -LiteralPath $script:failedConfigPath -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            (Get-Content -LiteralPath ($script:failedConfigPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'loads configuration from the backup when the active file is malformed' {
+            $configPath = Join-Path $TestDrive 'recover-config.json'
+            '{broken-json' | Set-Content -LiteralPath $configPath -Encoding UTF8
+            '{"Player":"VLC"}' | Set-Content -LiteralPath ($configPath + '.bak') -Encoding UTF8
+            $Player = 'MPV'
+            Mock Write-Warning
+
+            Import-LofiATCConfig -ConfigPath $configPath -BoundParameters @{} -VariableScope 1
+
+            $Player | Should -Be 'VLC'
+            (Get-Content -LiteralPath $configPath -Raw) | Should -Match 'broken-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'malformed or invalid.*left unchanged'
+            }
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Recovered configuration values from backup'
+            }
+        }
+    }
+
     Context 'Named configuration profiles' {
         BeforeEach {
             $script:previousUserDataPath = $env:LOFIATC_USER_DATA
@@ -678,16 +762,66 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 3
         }
 
-        It 'returns an empty array for malformed JSON' {
+        It 'warns and returns an empty array for malformed JSON without changing the file' {
             '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
 
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+            (Get-Content -LiteralPath $script:testDrivePath -Raw) | Should -Match 'not-valid-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Favorites file.*malformed or invalid.*left unchanged'
+            }
         }
 
-        It 'returns an empty array when JSON is valid but not a favorites array' {
+        It 'warns and returns an empty array when JSON is valid but not a favorites array' {
             '"hello"' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
 
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+            Should -Invoke Write-Warning -Times 1 -Exactly
+        }
+
+        It 'recovers favorites from the last-known-good backup' {
+            '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            @'
+[
+  { "ICAO": "EHAM", "Channel": "Tower", "Count": 2, "LastUsed": "2026-08-18T12:00:00Z" }
+]
+'@ | Set-Content -Path ($script:testDrivePath + '.bak') -Encoding UTF8
+            Mock Write-Warning
+
+            $favorites = @(Get-Favorite -path $script:testDrivePath)
+
+            $favorites.Count | Should -Be 1
+            $favorites[0].ICAO | Should -Be 'EHAM'
+            $favorites[0].Count | Should -Be 2
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Recovered favorites from backup'
+            }
+        }
+
+        It 'writes favorites atomically and retains the previous valid file' {
+            Add-Favorite -path $script:testDrivePath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+            Add-Favorite -path $script:testDrivePath -ICAO 'EHAM' -Channel 'Ground' -maxEntries 10
+
+            $activeFavorites = @(Get-Content -LiteralPath $script:testDrivePath -Raw | ConvertFrom-Json)
+            $backupFavorites = @(Get-Content -LiteralPath ($script:testDrivePath + '.bak') -Raw | ConvertFrom-Json)
+
+            $activeFavorites.Count | Should -Be 2
+            $backupFavorites.Count | Should -Be 1
+            $backupFavorites[0].ICAO | Should -Be 'KLAX'
+        }
+
+        It 'preserves malformed favorites before a later write' {
+            '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
+
+            Add-Favorite -path $script:testDrivePath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+
+            @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 1
+            $corruptBackups = @(Get-ChildItem -LiteralPath $TestDrive -Filter 'favorites.json.corrupt-*.bak')
+            $corruptBackups.Count | Should -Be 1
+            (Get-Content -LiteralPath $corruptBackups[0].FullName -Raw) | Should -Match 'not-valid-json'
         }
     }
 
