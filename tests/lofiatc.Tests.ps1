@@ -729,6 +729,11 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             if (Test-Path $script:testDrivePath) {
                 Remove-Item $script:testDrivePath -Force
             }
+            if (Test-Path ($script:testDrivePath + '.bak')) {
+                Remove-Item ($script:testDrivePath + '.bak') -Force
+            }
+            Get-ChildItem -LiteralPath $TestDrive -Filter 'favorites.json.corrupt-*.bak' |
+                Remove-Item -Force
         }
 
         It 'returns an empty array when favorites file does not exist' {
@@ -831,6 +836,9 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:addedFavoritesPath = Join-Path $TestDrive 'added_favorites.json'
             if (Test-Path $script:addedFavoritesPath) {
                 Remove-Item $script:addedFavoritesPath -Force
+            }
+            if (Test-Path ($script:addedFavoritesPath + '.bak')) {
+                Remove-Item ($script:addedFavoritesPath + '.bak') -Force
             }
         }
 
