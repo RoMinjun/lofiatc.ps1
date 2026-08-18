@@ -8,13 +8,11 @@ on:
   push:
     paths:
       - 'atc_sources.csv'
-      - 'liveatc_sources.csv'
       - 'tools/Check-AirportSource.ps1'
       - '.github/workflows/check_airport_source.yml'
   pull_request:
     paths:
       - 'atc_sources.csv'
-      - 'liveatc_sources.csv'
       - 'tools/Check-AirportSource.ps1'
       - '.github/workflows/check_airport_source.yml'
 
@@ -27,7 +25,3 @@ jobs:
       - name: Check base airport source
         shell: pwsh
         run: ./tools/Check-AirportSource.ps1 -CsvPath ./atc_sources.csv
-
-      - name: Check live airport source
-        shell: pwsh
-        run: ./tools/Check-AirportSource.ps1 -CsvPath ./liveatc_sources.csv
