@@ -219,11 +219,11 @@ param(
 
         Mock Invoke-RestMethod -ModuleName LofiATC {
             param(
-                [string]$Uri,
+                [uri]$Uri,
                 [hashtable]$Headers
             )
 
-            $Uri | Should -Be 'https://api.github.com/repos/RoMinjun/lofiatc.ps1/commits/feature%2Finstall-module-command'
+            $Uri.OriginalString | Should -Be 'https://api.github.com/repos/RoMinjun/lofiatc.ps1/commits/feature%2Finstall-module-command'
             return [pscustomobject]@{
                 sha = 'afe8201234567890afe8201234567890afe82012'
             }

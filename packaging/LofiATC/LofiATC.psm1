@@ -97,7 +97,7 @@ Function Resolve-LofiATCCommit {
         return $Ref.ToLowerInvariant()
     }
 
-    $escapedRef = [System.Uri]::EscapeDataString($Ref)
+    $escapedRef = [System.Uri]::EscapeDataString($Ref) -replace '/', '%2F'
     $commitUrl = "https://api.github.com/repos/$Repository/commits/$escapedRef"
     $commit = Invoke-RestMethod -Uri $commitUrl -Headers @{
         Accept = 'application/vnd.github+json'

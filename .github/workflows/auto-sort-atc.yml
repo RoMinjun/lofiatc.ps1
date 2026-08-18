@@ -6,9 +6,17 @@ permissions:
 
 on:
   push:
-    paths: ["atc_sources.csv", "liveatc_sources.csv"]
+    paths:
+      - 'atc_sources.csv'
+      - 'liveatc_sources.csv'
+      - 'tools/Sort-ATCSources.ps1'
+      - '.github/workflows/auto-sort-atc.yml'
   pull_request:
-    paths: ["atc_sources.csv", "liveatc_sources.csv"]
+    paths:
+      - 'atc_sources.csv'
+      - 'liveatc_sources.csv'
+      - 'tools/Sort-ATCSources.ps1'
+      - '.github/workflows/auto-sort-atc.yml'
 
 jobs:
   sort:

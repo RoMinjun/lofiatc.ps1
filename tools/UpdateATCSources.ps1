@@ -22,13 +22,13 @@ function Sort-AtcRows {
   param([Parameter(Mandatory)][array]$Rows)
 
   $Rows | Sort-Object `
-    @{ Expression = { ($_.Continent        ?? '').Trim() } }, `
-    @{ Expression = { ($_.Country          ?? '').Trim() } }, `
+    @{ Expression = { ([string]$_.Continent).Trim() } }, `
+    @{ Expression = { ([string]$_.Country).Trim() } }, `
     @{ Expression = { [string]::IsNullOrWhiteSpace($_.'State/Province') } }, `
-    @{ Expression = { ($_.'State/Province' ?? '').Trim() } }, `
-    @{ Expression = { ($_.City             ?? '').Trim() } }, `
-    @{ Expression = { ($_.ICAO             ?? '').Trim().ToUpper() } }, `
-    @{ Expression = { ($_.'Channel Description' ?? '').Trim() } }
+    @{ Expression = { ([string]$_.'State/Province').Trim() } }, `
+    @{ Expression = { ([string]$_.City).Trim() } }, `
+    @{ Expression = { ([string]$_.ICAO).Trim().ToUpperInvariant() } }, `
+    @{ Expression = { ([string]$_.'Channel Description').Trim() } }
 }
 
 function Write-AtcCsv {
@@ -249,10 +249,10 @@ $origRows |
   }
 
 $allResults = foreach ($icao in $icaoCache.Keys) {
-  $meta = $origRows | Where-Object { ($_.ICAO ?? '').Trim().ToUpper() -eq $icao } | Select-Object -First 1
+  $meta = $origRows | Where-Object { ([string]$_.ICAO).Trim().ToUpperInvariant() -eq $icao } | Select-Object -First 1
 
   if ($null -eq $icaoCache[$icao]) {
-    $origRows | Where-Object { ($_.ICAO ?? '').Trim().ToUpper() -eq $icao }
+    $origRows | Where-Object { ([string]$_.ICAO).Trim().ToUpperInvariant() -eq $icao }
     continue
   }
 
