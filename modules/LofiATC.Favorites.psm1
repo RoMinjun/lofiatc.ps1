@@ -3,7 +3,7 @@ Function Get-Favorite {
     param([string]$path)
 
     if (-not (Test-Path $path)) {
-        return @()
+        return
     }
 
     try {
@@ -26,7 +26,7 @@ Function Get-Favorite {
         }
     }
 
-    return @()
+    return
 }
 
 Function Read-LofiATCFavoriteFile {

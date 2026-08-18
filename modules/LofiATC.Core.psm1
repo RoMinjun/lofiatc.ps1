@@ -299,7 +299,17 @@ Function Move-LofiATCFileAtomically {
     )
 
     if (Test-Path -LiteralPath $DestinationPath) {
-        [System.IO.File]::Replace($SourcePath, $DestinationPath, $null)
+        $destinationDirectory = [System.IO.Path]::GetDirectoryName($DestinationPath)
+        $destinationFileName = [System.IO.Path]::GetFileName($DestinationPath)
+        $replacedFilePath = Join-Path $destinationDirectory ('.{0}.{1}.replaced.tmp' -f $destinationFileName, [guid]::NewGuid().ToString('N'))
+        try {
+            [System.IO.File]::Replace($SourcePath, $DestinationPath, $replacedFilePath)
+        }
+        finally {
+            if (Test-Path -LiteralPath $replacedFilePath) {
+                Remove-Item -LiteralPath $replacedFilePath -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
     else {
         [System.IO.File]::Move($SourcePath, $DestinationPath)
