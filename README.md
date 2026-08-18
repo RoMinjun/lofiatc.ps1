@@ -140,7 +140,7 @@ lofiatc -CheckDependencies -Player VLC
 - supported media players found in `PATH`
 - optional tools like `fzf`, `yt-dlp`, and `youtube-dl`
 - local files such as `config.json`, `favorites.json`, and ATC source CSVs
-- optional network/service checks for airport and weather endpoints
+- the airport metadata cache and optional network/service checks for airport and weather endpoints
 
 The installer copies the app files to a per-user install directory and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion on Windows, macOS, and Linux:
 ```powershell
@@ -368,6 +368,12 @@ lofiatc -LoadConfig -OpenRadar
 
 Configuration and profile files are written through a validated temporary file before replacement. When an existing file is valid, its previous contents are retained in a neighboring `.bak` file. If the active JSON becomes malformed, LofiATC warns and attempts to load the last-known-good backup without modifying the damaged file. A later save preserves malformed JSON in a uniquely named `.corrupt-*.bak` file before replacing it.
 
+### Offline airport data
+
+Airport metadata used by the map, nearby-airport selection, local time, and sunrise/sunset features is cached as `airport-data-cache.json` in the user data folder. A cache is considered fresh for seven days. After that, LofiATC attempts a bounded refresh and uses the stale last-known-good cache if the service is unavailable. If the active cache is malformed, a valid neighboring `.bak` cache can be used instead.
+
+The first airport-data request still needs network access when no cache exists. Optional IP location, METAR, and sunrise/sunset failures return unavailable data without stopping unrelated ATC or lofi playback. Run `lofiatc -Verbose` to see whether airport data came from the live service, active cache, backup fallback, or was unavailable; `lofiatc -CheckDependencies` reports the current cache path, source, and age.
+
 ### Named profiles
 
 Named profiles let you keep several reusable setups while preserving the existing `config.json` behavior. Profile names are 1–64 letters, numbers, underscores, or hyphens and must start with a letter or number.
@@ -505,6 +511,7 @@ lofiatc -CheckDependencies
 - optional tools such as `fzf`, `yt-dlp`, `youtube-dl`, `ffmpeg`, and Tesseract OCR
 - ATC source CSV availability
 - `config.json` / `favorites.json` presence and JSON validity
+- airport metadata cache availability, source, path, and age
 - optional browser/map helpers such as `xdg-open` on Linux or `open` on macOS
 - optional network/service checks for airport and weather data sources
 
@@ -540,6 +547,7 @@ lofiatc -CheckDependencies
 - **yt-dlp errors:** update it to the latest version and retry.
 - **YouTube or webcam streams not loading in player:** make sure `yt-dlp` is up to date; recent upstream changes may require extra packages depending on your platform.
 - **Map opens slowly:** use `-ShowMap -NoWeather` to skip live weather fetch and load faster.
+- **Airport data is unavailable:** the first map or nearby-airport request needs network access. After a successful request, LofiATC keeps a seven-day user cache and can use stale data during an outage. Run `lofiatc -CheckDependencies` for its status.
 - **Map opens but clicking a channel does nothing:** make sure the PowerShell window is still running in the background; the browser talks back to a temporary local listener started by the script.
 - **Map selection feels stuck:** return to the terminal and press `Q` to cancel the map selection flow.
 - **Nearby airport lookup fails:** location access may be unavailable on your device; the script falls back to IP-based lookup, which is approximate.

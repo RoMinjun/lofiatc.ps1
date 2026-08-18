@@ -101,7 +101,7 @@ Function Resolve-LofiATCCommit {
     $commitUrl = "https://api.github.com/repos/$Repository/commits/$escapedRef"
     $commit = Invoke-RestMethod -Uri $commitUrl -Headers @{
         Accept = 'application/vnd.github+json'
-    }
+    } -TimeoutSec 10 -ErrorAction Stop
 
     if (-not $commit.sha) {
         throw "GitHub did not return a commit hash for ref '$Ref'."
@@ -290,7 +290,7 @@ Function Update-LofiATCSources {
         throw "Install root not found: $InstallRoot"
     }
 
-    Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing
+    Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
 
     try {
         if ($sourceCommit) {
@@ -372,7 +372,7 @@ Function Update-LofiATC {
     }
 
     try {
-        Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
+        Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
         $installerParameters = @{
             InstallRoot           = $InstallRoot
             Ref                   = $Ref
