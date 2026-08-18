@@ -366,6 +366,8 @@ Even if your config has `OpenRadar: false`, you can re-enable it with:
 lofiatc -LoadConfig -OpenRadar
 ```
 
+Configuration and profile files are written through a validated temporary file before replacement. When an existing file is valid, its previous contents are retained in a neighboring `.bak` file. If the active JSON becomes malformed, LofiATC warns and attempts to load the last-known-good backup without modifying the damaged file. A later save preserves malformed JSON in a uniquely named `.corrupt-*.bak` file before replacing it.
+
 ### Named profiles
 
 Named profiles let you keep several reusable setups while preserving the existing `config.json` behavior. Profile names are 1–64 letters, numbers, underscores, or hyphens and must start with a letter or number.
@@ -408,6 +410,7 @@ Each time you select a stream, its ICAO and channel are recorded in your user `f
 
 - Use `-UseFavorite` to pick from this list (combine with `-UseFZF` to search within favorites).
 - Streams chosen with `-RandomATC` aren't saved to the favorites list.
+- Favorites writes use the same validated replacement and backup behavior as configuration files. If `favorites.json` is malformed, LofiATC warns and uses `favorites.json.bak` when it is valid; damaged JSON is preserved before any later write.
 
 **Example `favorites.json`**
 ```json

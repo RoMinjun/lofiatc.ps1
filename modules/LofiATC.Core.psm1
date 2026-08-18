@@ -214,49 +214,125 @@ Function Get-LofiATCProfile {
 Function Write-LofiATCJsonFileAtomically {
     param(
         [object]$InputObject,
-        [string]$Path
+        [string]$Path,
+        [scriptblock]$FileValidator
     )
 
-    $directory = Split-Path -Parent $Path
-    if ($directory -and -not (Test-Path -LiteralPath $directory)) {
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $directory = [System.IO.Path]::GetDirectoryName($resolvedPath)
+    if (-not (Test-Path -LiteralPath $directory)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
 
-    $fileName = Split-Path -Leaf $Path
+    $fileName = [System.IO.Path]::GetFileName($resolvedPath)
     $temporaryPath = Join-Path $directory ('.{0}.{1}.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
-    $backupPath = $Path + '.bak'
+    $backupTemporaryPath = $null
+    $backupPath = $resolvedPath + '.bak'
 
     try {
-        $json = $InputObject | ConvertTo-Json
+        $json = ConvertTo-Json -InputObject $InputObject -Depth 10
         $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
         [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
 
         # Validate the complete temporary file before it can replace user data.
-        $null = Get-Content -LiteralPath $temporaryPath -Raw | ConvertFrom-Json
-
-        if (Test-Path -LiteralPath $Path) {
-            if (Test-Path -LiteralPath $backupPath) {
-                Remove-Item -LiteralPath $backupPath -Force
-            }
-
-            [System.IO.File]::Replace($temporaryPath, $Path, $backupPath)
+        if ($FileValidator) {
+            & $FileValidator $temporaryPath
         }
         else {
-            [System.IO.File]::Move($temporaryPath, $Path)
+            $null = Get-Content -LiteralPath $temporaryPath -Raw | ConvertFrom-Json
+        }
+
+        if (Test-Path -LiteralPath $resolvedPath) {
+            $activeFileIsValid = $true
+            try {
+                if ($FileValidator) {
+                    & $FileValidator $resolvedPath
+                }
+                else {
+                    $null = Get-Content -LiteralPath $resolvedPath -Raw | ConvertFrom-Json
+                }
+            }
+            catch {
+                $activeFileIsValid = $false
+            }
+
+            if ($activeFileIsValid) {
+                $backupTemporaryPath = Join-Path $directory ('.{0}.{1}.bak.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
+                [System.IO.File]::Copy($resolvedPath, $backupTemporaryPath)
+                if ($FileValidator) {
+                    & $FileValidator $backupTemporaryPath
+                }
+                else {
+                    $null = Get-Content -LiteralPath $backupTemporaryPath -Raw | ConvertFrom-Json
+                }
+                Move-LofiATCFileAtomically -SourcePath $backupTemporaryPath -DestinationPath $backupPath
+                $backupTemporaryPath = $null
+            }
+            else {
+                $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+                $corruptBackupPath = '{0}.corrupt-{1}-{2}.bak' -f $resolvedPath, $timestamp, [guid]::NewGuid().ToString('N').Substring(0, 8)
+                [System.IO.File]::Copy($resolvedPath, $corruptBackupPath)
+                Write-Warning "Existing JSON at '$resolvedPath' is malformed or invalid. It was preserved at '$corruptBackupPath' before replacement."
+            }
+
+            Move-LofiATCFileAtomically -SourcePath $temporaryPath -DestinationPath $resolvedPath
+        }
+        else {
+            Move-LofiATCFileAtomically -SourcePath $temporaryPath -DestinationPath $resolvedPath
         }
     }
     finally {
         if (Test-Path -LiteralPath $temporaryPath) {
             Remove-Item -LiteralPath $temporaryPath -Force
         }
+
+        if ($backupTemporaryPath -and (Test-Path -LiteralPath $backupTemporaryPath)) {
+            Remove-Item -LiteralPath $backupTemporaryPath -Force
+        }
     }
+}
+
+Function Move-LofiATCFileAtomically {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if (Test-Path -LiteralPath $DestinationPath) {
+        $destinationDirectory = [System.IO.Path]::GetDirectoryName($DestinationPath)
+        $destinationFileName = [System.IO.Path]::GetFileName($DestinationPath)
+        $replacedFilePath = Join-Path $destinationDirectory ('.{0}.{1}.replaced.tmp' -f $destinationFileName, [guid]::NewGuid().ToString('N'))
+        try {
+            [System.IO.File]::Replace($SourcePath, $DestinationPath, $replacedFilePath)
+        }
+        finally {
+            if (Test-Path -LiteralPath $replacedFilePath) {
+                Remove-Item -LiteralPath $replacedFilePath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    else {
+        [System.IO.File]::Move($SourcePath, $DestinationPath)
+    }
+}
+
+Function Read-LofiATCConfigFile {
+    param([string]$Path)
+
+    $config = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($null -eq $config -or $config -isnot [pscustomobject]) {
+        throw "The file does not contain a JSON configuration object."
+    }
+
+    return $config
 }
 
 Function Import-LofiATCConfig {
     param(
         [string]$ConfigPath,
         [hashtable]$BoundParameters,
-        [int]$VariableScope = 1
+        [int]$VariableScope = 1,
+        [switch]$PassThru
     )
 
     if (-not (Test-Path $ConfigPath)) {
@@ -265,7 +341,28 @@ Function Import-LofiATCConfig {
     }
 
     $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
-    $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
+    $config = $null
+
+    try {
+        $config = Read-LofiATCConfigFile -Path $ConfigPath
+    }
+    catch {
+        Write-Warning "Config file at '$ConfigPath' is malformed or invalid and was left unchanged: $($_.Exception.Message)"
+        $backupPath = $ConfigPath + '.bak'
+        if (Test-Path -LiteralPath $backupPath) {
+            try {
+                $config = Read-LofiATCConfigFile -Path $backupPath
+                Write-Warning "Recovered configuration values from backup '$backupPath'."
+            }
+            catch {
+                Write-Warning "Config backup at '$backupPath' is also malformed or invalid: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($null -eq $config) {
+        return
+    }
 
     foreach ($prop in $config.PSObject.Properties) {
         $name = $prop.Name
@@ -279,13 +376,15 @@ Function Import-LofiATCConfig {
     }
 
     Write-Information "Loaded config from $ConfigPath"
+    if ($PassThru) {
+        return $config
+    }
 }
 
 Function Export-LofiATCConfig {
     param(
         [string]$CommandPath,
         [string]$ConfigPath,
-        [switch]$Atomic,
         [int]$VariableScope = 1,
         [hashtable]$AdditionalValues
     )
@@ -320,11 +419,9 @@ Function Export-LofiATCConfig {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    if ($Atomic) {
-        Write-LofiATCJsonFileAtomically -InputObject $config -Path $ConfigPath
-    }
-    else {
-        $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    Write-LofiATCJsonFileAtomically -InputObject $config -Path $ConfigPath -FileValidator {
+        param($CandidatePath)
+        $null = Read-LofiATCConfigFile -Path $CandidatePath
     }
     Write-Information "Saved config to $ConfigPath"
 }
@@ -340,9 +437,10 @@ Function Import-LofiATCProfile {
         throw "Profile '$Name' was not found. Use -ListProfiles to view saved profiles."
     }
 
-    Import-LofiATCConfig -ConfigPath $profilePath -BoundParameters $BoundParameters -VariableScope 2
-
-    $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+    $profile = Import-LofiATCConfig -ConfigPath $profilePath -BoundParameters $BoundParameters -VariableScope 2 -PassThru
+    if ($null -eq $profile) {
+        return
+    }
     if ($profile.PSObject.Properties['SelectedChannel']) {
         return $profile.SelectedChannel
     }
@@ -381,7 +479,6 @@ Function Export-LofiATCProfile {
     Export-LofiATCConfig `
         -CommandPath $CommandPath `
         -ConfigPath $profilePath `
-        -Atomic `
         -VariableScope 2 `
         -AdditionalValues $additionalValues
 }
