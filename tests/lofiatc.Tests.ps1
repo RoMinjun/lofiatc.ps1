@@ -809,8 +809,8 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             Add-Favorite -path $script:testDrivePath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
             Add-Favorite -path $script:testDrivePath -ICAO 'EHAM' -Channel 'Ground' -maxEntries 10
 
-            $activeFavorites = @(Get-Content -LiteralPath $script:testDrivePath -Raw | ConvertFrom-Json)
-            $backupFavorites = @(Get-Content -LiteralPath ($script:testDrivePath + '.bak') -Raw | ConvertFrom-Json)
+            $activeFavorites = @(Get-Favorite -path $script:testDrivePath)
+            $backupFavorites = @(Get-Favorite -path ($script:testDrivePath + '.bak'))
 
             $activeFavorites.Count | Should -Be 2
             $backupFavorites.Count | Should -Be 1
