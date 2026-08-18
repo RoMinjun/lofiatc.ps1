@@ -116,7 +116,7 @@ param (
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
     [string]$LofiSource = "https://youtu.be/X4VbdwhkE10",
-    [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient","Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian", "DarkAmbient")]
+    [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient", "Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,

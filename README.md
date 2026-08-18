@@ -335,6 +335,8 @@ Get-Help lofiatc -Full
 | `-Ref` | string | installed ref | Repository ref used by `-UpdateSources`. Available from the installed `lofiatc` command. |
 | `-Repository` | string | installed repository | GitHub `owner/repo` used by `-UpdateSources`. Available from the installed `lofiatc` command. |
 
+CLI parity tests intentionally exclude the installed-command-only parameters `-UpdateSources`, `-Version`, `-SourceDiffLimit`, `-Ref`, and `-Repository`; every other declared parameter is required to match `lofiatc.ps1`.
+
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
 

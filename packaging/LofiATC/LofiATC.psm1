@@ -406,6 +406,99 @@ Streams lofi music with live air traffic control.
 Runs the installed lofiatc.ps1 script while preserving PowerShell-native help,
 parameter completion, and ValidateSet completion for common options.
 
+.PARAMETER IncludeWebcamIfAvailable
+Include webcam video stream if available for the selected ATC source.
+
+.PARAMETER NoLofiMusic
+Do not play Lofi music.
+
+.PARAMETER RandomATC
+Select a random ATC stream from the list of sources. When combined with -ICAO,
+choose a random channel for that airport.
+
+.PARAMETER PlayLofiGirlVideo
+Play the Lofi Girl video instead of just the audio.
+
+.PARAMETER ShowLofiTrack
+Uses OCR to show the current Lofi Girl track in persistent map mode. Requires yt-dlp or youtube-dl, ffmpeg, and Tesseract OCR.
+
+.PARAMETER UseFZF
+Use fzf for searching and filtering channels.
+
+.PARAMETER UseBaseCSV
+Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
+
+.PARAMETER UseFavorite
+Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
+
+.PARAMETER Player
+Specify the media player to use (VLC, Potplayer, MPC-HC or MPV).
+
+If not specified, the script auto-detects a suitable player:
+- On Windows, it first checks the default app for .mp4 and uses it if supported and available in PATH.
+- If no supported default is available, it falls back to the first supported installed player.
+- On non-Windows systems, it prefers MPV first, then VLC.
+
+.PARAMETER ATCVolume
+Volume level for the ATC stream. Default is 65.
+
+.PARAMETER LofiVolume
+Volume level for the Lofi Girl stream. Default is 50.
+
+.PARAMETER LofiSource
+Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
+
+.PARAMETER LofiGenre
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, SynthAmbient, Sad, Piano, Classical, Jazz, RelaxJazz, SleepAmbient, DarkAmbient, Medieval, Asian, SleepChill, Guitar, Pomodoro. This is overridden by -LofiSource.
+
+.PARAMETER ICAO
+Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
+
+.PARAMETER OpenRadar
+Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
+
+.PARAMETER SaveConfig
+Save the parameters used for the current run to a configuration file.
+
+.PARAMETER LoadConfig
+Load options from the default or custom configuration file. Explicit command-line values take precedence.
+
+.PARAMETER ConfigPath
+Optional path for the saved configuration file. Defaults to user data when installed, with repo-local config as a compatibility fallback.
+
+.PARAMETER Profile
+Load a named profile from the user data directory. Explicit command-line values take precedence.
+
+.PARAMETER SaveProfile
+Save the current options and selected ATC channel as a named profile in the user data directory.
+
+.PARAMETER ListProfiles
+List saved named profiles and exit without starting playback.
+
+.PARAMETER RemoveProfile
+Remove a named profile and exit without starting playback.
+
+.PARAMETER Nearby
+Shows a list of nearby airports to your current device location (IP as fallback)
+
+.PARAMETER NearbyRadius
+If specified, to be used in combination with -Nearby, to change the radius of nearby airports in kilometers
+
+.PARAMETER ShowMap
+Generates and opens an interactive HTML map in your browser showing all available ATC sources.
+
+.PARAMETER NoWeather
+Skips the live METAR weather fetch when loading the map to vastly improve startup speed.
+
+.PARAMETER Dark
+Initializes the HTML Map in Dark Mode.
+
+.PARAMETER CheckDependencies
+Checks required files, player availability, optional tools, and network dependencies, then prints a dependency report and exits.
+
+.PARAMETER KeepOpen
+When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
+
 .PARAMETER UpdateSources
 Refreshes liveatc_sources.csv in the installed app directory and exits.
 
@@ -418,20 +511,8 @@ Limits the number of added and removed sources printed by -UpdateSources. Use 0 
 .PARAMETER Ref
 Repository ref to use with -UpdateSources. Defaults to the ref recorded by the installer.
 
-.PARAMETER ShowLofiTrack
-Uses OCR to show the current Lofi Girl track in persistent map mode.
-
-.PARAMETER Profile
-Loads a named configuration profile. Explicit command-line values take precedence.
-
-.PARAMETER SaveProfile
-Saves the current options and selected ATC channel as a named configuration profile.
-
-.PARAMETER ListProfiles
-Lists saved named profiles without starting playback.
-
-.PARAMETER RemoveProfile
-Removes a named configuration profile without starting playback.
+.PARAMETER Repository
+GitHub owner/repository used by -UpdateSources. Defaults to the repository recorded by the installer.
 #>
     [CmdletBinding()]
     param (
