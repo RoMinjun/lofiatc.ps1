@@ -20,7 +20,7 @@ Describe 'LofiATC module updater' {
         }
 
         function Get-TestValidationSignature {
-            param([System.Management.Automation.CommandParameterInfo]$Parameter)
+            param([System.Management.Automation.ParameterMetadata]$Parameter)
 
             $signatures = @()
             foreach ($attribute in $Parameter.Attributes) {
