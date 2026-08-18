@@ -18,7 +18,7 @@ Function Get-METAR-TAF {
     foreach ($code in $icaoList) {
         $url = "https://aviationweather.gov/api/data/metar?ids=$code"
         try {
-            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -Verbose:$false
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop -Verbose:$false
             $raw = $response.Content.Trim()
             if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') {
                 $used = $code; $source = 'NOAA'; $sourceUrl = 'https://aviationweather.gov'
@@ -34,7 +34,7 @@ Function Get-METAR-TAF {
 
         try {
             $vatsimUrl = "https://metar.vatsim.net/metar.php?id=$code"
-            $response = Invoke-WebRequest -Uri $vatsimUrl -UseBasicParsing -Verbose:$false
+            $response = Invoke-WebRequest -Uri $vatsimUrl -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop -Verbose:$false
             $raw = $response.Content.Trim()
             if ($raw -match "\b$code\b" -and $raw -match '\b\d{6}Z\b') {
                 $used = $code; $source = 'VATSIM'; $sourceUrl = 'https://metar.vatsim.net'
@@ -50,7 +50,7 @@ Function Get-METAR-TAF {
     }
 
     if (-not $raw) {
-        Write-Error "Failed to fetch METAR/TAF data for $ICAO and fallbacks."
+        Write-Verbose "METAR data is unavailable for $ICAO and its configured fallbacks."
         return [pscustomobject]@{ Report = "METAR/TAF data unavailable."; ICAO = $ICAO; DistanceKm = $null; Source = $null; SourceUrl = $null }
     }
 
@@ -244,21 +244,211 @@ Function ConvertTo-TimeZoneInfo {
     }
 }
 
-# Function to fetch airport information from a cached dataset, loading it from a remote source if not already loaded, and return the info for a given ICAO code
-Function Get-AirportInfo {
-    param(
-        [string]$ICAO
+# Functions to load and cache the airport metadata dataset used by maps, nearby selection, and local-time features
+Function Get-LofiATCAirportCachePath {
+    return (Join-Path (Get-LofiATCUserDataPath) 'airport-data-cache.json')
+}
+
+Function Test-LofiATCAirportDataset {
+    param([object]$Dataset)
+
+    if ($null -eq $Dataset) {
+        return $false
+    }
+
+    $airportProperties = @($Dataset.PSObject.Properties)
+    if ($airportProperties.Count -eq 0) {
+        return $false
+    }
+
+    $sample = $airportProperties[0].Value
+    return (
+        $null -ne $sample -and
+        $sample.PSObject.Properties['icao'] -and
+        $sample.PSObject.Properties['lat'] -and
+        $sample.PSObject.Properties['lon']
+    )
+}
+
+Function Read-LofiATCAirportCacheFile {
+    param([string]$Path)
+
+    $cache = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($null -eq $cache -or
+        -not $cache.PSObject.Properties['Version'] -or
+        [int]$cache.Version -ne 1 -or
+        -not $cache.PSObject.Properties['RetrievedAtUtc'] -or
+        -not $cache.PSObject.Properties['Airports'] -or
+        -not (Test-LofiATCAirportDataset -Dataset $cache.Airports)) {
+        throw 'The airport cache has an unsupported or invalid schema.'
+    }
+
+    $retrievedAtUtc = [datetime]::MinValue
+    $parsed = [datetime]::TryParse(
+        [string]$cache.RetrievedAtUtc,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::AssumeUniversal,
+        [ref]$retrievedAtUtc
+    )
+    if (-not $parsed) {
+        throw 'The airport cache timestamp is invalid.'
+    }
+
+    $retrievedAtUtc = $retrievedAtUtc.ToUniversalTime()
+    $age = [datetime]::UtcNow - $retrievedAtUtc
+    if ($age.TotalSeconds -lt 0) {
+        $age = [timespan]::Zero
+    }
+
+    return [pscustomobject]@{
+        Airports       = $cache.Airports
+        RetrievedAtUtc = $retrievedAtUtc
+        Age            = $age
+    }
+}
+
+Function Read-LofiATCAirportCache {
+    param([string]$Path)
+
+    $candidates = @(
+        [pscustomobject]@{ Path = $Path; Source = 'Cached' },
+        [pscustomobject]@{ Path = ($Path + '.bak'); Source = 'Fallback' }
     )
 
-    if (-not $script:AirportData) {
+    foreach ($candidate in $candidates) {
+        if (-not (Test-Path -LiteralPath $candidate.Path)) {
+            continue
+        }
+
         try {
-            $script:AirportData = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json' -Method Get
+            $cache = Read-LofiATCAirportCacheFile -Path $candidate.Path
+            return [pscustomobject]@{
+                Airports       = $cache.Airports
+                RetrievedAtUtc = $cache.RetrievedAtUtc
+                Age            = $cache.Age
+                Path           = $candidate.Path
+                Source         = $candidate.Source
+            }
         }
         catch {
-            Write-Error "Failed to load airport database. Exception: $_"; return $null
+            Write-Verbose "Airport cache '$($candidate.Path)' is unavailable: $($_.Exception.Message)"
         }
     }
-    $info = $script:AirportData.$ICAO
+
+    return $null
+}
+
+Function Save-LofiATCAirportCache {
+    param(
+        [object]$AirportData,
+        [string]$Path
+    )
+
+    $cache = [ordered]@{
+        Version        = 1
+        RetrievedAtUtc = [datetime]::UtcNow.ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
+        SourceUrl      = 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json'
+        Airports       = $AirportData
+    }
+
+    Write-LofiATCJsonFileAtomically -InputObject $cache -Path $Path -FileValidator {
+        param($CandidatePath)
+        $null = Read-LofiATCAirportCacheFile -Path $CandidatePath
+    }
+}
+
+Function Get-LofiATCAirportData {
+    param(
+        [int]$CacheMaxAgeDays = 7,
+        [int]$TimeoutSec = 10
+    )
+
+    if ($script:AirportData) {
+        return $script:AirportData
+    }
+
+    $cachePath = Get-LofiATCAirportCachePath
+    $cached = Read-LofiATCAirportCache -Path $cachePath
+    if ($cached -and $cached.Age.TotalDays -le $CacheMaxAgeDays) {
+        $script:AirportData = $cached.Airports
+        $script:AirportDataStatus = [pscustomobject]@{
+            Source        = $cached.Source
+            CachePath     = $cached.Path
+            CacheAgeHours = [math]::Round($cached.Age.TotalHours, 1)
+            IsStale       = $false
+        }
+
+        if ($cached.Source -eq 'Fallback') {
+            Write-Warning "The active airport cache is unavailable. Using last-known-good backup '$($cached.Path)'."
+        }
+        Write-Verbose "Airport data source: $($cached.Source.ToLowerInvariant()) cache '$($cached.Path)' (age $($script:AirportDataStatus.CacheAgeHours) hours)."
+        return $script:AirportData
+    }
+
+    $sourceUrl = 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json'
+    try {
+        $airportData = Invoke-RestMethod -Uri $sourceUrl -Method Get -TimeoutSec $TimeoutSec -ErrorAction Stop
+        if (-not (Test-LofiATCAirportDataset -Dataset $airportData)) {
+            throw 'The downloaded airport database has an invalid schema.'
+        }
+
+        $script:AirportData = $airportData
+        $script:AirportDataStatus = [pscustomobject]@{
+            Source        = 'Live'
+            CachePath     = $cachePath
+            CacheAgeHours = 0
+            IsStale       = $false
+        }
+
+        try {
+            Save-LofiATCAirportCache -AirportData $airportData -Path $cachePath
+        }
+        catch {
+            Write-Warning "Airport data was loaded live but could not be cached at '$cachePath': $($_.Exception.Message)"
+        }
+
+        Write-Verbose "Airport data source: live '$sourceUrl'."
+        return $script:AirportData
+    }
+    catch {
+        if ($cached) {
+            $script:AirportData = $cached.Airports
+            $script:AirportDataStatus = [pscustomobject]@{
+                Source        = $cached.Source
+                CachePath     = $cached.Path
+                CacheAgeHours = [math]::Round($cached.Age.TotalHours, 1)
+                IsStale       = $true
+            }
+            Write-Warning "Airport database refresh failed; using stale last-known-good data from '$($cached.Path)'. $($_.Exception.Message)"
+            Write-Verbose "Airport data source: stale $($cached.Source.ToLowerInvariant()) cache."
+            return $script:AirportData
+        }
+
+        $script:AirportDataStatus = [pscustomobject]@{
+            Source        = 'Unavailable'
+            CachePath     = $cachePath
+            CacheAgeHours = $null
+            IsStale       = $false
+        }
+        Write-Error "Airport database is unavailable and no valid cache exists. Check your connection and retry. $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Function Get-LofiATCAirportDataStatus {
+    return $script:AirportDataStatus
+}
+
+# Function to fetch airport information from the in-memory, user-cached, or remote dataset
+Function Get-AirportInfo {
+    param([string]$ICAO)
+
+    $airportData = Get-LofiATCAirportData
+    if (-not $airportData) {
+        return $null
+    }
+
+    $info = $airportData.$ICAO
     if (-not $info) {
         Write-Error "Airport info not found for $ICAO."
     }
@@ -279,7 +469,8 @@ Function Get-AirportDateTime {
         return "$($local.ToString('dd MMMM yyyy HH:mm', [System.Globalization.CultureInfo]::InvariantCulture)) LT"
     }
     catch {
-        Write-Error "Date and time not found for $ICAO. Exception: $_"; return "Date/time data unavailable"
+        Write-Verbose "Airport date/time is unavailable for $ICAO. $_"
+        return "Date/time data unavailable"
     }
 }
 
@@ -300,7 +491,7 @@ Function Get-AirportSunriseSunset {
         $tzInfo = ConvertTo-TimeZoneInfo -IanaId $tz
 
         $uri = "https://api.sunrise-sunset.org/json?lat=$lat&lng=$lon&formatted=0&tzid=$tz"
-        $sunInfo = Invoke-RestMethod -Uri $uri -Method Get
+        $sunInfo = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec 8 -ErrorAction Stop
         $sunriseOffset = [datetimeoffset]::Parse($sunInfo.results.sunrise, [cultureinfo]::InvariantCulture)
         $sunsetOffset = [datetimeoffset]::Parse($sunInfo.results.sunset, [cultureinfo]::InvariantCulture)
 
@@ -309,7 +500,10 @@ Function Get-AirportSunriseSunset {
             Sunset  = [System.TimeZoneInfo]::ConvertTime($sunsetOffset, $tzInfo).ToString('HH:mm')
         }
     }
-    catch { Write-Error "Failed to fetch data for $ICAO. Exception: $_"; return @{ Sunrise = "Data unavailable"; Sunset = "Data unavailable" } }
+    catch {
+        Write-Verbose "Sunrise/sunset data is unavailable for $ICAO. $_"
+        return @{ Sunrise = "Data unavailable"; Sunset = "Data unavailable" }
+    }
 }
 
 # Function to determine how long ago the METAR report was updated based on the timestamp in the METAR string, handling time zone and date rollovers correctly
@@ -346,7 +540,7 @@ Function Get-METAR-LastUpdatedTime {
         }
     }
     catch {
-        Write-Error "Failed to fetch the last updated time for $ICAO. Exception: $_"
+        Write-Verbose "METAR last-updated time is unavailable for $ICAO. $_"
         return "Last updated time unavailable."
     }
 }
@@ -382,7 +576,9 @@ Function Get-MapWeatherData {
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     }
-    catch {}
+    catch {
+        Write-Verbose "Could not enable TLS 1.2 explicitly; continuing with the platform default. $_"
+    }
 
     $allIcaosToFetch = [System.Collections.Generic.HashSet[string]]::new()
 
@@ -410,7 +606,7 @@ Function Get-MapWeatherData {
             $noaaTimer = [System.Diagnostics.Stopwatch]::StartNew()
             try {
                 $stats.NoaaRequests++
-                $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 12
+                $wxData = Invoke-RestMethod -Uri "https://aviationweather.gov/api/data/metar?ids=$chunk&format=json" -Method Get -TimeoutSec 12 -ErrorAction Stop
             }
             finally {
                 $noaaTimer.Stop()
@@ -452,7 +648,7 @@ Function Get-MapWeatherData {
                 $vatsimTimer = [System.Diagnostics.Stopwatch]::StartNew()
                 try {
                     $stats.VatsimRequests++
-                    $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+                    $vRes = Invoke-WebRequest -Uri "https://metar.vatsim.net/metar.php?id=$mIcao" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop
                     $vRaw = if ($null -ne $vRes -and $vRes.PSObject.Properties['Content']) {
                         [string]$vRes.Content
                     }
@@ -516,7 +712,9 @@ Function Get-MapWeatherData {
                     $stats.VatsimStations++
                 }
             }
-            catch {}
+            catch {
+                Write-Verbose "VATSIM METAR fetch failed for $mIcao. $_"
+            }
         }
     }
 

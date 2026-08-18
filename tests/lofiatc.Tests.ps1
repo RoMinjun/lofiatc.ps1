@@ -1445,6 +1445,7 @@ KLAX,Tower,http://example.com/stream
             'ICAO,Channel Description,Stream URL' | Set-Content -Path (Join-Path $script:scriptDir 'atc_sources.csv') -Encoding UTF8
 
             Mock Test-UrlReachable { $true }
+            Mock Read-LofiATCAirportCache { $null }
         }
 
         It 'treats fzf as required only when UseFZF is set' {
@@ -1607,6 +1608,9 @@ KLAX,Tower,http://example.com/stream
             $result.City | Should -Be 'Los Angeles'
             $result.Country | Should -Be 'United States'
             $result.Source | Should -Be 'IP'
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 5 -and $ErrorAction -eq 'Stop'
+            }
         }
 
         It 'returns null when the provider call fails' {
@@ -1668,7 +1672,9 @@ KLAX,Tower,http://example.com/stream
 
             Get-MapWeatherData -AtcSources $sources | Out-Null
 
-            Should -Invoke Invoke-RestMethod -Times 3 -Exactly
+            Should -Invoke Invoke-RestMethod -Times 3 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 12 -and $ErrorAction -eq 'Stop'
+            }
             Should -Not -Invoke Invoke-WebRequest
         }
 
@@ -1703,7 +1709,9 @@ KLAX,Tower,http://example.com/stream
 
             $result = Get-MapWeatherData -AtcSources $sources -UseVatsimFallback
 
-            Should -Invoke Invoke-WebRequest -Times 2 -Exactly
+            Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 2 -and $ErrorAction -eq 'Stop'
+            }
             $result.WeatherMap.ContainsKey('KAAA') | Should -BeTrue
             $result.WeatherMap['KAAA'].Source | Should -Be 'VATSIM'
             $result.WeatherMap.ContainsKey('KCCC') | Should -BeTrue
@@ -1775,21 +1783,112 @@ KLAX,Tower,http://example.com/stream
         }
     }
 
-    Context 'Get-AirportInfo remote failure behavior' {
+    Context 'Get-AirportInfo resilient cache behavior' {
         BeforeEach {
+            $script:previousAirportUserDataPath = $env:LOFIATC_USER_DATA
+            $env:LOFIATC_USER_DATA = Join-Path $TestDrive ('airport-data-' + [guid]::NewGuid().ToString('N'))
             $script:AirportData = $null
+            $script:AirportDataStatus = $null
+            $script:testAirportData = [pscustomobject]@{
+                KLAX = [pscustomobject]@{
+                    icao = 'KLAX'
+                    name = 'Los Angeles International'
+                    tz   = 'America/Los_Angeles'
+                    lat  = 33.9416
+                    lon  = -118.4085
+                }
+            }
         }
 
-        It 'returns null when remote airport database fetch fails' {
+        AfterEach {
+            if ($null -eq $script:previousAirportUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $script:previousAirportUserDataPath
+            }
+            $script:AirportData = $null
+            $script:AirportDataStatus = $null
+        }
+
+        It 'downloads and caches airport data with a bounded request' {
+            Mock Invoke-RestMethod { $script:testAirportData }
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+            $cachePath = Get-LofiATCAirportCachePath
+
+            $result.icao | Should -Be 'KLAX'
+            Test-Path -LiteralPath $cachePath | Should -BeTrue
+            $script:AirportDataStatus.Source | Should -Be 'Live'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 10 -and $ErrorAction -eq 'Stop'
+            }
+        }
+
+        It 'uses a fresh user cache without making a remote request' {
+            $cachePath = Get-LofiATCAirportCachePath
+            Save-LofiATCAirportCache -AirportData $script:testAirportData -Path $cachePath
+            $script:AirportData = $null
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Cached'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Not -Invoke Invoke-RestMethod
+        }
+
+        It 'uses stale last-known-good data when refresh fails' {
+            $cachePath = Get-LofiATCAirportCachePath
+            $cache = [ordered]@{
+                Version        = 1
+                RetrievedAtUtc = [datetime]::UtcNow.AddDays(-8).ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
+                SourceUrl      = 'https://example.test/airports.json'
+                Airports       = $script:testAirportData
+            }
+            Write-LofiATCJsonFileAtomically -InputObject $cache -Path $cachePath
+            Mock Invoke-RestMethod { throw 'network failure' }
+            Mock Write-Warning {}
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Cached'
+            $script:AirportDataStatus.IsStale | Should -BeTrue
+            Should -Invoke Write-Warning -Times 1 -Exactly
+        }
+
+        It 'recovers from a last-known-good backup when the active cache is invalid' {
+            $cachePath = Get-LofiATCAirportCachePath
+            Save-LofiATCAirportCache -AirportData $script:testAirportData -Path $cachePath
+            Copy-Item -LiteralPath $cachePath -Destination ($cachePath + '.bak')
+            Set-Content -LiteralPath $cachePath -Value '{ invalid json' -Encoding UTF8
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+            Mock Write-Warning {}
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Fallback'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Invoke Write-Warning -Times 1 -Exactly
+            Should -Not -Invoke Invoke-RestMethod
+        }
+
+        It 'returns null when the first download fails and no valid cache exists' {
             Mock Invoke-RestMethod { throw 'network failure' }
             Mock Write-Error {}
 
             $result = Get-AirportInfo -ICAO 'KLAX'
 
             $result | Should -Be $null
+            $script:AirportDataStatus.Source | Should -Be 'Unavailable'
+            Test-Path -LiteralPath (Get-LofiATCAirportCachePath) | Should -BeFalse
         }
 
-        It 'returns airport info from cached data without remote fetch' {
+        It 'returns airport info from in-memory data without remote fetch' {
             $script:AirportData = [pscustomobject]@{
                 KLAX = [pscustomobject]@{
                     icao = 'KLAX'
@@ -1878,6 +1977,9 @@ KLAX,Tower,http://example.com/stream
             $result.Report | Should -Match '^KSNA '
             $result.DistanceKm | Should -BeGreaterThan 0
             $result.DistanceNm | Should -BeGreaterThan 0
+            Should -Invoke Invoke-WebRequest -ParameterFilter {
+                $TimeoutSec -eq 8 -and $ErrorAction -eq 'Stop'
+            }
         }
 
         It 'returns the unavailable object when all sources fail' {

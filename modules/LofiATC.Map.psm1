@@ -557,6 +557,10 @@ Function Select-ATCMap {
         Get-AirportInfo -ICAO "KLAX" | Out-Null
     }
 
+    if (-not $script:AirportData) {
+        throw 'Airport metadata is unavailable, so the interactive map cannot be generated. Retry when online after a cache has been created.'
+    }
+
     $server = Start-ATCMapServer
     $port = $server.Port
     $listener = $server.Listener
@@ -1291,7 +1295,9 @@ Function Select-ATCFromMap {
                     return $selection
                 }
             }
-            catch {}
+            catch {
+                Write-Verbose "Map selection request handling failed. $_"
+            }
         }
 
         throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
@@ -1492,7 +1498,7 @@ Function Start-PersistentATCMapSession {
         Stop-ManagedProcess -Process $script:CurrentWebcamProcess
         Stop-ManagedProcess -Process $script:CurrentLofiProcess
 
-        try { $Listener.Stop() } catch {}
-        try { $Listener.Close() } catch {}
+        try { $Listener.Stop() } catch { Write-Verbose "Could not stop the map listener cleanly. $_" }
+        try { $Listener.Close() } catch { Write-Verbose "Could not close the map listener cleanly. $_" }
     }
 }

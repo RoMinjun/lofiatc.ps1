@@ -22,6 +22,12 @@ Function Get-LofiATCGenreMap {
 Function Initialize-LofiATCState {
     $script:OnWindows = $env:OS -eq 'Windows_NT'
     $script:AirportData = $null
+    $script:AirportDataStatus = [pscustomobject]@{
+        Source        = 'Unavailable'
+        CachePath     = $null
+        CacheAgeHours = $null
+        IsStale       = $false
+    }
 
     $script:IanaToWindowsMap = @{
         "Etc/UTC"                        = "UTC"
@@ -1332,6 +1338,10 @@ Function Get-NearbyAirports {
         Get-AirportInfo -ICAO "KLAX" | Out-Null
     }
 
+    if (-not $script:AirportData) {
+        throw 'Airport metadata is unavailable, so nearby-airport selection cannot continue. Retry when online after a cache has been created.'
+    }
+
     $allAirports = $script:AirportData.PSObject.Properties | ForEach-Object {
         $_.Value
     }
@@ -1702,12 +1712,31 @@ Function Test-LofiATCDependencies {
             -Details $(if ($ShowMap) { 'Uses Start-Process on Windows.' } else { 'Not requested.' })
     }
 
+    $airportCachePath = Get-LofiATCAirportCachePath
+    $airportCache = Read-LofiATCAirportCache -Path $airportCachePath
+    $results += Add-DependencyResult `
+        -Name 'Airport data cache' `
+        -Required $false `
+        -Status $(if ($airportCache) { 'OK' } else { 'Warning' }) `
+        -Details $(if ($airportCache) {
+            '{0} cache available at {1}; age {2:N1} hours.' -f $airportCache.Source, $airportCache.Path, $airportCache.Age.TotalHours
+        } else {
+            "No valid cache at $airportCachePath; the first airport metadata request requires network access."
+        }) `
+        -Category 'Data'
+
     $airportDbOk = Test-UrlReachable -Url 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json'
     $results += Add-DependencyResult `
         -Name 'Airport database service' `
         -Required $false `
         -Status $(if ($airportDbOk) { 'OK' } else { 'Warning' }) `
-        -Details 'Used for airport metadata.' `
+        -Details $(if ($airportDbOk) {
+            'Reachable; live data will refresh when the cache is older than seven days.'
+        } elseif ($airportCache) {
+            'Unavailable; cached airport metadata can be used.'
+        } else {
+            'Unavailable and no valid cache exists.'
+        }) `
         -Category 'Network'
 
     $noaaOk = Test-UrlReachable -Url 'https://aviationweather.gov/api/data/metar?ids=KLAX'
