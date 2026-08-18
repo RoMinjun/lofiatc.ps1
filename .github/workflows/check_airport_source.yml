@@ -1,34 +1,33 @@
 name: Check Airport Source
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: read
 
 on:
   push:
-    paths: [ "atc_sources.csv" ]
+    paths:
+      - 'atc_sources.csv'
+      - 'liveatc_sources.csv'
+      - 'tools/Check-AirportSource.ps1'
+      - '.github/workflows/check_airport_source.yml'
   pull_request:
-    paths: [ "atc_sources.csv" ]
+    paths:
+      - 'atc_sources.csv'
+      - 'liveatc_sources.csv'
+      - 'tools/Check-AirportSource.ps1'
+      - '.github/workflows/check_airport_source.yml'
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
-      - name: Check Airport Source (same-repo branches)
-        if: |
-          github.event_name == 'push' ||
-          (github.event_name == 'pull_request' &&
-           github.event.pull_request.head.repo.full_name == github.repository)
+      - name: Check base airport source
         shell: pwsh
-        run: ./tools/Check-AirportSource.ps1
+        run: ./tools/Check-AirportSource.ps1 -CsvPath ./atc_sources.csv
 
-      - name: Verify (fork PRs)
-        if: |
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name != github.repository
+      - name: Check live airport source
         shell: pwsh
-        run: ./tools/Check-AirportSource.ps1
+        run: ./tools/Check-AirportSource.ps1 -CsvPath ./liveatc_sources.csv

@@ -7,6 +7,7 @@ on:
       - test
       - feature/**
       - enhancement/**
+      - agent/**
     paths:
       - 'lofiatc.ps1'
       - 'install.ps1'
@@ -14,6 +15,10 @@ on:
       - 'modules/**/*.psm1'
       - 'packaging/**/*.ps*1'
       - 'tests/**/*.Tests.ps1'
+      - 'templates/**'
+      - 'tools/**/*.ps1'
+      - '.github/PSScriptAnalyzerSettings.psd1'
+      - '.github/workflows/powershell-tests.yml'
 
   pull_request:
     paths:
@@ -23,11 +28,22 @@ on:
       - 'modules/**/*.psm1'
       - 'packaging/**/*.ps*1'
       - 'tests/**/*.Tests.ps1'
+      - 'templates/**'
+      - 'tools/**/*.ps1'
+      - '.github/PSScriptAnalyzerSettings.psd1'
+      - '.github/workflows/powershell-tests.yml'
 
-    
 jobs:
-  pester-test:
-    runs-on: windows-latest
+  pester-pwsh:
+    name: Pester (PowerShell 7 / ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Check out repository code
@@ -36,11 +52,64 @@ jobs:
       - name: Install Pester
         shell: pwsh
         run: |
-          Install-Module Pester -Force -SkipPublisherCheck -Scope CurrentUser
-          Import-Module Pester -Force
+          Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.5.0 -Force
 
       - name: Run Pester tests
         shell: pwsh
         run: |
           $env:LOFIATC_TEST_MODE = '1'
           Invoke-Pester ./tests -CI
+
+  pester-windows-powershell:
+    name: Pester (Windows PowerShell 5.1 / windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v5
+
+      - name: Verify Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          if ($PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1) {
+            throw "Expected Windows PowerShell 5.1, got $($PSVersionTable.PSVersion)."
+          }
+
+      - name: Install Pester
+        shell: powershell
+        run: |
+          Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.5.0 -Force
+
+      - name: Run Pester tests
+        shell: powershell
+        run: |
+          $env:LOFIATC_TEST_MODE = '1'
+          Invoke-Pester ./tests -CI
+
+  compatible-syntax:
+    name: PowerShell 5.1-compatible syntax
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v5
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
+
+      - name: Analyze PowerShell files
+        shell: pwsh
+        run: |
+          $paths = @('lofiatc.ps1', 'install.ps1', 'uninstall.ps1')
+          $paths += Get-ChildItem modules, packaging, tools, tests -Recurse -File -Include *.ps1, *.psm1, *.psd1 |
+            Select-Object -ExpandProperty FullName
+          $results = @($paths | ForEach-Object {
+            Invoke-ScriptAnalyzer -Path $_ -Settings ./.github/PSScriptAnalyzerSettings.psd1
+          })
+          if ($results.Count -gt 0) {
+            $results | Format-Table -AutoSize | Out-String | Write-Host
+            throw "PSScriptAnalyzer found $($results.Count) PowerShell 5.1 compatibility issue(s)."
+          }
