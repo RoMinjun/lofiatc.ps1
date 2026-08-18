@@ -141,16 +141,26 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
 
         It 'finds Tesseract in its standard Windows install directory when it is not in PATH' {
             $script:OnWindows = $true
+            $originalProgramFiles = $env:ProgramFiles
+            $env:ProgramFiles = $TestDrive
+            $expectedPath = Join-Path $TestDrive 'Tesseract-OCR\tesseract.exe'
             Mock Test-CommandAvailable { $null }
             Mock Test-Path {
-                $LiteralPath -eq 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+                $LiteralPath -eq $expectedPath
             }
 
-            Resolve-TesseractPath | Should -Be 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+            try {
+                Resolve-TesseractPath | Should -Be $expectedPath
+            }
+            finally {
+                $env:ProgramFiles = $originalProgramFiles
+            }
         }
 
         It 'finds Tesseract from a registered custom installer location' {
             $script:OnWindows = $true
+            $installDirectory = Join-Path $TestDrive 'OCR'
+            $expectedPath = Join-Path $installDirectory 'tesseract.exe'
             Mock Test-CommandAvailable { $null }
             Mock Get-ChildItem {
                 [pscustomobject]@{ PSPath = 'TestRegistry:\Tesseract-OCR' }
@@ -159,13 +169,13 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             Mock Get-ItemProperty {
                 [pscustomobject]@{
                     DisplayName     = 'Tesseract-OCR'
-                    InstallLocation = 'D:\Tools\OCR'
+                    InstallLocation = $installDirectory
                     DisplayIcon     = $null
                 }
             }
-            Mock Test-Path { $LiteralPath -eq 'D:\Tools\OCR\tesseract.exe' }
+            Mock Test-Path { $LiteralPath -eq $expectedPath }
 
-            Resolve-TesseractPath | Should -Be 'D:\Tools\OCR\tesseract.exe'
+            Resolve-TesseractPath | Should -Be $expectedPath
         }
 
         It 'returns a recent cached OCR result without invoking tools again' {
@@ -308,12 +318,13 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
     Context 'ConvertFrom-METAR' {
         It 'decodes common METAR fields' {
             $decoded = ConvertFrom-METAR 'EGLL 121650Z 18012G20KT 9999 BKN020 18/12 Q1013'
+            $degree = [char]0x00B0
 
             $decoded.Wind | Should -Match '180.*12 knots'
             $decoded.Visibility | Should -Be '10+ km (Unlimited)'
             $decoded.Ceiling | Should -Be 'Broken at 2000 ft'
-            $decoded.Temperature | Should -Be '18°C'
-            $decoded.DewPoint | Should -Be '12°C'
+            $decoded.Temperature | Should -Be "18${degree}C"
+            $decoded.DewPoint | Should -Be "12${degree}C"
             $decoded.Pressure | Should -Be '1013 hPa'
         }
 
@@ -1194,14 +1205,15 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
                 -EnableFavoriteActions
 
             $marker = @($json | ConvertFrom-Json)[0]
+            $star = [regex]::Escape([string][char]0x2605)
 
             $marker.icao | Should -Be 'EHAM'
             $marker.isFav | Should -BeTrue
             $marker.isAirportFav | Should -BeTrue
             $marker.airportFavHtml | Should -Match 'toggleAirportFavorite'
-            $marker.airportFavHtml | Should -Match '★ Remove airport favorite'
+            $marker.airportFavHtml | Should -Match "$star Remove airport favorite"
             $marker.desc | Should -Match 'toggleFavorite'
-            $marker.desc | Should -Match '★ Remove favorite'
+            $marker.desc | Should -Match "$star Remove favorite"
         }
     }
 
@@ -1216,7 +1228,7 @@ ICAO,Channel Description,Stream URL,Webcam URL,NearbyICAOs
 KLAX,Tower,http://example.com/stream,,KSNA;KBUR
 '@ | Set-Content -Path $script:csvPath -Encoding UTF8
 
-            $result = Import-ATCSource -csvPath $script:csvPath
+            $result = @(Import-ATCSource -csvPath $script:csvPath)
             $result.Count | Should -Be 1
             $result[0].ICAO | Should -Be 'KLAX'
         }
@@ -1357,10 +1369,16 @@ KLAX,Tower,http://example.com/stream
     Context 'Start-PlayerProcess' {
         BeforeEach {
             $script:OnWindows = $true
+            $originalAppData = $env:APPDATA
+            $env:APPDATA = $TestDrive
 
             Mock Resolve-StreamUrl { $Url }
             Mock Test-Player { 'C:\Program Files\VideoLAN\VLC\vlc.exe' }
             Mock Start-Process { [System.Diagnostics.Process]::new() }
+        }
+
+        AfterEach {
+            $env:APPDATA = $originalAppData
         }
 
         It 'starts VLC as a separate instance so managed lofi playback remains trackable' {

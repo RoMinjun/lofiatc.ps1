@@ -6,10 +6,19 @@ BeforeAll {
   function Invoke-SourceSortCheck {
     param([Parameter(Mandatory)][string]$CsvPath)
 
-    $output = & $powerShellExecutable -NoLogo -NoProfile -File $sortScript `
-      -InputCsvPath $CsvPath -Check 2>&1 | Out-String
+    $errorPath = [System.IO.Path]::GetTempFileName()
+    try {
+      $output = & $powerShellExecutable -NoLogo -NoProfile -File $sortScript `
+        -InputCsvPath $CsvPath -Check 2> $errorPath | Out-String
+      $exitCode = $LASTEXITCODE
+      $output += Get-Content -Path $errorPath -Raw -ErrorAction SilentlyContinue
+    }
+    finally {
+      Remove-Item -Path $errorPath -Force -ErrorAction SilentlyContinue
+    }
+
     [pscustomobject]@{
-      ExitCode = $LASTEXITCODE
+      ExitCode = $exitCode
       Output = $output
     }
   }
