@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Issue Delivery"
+  short_description: "Deliver issues through the test branch"
+  default_prompt: "Use $lofiatc-issue-delivery to pick up and deliver this repository issue through a validated pull request."
