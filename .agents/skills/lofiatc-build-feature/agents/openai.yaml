@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Feature Builder"
+  short_description: "Build cross-platform LofiATC features"
+  default_prompt: "Use $lofiatc-build-feature to implement this feature with the correct module, tests, packaging, and documentation."
