@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Airport Recommendations"
+  short_description: "Airport JSON and linked evidence report"
+  default_prompt: "Use $lofiatc-airport-recommendations to find and verify airport changes, then write paste-ready JSON and linked official evidence to a Markdown report."
