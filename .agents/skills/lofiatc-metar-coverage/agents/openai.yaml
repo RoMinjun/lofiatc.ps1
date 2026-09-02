@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit LofiATC METAR Coverage"
+  short_description: "Check METAR coverage and verified fallbacks"
+  default_prompt: "Use $lofiatc-metar-coverage to audit every base ATC airport for METAR coverage and report verified fallback candidates."
