@@ -7,11 +7,13 @@ description: Maintain and review LofiATC airport and stream source data in atc_s
 
 Read `AGENTS.md`, `CONTRIBUTING.md`, and [source-checks.md](references/source-checks.md) before editing source rows.
 
+Keep provider-specific crawling instructions, page selectors, access endpoints, and credentials in a separately installed personal skill or runtime configuration, never in this repository skill.
+
 ## Verify before editing
 
 1. Identify whether the requested change belongs in the maintained base dataset, refreshed live dataset, or both.
 2. Verify every changed field from an authoritative or clearly permitted source. Record URLs and uncertainties.
-3. Never invent airport metadata, channel names, LiveATC slugs, stream URLs, webcams, nearby relationships, or online status.
+3. Never invent airport metadata, channel names, provider-specific stream slugs, stream URLs, webcams, nearby relationships, or online status.
 4. Treat automated network failures as diagnostic evidence, not deletion authority.
 
 ## Edit and validate
