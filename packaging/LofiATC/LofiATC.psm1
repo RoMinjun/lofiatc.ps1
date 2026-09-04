@@ -539,7 +539,7 @@ GitHub owner/repository used by -UpdateSources. Defaults to the repository recor
         [int]$ATCVolume = 65,
         [ValidateRange(0,100)]
         [int]$LofiVolume = 50,
-        [string]$LofiSource = "https://youtu.be/X4VbdwhkE10",
+        [string]$LofiSource = "https://youtu.be/rFZHOHl-L8A",
         [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient", "Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian")]
         [string]$LofiGenre,
         [ValidatePattern('^[A-Za-z0-9]{4}$')]
