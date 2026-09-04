@@ -563,6 +563,7 @@ lofiatc -CheckDependencies
 - **yt-dlp errors:** update it to the latest version and retry.
 - **YouTube or webcam streams not loading in player:** make sure `yt-dlp` is up to date; recent upstream changes may require extra packages depending on your platform.
 - **Map opens slowly:** use `-ShowMap -NoWeather` to skip live weather fetch and load faster.
+- **Map reports that local ports are unavailable:** another program or a Windows reserved-port range may overlap the map listener. LofiATC automatically searches beyond short reserved ranges before failing.
 - **Airport data is unavailable:** the first map or nearby-airport request needs network access. After a successful request, LofiATC keeps a seven-day user cache and can use stale data during an outage. Run `lofiatc -CheckDependencies` for its status.
 - **Map opens but clicking a channel does nothing:** make sure the PowerShell window is still running in the background; the browser talks back to a temporary local listener started by the script.
 - **Map selection feels stuck:** return to the terminal and press `Q` to cancel the map selection flow.

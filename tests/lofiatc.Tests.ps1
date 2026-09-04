@@ -1384,6 +1384,36 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
     }
 
+    Context 'Map server port selection' {
+        It 'searches beyond a short reserved port block' {
+            $script:mapServerStartAttempts = 0
+            $fakePrefixes = [pscustomobject]@{ Values = @() }
+            $fakePrefixes | Add-Member -MemberType ScriptMethod -Name Clear -Value {
+                $this.Values = @()
+            }
+            $fakePrefixes | Add-Member -MemberType ScriptMethod -Name Add -Value {
+                param($Value)
+                $this.Values += $Value
+            }
+
+            $fakeListener = [pscustomobject]@{ Prefixes = $fakePrefixes }
+            $fakeListener | Add-Member -MemberType ScriptMethod -Name Start -Value {
+                $script:mapServerStartAttempts++
+                if ($script:mapServerStartAttempts -le 100) {
+                    throw 'Port is reserved.'
+                }
+            }
+            $fakeListener | Add-Member -MemberType ScriptMethod -Name Close -Value {}
+
+            Mock New-Object { $fakeListener } -ParameterFilter { $TypeName -eq 'System.Net.HttpListener' }
+
+            $server = Start-ATCMapServer
+
+            $server.Port | Should -Be 49252
+            $script:mapServerStartAttempts | Should -Be 101
+        }
+    }
+
     Context 'Generated map HTML for added controls' {
         It 'loads the external map HTML template and replaces all placeholders' {
             Get-ATCMapHtmlTemplatePath | Should -Be (Join-Path $repoRoot 'templates\atc-map.html')

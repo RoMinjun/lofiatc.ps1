@@ -1238,15 +1238,16 @@ $lofiTrackPanel
 Function Start-ATCMapServer {
     param(
         [int]$StartPort = 49152,
-        [int]$MaxRetries = 10
+        [int]$MaxRetries = 256
     )
 
     $port = $StartPort
-    $listener = New-Object System.Net.HttpListener
+    $endPort = $StartPort + $MaxRetries - 1
 
     while ($MaxRetries -gt 0) {
+        $listener = New-Object System.Net.HttpListener
+
         try {
-            $listener.Prefixes.Clear()
             $listener.Prefixes.Add("http://127.0.0.1:$port/")
             $listener.Start()
 
@@ -1256,12 +1257,13 @@ Function Start-ATCMapServer {
             }
         }
         catch {
+            $listener.Close()
             $port++
             $MaxRetries--
         }
     }
 
-    throw "Could not start local web server. Port is blocked."
+    throw "Could not start local web server. Ports $StartPort through $endPort are unavailable."
 }
 
 
