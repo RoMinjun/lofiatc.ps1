@@ -97,6 +97,15 @@ Checks required files, player availability, optional tools, and network dependen
 
 .PARAMETER KeepOpen
 When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
+
+.PARAMETER AutoRecover
+Monitors the managed ATC player and retries unexpected exits or failed starts with bounded exponential backoff.
+
+.PARAMETER RetryCount
+Maximum number of automatic ATC recovery attempts. Default is 3.
+
+.PARAMETER RecoverAlternateChannel
+Allows later recovery attempts to try another channel at the selected airport. Requires -AutoRecover.
 #>
 
 [CmdletBinding()]
@@ -139,7 +148,11 @@ param (
     [switch]$Dark,
     [switch]$CheckDependencies,
     [Alias("Persistent")]
-    [switch]$KeepOpen
+    [switch]$KeepOpen,
+    [switch]$AutoRecover,
+    [ValidateRange(1,10)]
+    [int]$RetryCount = 3,
+    [switch]$RecoverAlternateChannel
 )
 
 $script:ModuleRoot = Join-Path $PSScriptRoot 'modules'
@@ -220,6 +233,10 @@ try {
             throw "ICAO must be a 4-character airport code."
         }
     }
+
+    if ($RetryCount -lt 1 -or $RetryCount -gt 10) {
+        throw '-RetryCount must be between 1 and 10.'
+    }
     
     if ($CheckDependencies) {
         $dependencyResults = Test-LofiATCDependencies `
@@ -248,6 +265,10 @@ try {
 
     if ($ShowLofiTrack -and -not $CheckDependencies -and $NoLofiMusic) {
         throw '-ShowLofiTrack cannot be used with -NoLofiMusic.'
+    }
+
+    if ($RecoverAlternateChannel -and -not $AutoRecover) {
+        throw '-RecoverAlternateChannel requires -AutoRecover.'
     }
 
     # Save config if specified, excluding common PowerShell parameters and any that were directly provided to override config values
@@ -310,7 +331,10 @@ try {
         -Dark:$Dark `
         -NoLofiMusic:$NoLofiMusic `
         -PlayLofiGirlVideo:$PlayLofiGirlVideo `
-        -ShowLofiTrack:$ShowLofiTrack
+        -ShowLofiTrack:$ShowLofiTrack `
+        -AutoRecover:$AutoRecover `
+        -RetryCount $RetryCount `
+        -RecoverAlternateChannel:$RecoverAlternateChannel
 
     if ($SaveProfile) {
         Export-LofiATCProfile `
@@ -332,7 +356,11 @@ try {
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
         -OpenRadar:$OpenRadar `
         -RandomATC:$RandomATC `
-        -PlayerWasSpecified:($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"])
+        -PlayerWasSpecified:($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) `
+        -AtcSources $atcSources `
+        -AutoRecover:$AutoRecover `
+        -RetryCount $RetryCount `
+        -RecoverAlternateChannel:$RecoverAlternateChannel
 }
 catch [System.OperationCanceledException] {
     Write-Warning $_.Exception.Message

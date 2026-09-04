@@ -80,6 +80,7 @@ Function Initialize-LofiATCState {
     $script:CurrentATCProcess = $null
     $script:CurrentWebcamProcess = $null
     $script:CurrentLofiProcess = $null
+    $script:ATCRecoveryState = $null
 
     $script:CurrentATCVolume = $null
     $script:CurrentLofiVolume = $null
@@ -1028,7 +1029,10 @@ Function Resolve-SelectedATCStream {
         [switch]$Dark,
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
-        [switch]$ShowLofiTrack
+        [switch]$ShowLofiTrack,
+        [switch]$AutoRecover,
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     $currentUserLocation = $null
@@ -1104,7 +1108,10 @@ Function Resolve-SelectedATCStream {
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
             -StartRandom:$RandomATC `
-            -FavoritesPath $FavoritesPath
+            -FavoritesPath $FavoritesPath `
+            -AutoRecover:$AutoRecover `
+            -RetryCount $RetryCount `
+            -RecoverAlternateChannel:$RecoverAlternateChannel
 
         if ($KeepOpen) {
             exit 0

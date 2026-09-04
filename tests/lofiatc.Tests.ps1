@@ -27,6 +27,7 @@ Describe 'lofiatc.ps1 helper functions' {
             Get-Command Resolve-StreamUrl -CommandType Function | Should -Not -Be $null
             Get-Command Resolve-Player -CommandType Function | Should -Not -Be $null
             Get-Command Get-DistanceKm -CommandType Function | Should -Not -Be $null
+            Get-Command Update-ATCPlaybackRecovery -CommandType Function | Should -Not -Be $null
         }
     }
 
@@ -38,6 +39,171 @@ Describe 'lofiatc.ps1 helper functions' {
         It 'returns non-special URLs unchanged' {
             $url = 'https://example.com/audio.mp3'
             Resolve-StreamUrl $url | Should -Be $url
+        }
+    }
+
+    Context 'Automatic ATC playback recovery' {
+        BeforeEach {
+            $script:ATCRecoveryState = $null
+            $script:CurrentATCProcess = $null
+            $script:recoveryNow = [datetime]'2026-09-04T12:00:00Z'
+            $script:recoverySources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'https://example.test/eham-tower.pls'
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Approach'
+                    'Stream URL'          = 'https://example.test/eham-approach.pls'
+                }
+            )
+        }
+
+        It 'uses bounded exponential backoff delays' {
+            Get-ATCRecoveryDelaySeconds -Attempt 1 | Should -Be 1
+            Get-ATCRecoveryDelaySeconds -Attempt 2 | Should -Be 2
+            Get-ATCRecoveryDelaySeconds -Attempt 3 | Should -Be 4
+            Get-ATCRecoveryDelaySeconds -Attempt 10 | Should -Be 30
+        }
+
+        It 're-resolves the stream after a failed start and recovers' {
+            $script:resolveAttempts = 0
+            Mock Resolve-StreamUrl {
+                $script:resolveAttempts++
+                if ($script:resolveAttempts -eq 1) {
+                    throw 'resolver unavailable'
+                }
+                return $Url
+            }
+            Mock Test-Player { '/usr/bin/mpv' }
+            Mock Start-Process { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $process = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            $process | Should -BeNullOrEmpty
+            $script:ATCRecoveryState.Status | Should -Be 'Recovering'
+            $script:ATCRecoveryState.NextAttemptAt | Should -Be $script:recoveryNow.AddSeconds(1)
+
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+
+            $script:resolveAttempts | Should -Be 2
+            $script:ATCRecoveryState.Status | Should -Be 'Playing'
+            $script:ATCRecoveryState.Attempt | Should -Be 1
+            $script:ATCRecoveryState.Message | Should -Match 'Recovered EHAM.*Tower.*attempt 1 of 3'
+        }
+
+        It 'recovers an unexpectedly exited managed player without duplicate launches' {
+            Mock Start-PlayerProcess { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'VLC' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            Update-ATCPlaybackRecovery `
+                -Player 'VLC' `
+                -Volume 65 `
+                -Now $script:recoveryNow | Out-Null
+
+            $script:ATCRecoveryState.Status | Should -Be 'Recovering'
+
+            Update-ATCPlaybackRecovery `
+                -Player 'VLC' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+
+            $script:ATCRecoveryState.Status | Should -Be 'Playing'
+            Should -Invoke Start-PlayerProcess -Times 2 -Exactly
+        }
+
+        It 'tries another channel on a later attempt and reports exhaustion clearly' {
+            $script:attemptedUrls = @()
+            Mock Start-PlayerProcess {
+                $script:attemptedUrls += $Url
+                throw "could not start $Url"
+            }
+            Mock Test-ManagedProcessAlive { $false }
+
+            Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 2 `
+                -RecoverAlternateChannel `
+                -Now $script:recoveryNow | Out-Null
+
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(3) | Out-Null
+
+            $script:attemptedUrls.Count | Should -Be 3
+            $script:attemptedUrls[0] | Should -Be 'https://example.test/eham-tower.pls'
+            $script:attemptedUrls[1] | Should -Be 'https://example.test/eham-tower.pls'
+            $script:attemptedUrls[2] | Should -Be 'https://example.test/eham-approach.pls'
+            $script:ATCRecoveryState.Status | Should -Be 'Failed'
+            $script:ATCRecoveryState.Message | Should -Match 'recovery exhausted after 2 attempts'
+            $script:ATCRecoveryState.Message | Should -Match 'Select another channel or rerun LofiATC'
+        }
+
+        It 'does not restart playback after a deliberate stop' {
+            Mock Start-PlayerProcess { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            Set-ATCRecoveryStopped
+            $script:CurrentATCProcess = $null
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddMinutes(1) | Out-Null
+
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly
+            $script:ATCRecoveryState.Status | Should -Be 'Stopped'
+        }
+
+        It 'supports cancellation while monitoring recovery' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -RetryCount 3 | Out-Null
+
+            {
+                Wait-ATCPlaybackRecovery `
+                    -Player 'MPV' `
+                    -Volume 65 `
+                    -CancellationRequested { $true }
+            } | Should -Throw '*recovery monitoring cancelled*'
         }
     }
 
@@ -1022,6 +1188,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:CurrentMapSelection = $null
             $script:CurrentATCVolume = $null
             $script:CurrentLofiVolume = $null
+            $script:ATCRecoveryState = $null
 
             Mock Stop-ManagedProcess {}
             Mock Start-PlayerProcess {
@@ -1064,6 +1231,43 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:CurrentLofiProcess | Should -BeNullOrEmpty
 
             Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'marks ATC recovery as deliberately stopped from the map' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:mapAtcSources[0] `
+                -AtcSources $script:mapAtcSources `
+                -RetryCount 3 | Out-Null
+            $script:CurrentATCProcess = [System.Diagnostics.Process]::new()
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'stop-atc' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -AutoRecover
+
+            $result.stopped | Should -BeTrue
+            $script:ATCRecoveryState.DeliberatelyStopped | Should -BeTrue
+            $script:ATCRecoveryState.Status | Should -Be 'Stopped'
+        }
+
+        It 'returns recovery state for persistent map polling' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:mapAtcSources[0] `
+                -AtcSources $script:mapAtcSources `
+                -RetryCount 3 | Out-Null
+            Set-ATCRecoveryPending `
+                -Now ([datetime]'2026-09-04T12:00:00Z') `
+                -ErrorMessage 'player exited'
+
+            $result = Invoke-MapPlaybackAction -Action 'playback-status'
+
+            $result.recoveryStatus | Should -Be 'Recovering'
+            $result.recoveryMessage | Should -Match 'Retry 1 of 3'
+            $result.icao | Should -Be 'EHAM'
         }
 
         It 'returns OCR track data only when Lofi track display is enabled' {
@@ -1221,6 +1425,26 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Match "var mapControlToken = 'test-token'"
             $html | Should -Match "token=' \+ encodeURIComponent\(mapControlToken\)"
             $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'polls and displays ATC recovery status when enabled' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -AutoRecover `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
+
+            $html | Should -Match 'var autoRecover = true'
+            $html | Should -Match 'action=playback-status'
+            $html | Should -Match 'setInterval\(pollRecoveryStatus, 1000\)'
+            $html | Should -Not -Match '\{\{AUTO_RECOVER_JS\}\}'
         }
 
         It 'includes the Lofi OCR panel and polling script when enabled' {
@@ -1534,6 +1758,23 @@ KLAX,Tower,http://example.com/stream
 
             Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
                 $ArgumentList -match '--no-one-instance'
+            }
+        }
+
+        It 'keeps MPV recovery launches audio-only with the requested volume' {
+            Mock Test-Player { '/usr/bin/mpv' }
+
+            Start-PlayerProcess `
+                -Url 'http://example.test/atc' `
+                -Player 'MPV' `
+                -NoVideo `
+                -BasicArgs `
+                -Volume 42 | Out-Null
+
+            Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+                $ArgumentList -match '--no-video' -and
+                $ArgumentList -match '--force-window=immediate' -and
+                $ArgumentList -match '--volume=42'
             }
         }
     }

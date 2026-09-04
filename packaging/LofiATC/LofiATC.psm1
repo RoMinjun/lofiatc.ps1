@@ -499,6 +499,15 @@ Checks required files, player availability, optional tools, and network dependen
 .PARAMETER KeepOpen
 When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
 
+.PARAMETER AutoRecover
+Monitors the managed ATC player and retries unexpected exits or failed starts with bounded exponential backoff.
+
+.PARAMETER RetryCount
+Maximum number of automatic ATC recovery attempts. Default is 3.
+
+.PARAMETER RecoverAlternateChannel
+Allows later recovery attempts to try another channel at the selected airport. Requires -AutoRecover.
+
 .PARAMETER UpdateSources
 Refreshes liveatc_sources.csv in the installed app directory and exits.
 
@@ -555,6 +564,10 @@ GitHub owner/repository used by -UpdateSources. Defaults to the repository recor
         [switch]$CheckDependencies,
         [Alias("Persistent")]
         [switch]$KeepOpen,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel,
         [switch]$UpdateSources,
         [switch]$Version,
         [string]$Ref = (Get-LofiATCInstallRef),
