@@ -4,8 +4,11 @@
     <meta charset="UTF-8">
     <title>LofiATC Global Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
     <script src="https://unpkg.com/@joergdietrich/leaflet.terminator"></script>
     <style>
         :root {
@@ -1113,18 +1116,60 @@
             // No-op for circleMarker version.
         }
         var isDarkInitial = {{IS_DARK_JS}};
-        var lightTileUrl = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
-        var darkTileUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-        var mapTileLayer = L.tileLayer(isDarkInitial ? darkTileUrl : lightTileUrl, { maxZoom: 18, attribution: '&copy; OpenStreetMap &copy; CARTO' }).addTo(map);
+        var lightMapStyleUrl = 'https://tiles.openfreemap.org/styles/positron';
+        var darkMapStyleUrl = 'https://tiles.openfreemap.org/styles/dark';
+        var fallbackTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        var mapTileLayer = null;
+
+        function addFallbackBasemap() {
+            mapTileLayer = L.tileLayer(fallbackTileUrl, {
+                maxZoom: 18,
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+            }).addTo(map);
+        }
+
+        function initializeBasemap(styleUrl) {
+            var mapLibreAvailable = (
+                typeof maplibregl !== 'undefined' &&
+                typeof L.maplibreGL === 'function' &&
+                (typeof maplibregl.supported !== 'function' || maplibregl.supported())
+            );
+
+            if (!mapLibreAvailable) {
+                addFallbackBasemap();
+                return;
+            }
+
+            try {
+                mapTileLayer = L.maplibreGL({
+                    style: styleUrl,
+                    maxZoom: 18
+                }).addTo(map);
+            } catch (error) {
+                console.warn('OpenFreeMap could not initialize; using the OpenStreetMap fallback.', error);
+                addFallbackBasemap();
+            }
+        }
+
+        function setBasemapTheme(isDark) {
+            if (!mapTileLayer || typeof mapTileLayer.getMaplibreMap !== 'function') return;
+
+            var mapLibreMap = mapTileLayer.getMaplibreMap();
+            if (mapLibreMap && typeof mapLibreMap.setStyle === 'function') {
+                mapLibreMap.setStyle(isDark ? darkMapStyleUrl : lightMapStyleUrl);
+            }
+        }
+
+        initializeBasemap(isDarkInitial ? darkMapStyleUrl : lightMapStyleUrl);
 
         document.getElementById('toggle-theme').addEventListener('change', function(e) {
             if (e.target.checked) {
                 document.body.classList.add('dark-mode');
-                mapTileLayer.setUrl(darkTileUrl);
             } else {
                 document.body.classList.remove('dark-mode');
-                mapTileLayer.setUrl(lightTileUrl);
             }
+
+            setBasemapTheme(e.target.checked);
         });
 
         var terminatorLayer = L.terminator({ fillOpacity: 0.35, color: '#000', interactive: false }).addTo(map);
