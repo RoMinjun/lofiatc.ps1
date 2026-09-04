@@ -62,6 +62,18 @@ Describe 'LofiATC module updater' {
         $profilePattern.RegexPattern | Should -Be '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
     }
 
+    It 'exposes validated ATC recovery parameters on the installed command' {
+        $parameters = (Get-Command lofiatc).Parameters
+
+        $parameters.Keys | Should -Contain 'AutoRecover'
+        $parameters.Keys | Should -Contain 'RetryCount'
+        $parameters.Keys | Should -Contain 'RecoverAlternateChannel'
+
+        $retryRange = @($parameters.RetryCount.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateRangeAttribute] })[0]
+        $retryRange.MinRange | Should -Be 1
+        $retryRange.MaxRange | Should -Be 10
+    }
+
     Context 'CLI parameter parity' {
         It 'keeps shared names, types, aliases, defaults, and validation rules aligned' {
             $parseTokens = $null

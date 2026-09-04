@@ -264,6 +264,12 @@ lofiatc -ShowMap -Nearby
 # Open the map and include webcam-enabled feeds where available
 lofiatc -ShowMap -IncludeWebcamIfAvailable
 
+# Monitor ATC playback and retry an interrupted or expired stream
+lofiatc -ICAO EHAM -AutoRecover -RetryCount 3
+
+# Let later retries try another channel at the same airport
+lofiatc -ICAO EHAM -AutoRecover -RecoverAlternateChannel
+
 # Show the current Lofi Girl track using OCR in persistent map mode
 lofiatc -ShowMap -KeepOpen -ShowLofiTrack
 
@@ -326,6 +332,9 @@ Get-Help lofiatc -Full
 | `-NoWeather`    | switch    | false   | Skips live weather/METAR fetching for the map to improve load speed. |
 | `-Dark`         | switch    | false   | Starts the interactive map in dark mode. |
 | `-KeepOpen` / `-Persistent` | switch | false | Keeps the interactive map open after selecting a channel so you can make repeated selections. |
+| `-AutoRecover` | switch | false | Monitors the managed ATC player and retries failed starts or unexpected exits. Keeps a non-map terminal session open until cancelled. |
+| `-RetryCount` | int 1–10 | `3` | Maximum recovery attempts when `-AutoRecover` is enabled. |
+| `-RecoverAlternateChannel` | switch | false | Allows later recovery attempts to try another channel at the same airport. Requires `-AutoRecover`. |
 | `-NoLofiMusic`  | switch    | false   | Disables the lofi stream and only plays ATC audio. |
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
@@ -373,6 +382,12 @@ Configuration and profile files are written through a validated temporary file b
 Airport metadata used by the map, nearby-airport selection, local time, and sunrise/sunset features is cached as `airport-data-cache.json` in the user data folder. A cache is considered fresh for seven days. After that, LofiATC attempts a bounded refresh and uses the stale last-known-good cache if the service is unavailable. If the active cache is malformed, a valid neighboring `.bak` cache can be used instead.
 
 The first airport-data request still needs network access when no cache exists. Optional IP location, METAR, and sunrise/sunset failures return unavailable data without stopping unrelated ATC or lofi playback. Run `lofiatc -Verbose` to see whether airport data came from the live service, active cache, backup fallback, or was unavailable; `lofiatc -CheckDependencies` reports the current cache path, source, and age.
+
+### Automatic ATC recovery
+
+Use `-AutoRecover` to keep the selected ATC process under supervision. Failed starts and unexpected player exits are retried with delays of 1, 2, 4, and then up to 30 seconds, bounded by `-RetryCount`. Each retry resolves the configured stream URL again before launching the player. `-RecoverAlternateChannel` lets successive attempts rotate through other configured channels for the same ICAO.
+
+Outside persistent map mode, recovery monitoring keeps the terminal command active; press Ctrl+C to stop it. Deliberate **Stop ATC** and **Stop All** map actions disable recovery until you restart or select a channel. Persistent map mode displays recovering, recovered, and exhausted states in Now Playing. Lofi and webcam processes are not treated as ATC recovery attempts.
 
 ### Named profiles
 
