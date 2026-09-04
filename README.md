@@ -497,6 +497,7 @@ Use `-ShowMap` to open an interactive browser map of all available ATC sources.
 
 ### What it does
 - Opens a local HTML map in your browser
+- Uses keyless [OpenFreeMap](https://openfreemap.org/) light and dark vector basemaps, with a standard OpenStreetMap fallback when WebGL is unavailable
 - Lets you search by ICAO, city, or country
 - Shows active ATC sources as clickable markers
 - Optionally overlays live weather categories and wind arrows

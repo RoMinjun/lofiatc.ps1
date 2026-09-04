@@ -1402,6 +1402,27 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Not -Match '\{\{[A-Z0-9_]+\}\}'
         }
 
+        It 'uses keyless OpenFreeMap styles with a standard OpenStreetMap fallback' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'maplibre-gl@5\.24\.0'
+            $html | Should -Match '@maplibre/maplibre-gl-leaflet@0\.1\.4'
+            $html | Should -Match 'https://tiles\.openfreemap\.org/styles/positron'
+            $html | Should -Match 'https://tiles\.openfreemap\.org/styles/dark'
+            $html | Should -Match 'https://tile\.openstreetmap\.org/\{z\}/\{x\}/\{y\}\.png'
+            $html | Should -Match 'maplibregl\.supported\(\)'
+            $html | Should -Match 'mapLibreMap\.setStyle'
+            $html | Should -Not -Match 'cartocdn|CARTO'
+        }
+
         It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
             $html = New-ATCMapHtml `
                 -JsArray '[]' `
