@@ -1,11 +1,11 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
 Function Get-LofiATCGenreMap {
     return @{
-        "Chillhop"      = "https://youtu.be/X4VbdwhkE10" # Lofi Girl original
+        "Chillhop"      = "https://youtu.be/rFZHOHl-L8A" # Lofi Girl original
         "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Lofi Girl Synthwave
         "SynthAmbient"  = "https://youtu.be/GSfT7H87zq4" # Lofi Girl Synthwave Ambient
         "Sad"           = "https://youtu.be/CwPCy1GLS38" # Lofi Girl sad
-        "Piano"         = "https://youtu.be/5qap5aOn9sA" # Lofi Girl Piano
+        "Piano"         = "https://youtu.be/N0snMcR6aaA" # Lofi Girl Piano
         "Classical"     = "https://youtu.be/jXAEIWcGXwE" # Lofi Girl Classical
         "Jazz"          = "https://youtu.be/E2vONfzoyRI" # Lofi Girl Jazz
         "RelaxJazz"     = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Relax Jazz
