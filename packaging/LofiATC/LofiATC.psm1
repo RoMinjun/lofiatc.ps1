@@ -76,7 +76,9 @@ Function Get-LofiATCVersion {
     return [pscustomobject]@{
         Repository            = [string]$metadata.Repository
         Ref                   = [string]$metadata.Ref
+        Release               = if ($metadata.PSObject.Properties['Release']) { [string]$metadata.Release } else { $null }
         Commit                = $commit
+        ArtifactSha256        = if ($metadata.PSObject.Properties['ArtifactSha256']) { [string]$metadata.ArtifactSha256 } else { $null }
         InstalledAtUtc        = [string]$metadata.InstalledAtUtc
         InstallRoot           = if ($metadata.PSObject.Properties['InstallRoot']) { [string]$metadata.InstallRoot } else { $InstallRoot }
         ModuleRoot            = if ($metadata.PSObject.Properties['ModuleRoot']) { [string]$metadata.ModuleRoot } else { $null }
@@ -108,6 +110,70 @@ Function Resolve-LofiATCCommit {
     }
 
     return [string]$commit.sha
+}
+
+Function Get-LofiATCReleaseInfo {
+    param(
+        [string]$Repository,
+        [string]$Release
+    )
+
+    $releaseUrl = if ($Release -eq 'latest') {
+        "https://api.github.com/repos/$Repository/releases/latest"
+    }
+    else {
+        $escapedRelease = [System.Uri]::EscapeDataString($Release) -replace '/', '%2F'
+        "https://api.github.com/repos/$Repository/releases/tags/$escapedRelease"
+    }
+
+    $releaseInfo = Invoke-RestMethod -Uri $releaseUrl -Headers @{
+        Accept = 'application/vnd.github+json'
+    } -TimeoutSec 15 -ErrorAction Stop
+
+    if (-not $releaseInfo.tag_name) {
+        throw "GitHub did not return a tag for release '$Release'."
+    }
+
+    return $releaseInfo
+}
+
+Function Get-LofiATCReleaseAssetUrl {
+    param(
+        $ReleaseInfo,
+        [string]$Name
+    )
+
+    $asset = @($ReleaseInfo.assets | Where-Object { $_.name -eq $Name }) | Select-Object -First 1
+    if (-not $asset -or [string]::IsNullOrWhiteSpace($asset.browser_download_url)) {
+        throw "Release '$($ReleaseInfo.tag_name)' is missing required asset: $Name"
+    }
+
+    return [string]$asset.browser_download_url
+}
+
+Function Assert-LofiATCFileChecksum {
+    param(
+        [string]$Path,
+        [string]$ChecksumPath,
+        [string]$ExpectedFileName
+    )
+
+    $checksumLine = @(Get-Content -Path $ChecksumPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | Select-Object -First 1
+    if (-not $checksumLine -or $checksumLine -notmatch '^(?<Hash>[0-9a-fA-F]{64})\s+\*?(?<FileName>.+)$') {
+        throw "Invalid SHA-256 checksum file for $ExpectedFileName."
+    }
+
+    if ($Matches.FileName.Trim() -ne $ExpectedFileName) {
+        throw "Checksum file names '$($Matches.FileName.Trim())' but '$ExpectedFileName' was downloaded."
+    }
+
+    $expectedHash = $Matches.Hash.ToLowerInvariant()
+    $actualHash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "SHA-256 checksum mismatch for $ExpectedFileName. Expected $expectedHash but received $actualHash."
+    }
+
+    return $actualHash
 }
 
 Function Format-LofiATCCommitLink {
@@ -313,15 +379,92 @@ Function Update-LofiATCSources {
 }
 
 Function Update-LofiATC {
-    [CmdletBinding()]
+<#
+.SYNOPSIS
+Updates an installed LofiATC copy.
+
+.DESCRIPTION
+Shows the installed and available versions before updating. Release installs use
+published SHA-256 checksums, while branch installs remain pinned to their recorded
+repository ref. Git checkouts continue to update with a fast-forward-only pull.
+
+.PARAMETER InstallRoot
+Installed LofiATC app directory.
+
+.PARAMETER Ref
+Repository branch, tag, or commit to update from. Overrides the recorded ref and
+the stable release channel for this update.
+
+.PARAMETER Repository
+GitHub repository in owner/name form. Defaults to the repository recorded at install.
+
+.PARAMETER Release
+Stable release tag to install, or latest for the newest published release.
+
+.EXAMPLE
+Update-LofiATC -WhatIf
+
+Shows the installed and available versions without downloading or changing files.
+
+.EXAMPLE
+Update-LofiATC -Release latest
+
+Updates an installer-based installation to the newest stable release.
+#>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
         [string]$InstallRoot = (Get-LofiATCInstallRoot),
         [string]$Ref,
-        [string]$Repository
+        [string]$Repository,
+        [ValidatePattern('^(latest|v?\d+\.\d+\.\d+)$')]
+        [string]$Release
     )
 
     $gitDir = Join-Path $InstallRoot '.git'
     if (Test-Path $gitDir) {
+        if (-not [string]::IsNullOrWhiteSpace($Release)) {
+            throw "Release cannot be used for a Git checkout. Update the checked-out branch instead."
+        }
+
+        $installedCommit = git -C $InstallRoot rev-parse HEAD
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($installedCommit)) {
+            throw "Could not determine the installed Git commit."
+        }
+        $installedCommit = $installedCommit.Trim()
+
+        $gitRepository = Get-LofiATCGitHubRepository -InstallRoot $InstallRoot
+        if ([string]::IsNullOrWhiteSpace($gitRepository)) {
+            $gitRepository = Get-LofiATCInstallRepository
+        }
+
+        $branch = git -C $InstallRoot rev-parse --abbrev-ref HEAD
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branch)) {
+            throw "Could not determine the checked-out Git branch."
+        }
+        $branch = $branch.Trim()
+        $remoteRef = "refs/heads/$branch"
+        $remoteResult = git -C $InstallRoot ls-remote --exit-code origin $remoteRef
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteResult)) {
+            throw "Could not determine the available commit for Git branch '$branch'."
+        }
+        $availableCommit = ([string]$remoteResult -split '\s+')[0].ToLowerInvariant()
+        if ($availableCommit -notmatch '^[0-9a-f]{40}$') {
+            throw "Git returned an invalid commit for branch '$branch': $availableCommit"
+        }
+        $installedLink = Format-LofiATCCommitLink -Repository $gitRepository -Commit $installedCommit
+        $availableLink = Format-LofiATCCommitLink -Repository $gitRepository -Commit $availableCommit
+        Write-Host "Installed commit: $installedLink (branch: $branch)"
+        Write-Host "Available commit: $availableLink (branch: $branch)"
+
+        if ($installedCommit -eq $availableCommit) {
+            Write-Host "LofiATC is already up to date."
+            return
+        }
+
+        if (-not $PSCmdlet.ShouldProcess($InstallRoot, "Update Git installation to $availableCommit")) {
+            return
+        }
+
         git -C $InstallRoot pull --ff-only
         if ($LASTEXITCODE -ne 0) {
             throw "git pull failed with exit code $LASTEXITCODE."
@@ -333,66 +476,119 @@ Function Update-LofiATC {
         }
 
         $updatedCommit = $updatedCommit.Trim()
-        $gitRepository = Get-LofiATCGitHubRepository -InstallRoot $InstallRoot
-        if ([string]::IsNullOrWhiteSpace($gitRepository)) {
-            $gitRepository = Get-LofiATCInstallRepository
-        }
-
         $commitLink = Format-LofiATCCommitLink -Repository $gitRepository -Commit $updatedCommit
         Write-Host "Updated commit: $commitLink"
         return
     }
 
+    $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
+    $explicitRef = $PSBoundParameters.ContainsKey('Ref')
+    if (-not [string]::IsNullOrWhiteSpace($Release) -and $explicitRef) {
+        throw "Release and Ref cannot be used together."
+    }
     if ([string]::IsNullOrWhiteSpace($Ref)) {
-        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
         $Ref = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Ref)) { [string]$metadata.Ref } else { 'main' }
     }
 
     if ([string]::IsNullOrWhiteSpace($Repository)) {
-        $metadata = Get-LofiATCInstallMetadata -InstallRoot $InstallRoot
         $Repository = if ($metadata -and -not [string]::IsNullOrWhiteSpace($metadata.Repository)) { [string]$metadata.Repository } else { 'RoMinjun/lofiatc.ps1' }
     }
 
-    $updateCommit = $null
-    try {
-        $updateCommit = Resolve-LofiATCCommit -Repository $Repository -Ref $Ref
+    $installedCommit = if ($metadata -and $metadata.PSObject.Properties['Commit']) { [string]$metadata.Commit } else { $null }
+    $installedRelease = if ($metadata -and $metadata.PSObject.Properties['Release']) { [string]$metadata.Release } else { $null }
+    $releaseInfo = $null
+    $releaseSelector = $Release
+    if ([string]::IsNullOrWhiteSpace($releaseSelector) -and -not $explicitRef -and -not [string]::IsNullOrWhiteSpace($installedRelease)) {
+        $releaseSelector = 'latest'
     }
-    catch {
-        Write-Warning "Could not resolve '$Ref' to a commit hash. Updating by ref instead. $($_.Exception.Message)"
+
+    if (-not [string]::IsNullOrWhiteSpace($releaseSelector)) {
+        $releaseInfo = Get-LofiATCReleaseInfo -Repository $Repository -Release $releaseSelector
+        $Ref = [string]$releaseInfo.tag_name
+    }
+
+    $updateCommit = Resolve-LofiATCCommit -Repository $Repository -Ref $Ref
+    $installedDisplay = if ([string]::IsNullOrWhiteSpace($installedCommit)) { 'unknown' } else { Format-LofiATCCommitLink -Repository $Repository -Commit $installedCommit }
+    $availableDisplay = Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
+    $installedVersion = if (-not [string]::IsNullOrWhiteSpace($installedRelease)) {
+        $installedRelease
+    }
+    elseif ($metadata -and $metadata.PSObject.Properties['Ref']) {
+        [string]$metadata.Ref
+    }
+    else {
+        'unknown'
+    }
+    $availableVersion = if ($releaseInfo) { [string]$releaseInfo.tag_name } else { $Ref }
+    Write-Host "Installed version: $installedVersion ($installedDisplay)"
+    Write-Host "Available version: $availableVersion ($availableDisplay)"
+
+    $sameTarget = $installedCommit -eq $updateCommit
+    if ($releaseInfo) {
+        $sameTarget = $sameTarget -and $installedRelease -eq [string]$releaseInfo.tag_name
+    }
+    else {
+        $installedRef = if ($metadata -and $metadata.PSObject.Properties['Ref']) { [string]$metadata.Ref } else { $null }
+        $sameTarget = $sameTarget -and [string]::IsNullOrWhiteSpace($installedRelease) -and $installedRef -eq $Ref
+    }
+
+    if ($sameTarget) {
+        Write-Host "LofiATC is already up to date."
+        return
+    }
+
+    if (-not $PSCmdlet.ShouldProcess($InstallRoot, "Update LofiATC to $availableVersion ($updateCommit)")) {
+        return
     }
 
     $tempInstaller = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}.ps1" -f ([guid]::NewGuid().ToString('N')))
-    $installerRevision = if ($updateCommit) { $updateCommit } else { $Ref }
-    $installerUrl = "https://raw.githubusercontent.com/$Repository/$installerRevision/install.ps1"
-    $commitLink = if ($updateCommit) {
-        Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
+    $tempChecksum = "$tempInstaller.sha256"
+    $installerUrl = if ($releaseInfo) {
+        Get-LofiATCReleaseAssetUrl -ReleaseInfo $releaseInfo -Name 'install.ps1'
+    }
+    else {
+        "https://raw.githubusercontent.com/$Repository/$updateCommit/install.ps1"
+    }
+    $checksumUrl = if ($releaseInfo) {
+        Get-LofiATCReleaseAssetUrl -ReleaseInfo $releaseInfo -Name 'install.ps1.sha256'
     }
     else {
         $null
     }
+    $commitLink = Format-LofiATCCommitLink -Repository $Repository -Commit $updateCommit
 
     try {
         Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+        if ($releaseInfo) {
+            Invoke-WebRequest -Uri $checksumUrl -OutFile $tempChecksum -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+            Assert-LofiATCFileChecksum `
+                -Path $tempInstaller `
+                -ChecksumPath $tempChecksum `
+                -ExpectedFileName 'install.ps1' | Out-Null
+        }
+
         $installerParameters = @{
             InstallRoot           = $InstallRoot
-            Ref                   = $Ref
             Repository            = $Repository
-            Revision              = $updateCommit
             SkipPowerShellProfile = $true
         }
-        if (-not $updateCommit) {
-            $installerParameters.SkipCommitResolution = $true
+        if ($releaseInfo) {
+            $installerParameters.Release = [string]$releaseInfo.tag_name
+        }
+        else {
+            $installerParameters.Ref = $Ref
+            $installerParameters.Revision = $updateCommit
         }
 
         & $tempInstaller @installerParameters
-        if ($updateCommit) {
-            Write-Host "Updated commit: $commitLink (ref: $Ref)"
-        }
+        Write-Host "Updated commit: $commitLink (ref: $Ref)"
         return
     }
     finally {
-        if (Test-Path $tempInstaller) {
-            Remove-Item -Path $tempInstaller -Force
+        foreach ($tempPath in @($tempInstaller, $tempChecksum)) {
+            if (Test-Path $tempPath) {
+                Remove-Item -Path $tempPath -Force
+            }
         }
     }
 }

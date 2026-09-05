@@ -266,66 +266,53 @@ $env:LOFIATC_TEST_INSTALLER_RAN = '1'
         }
     }
 
-    It 'does not retry commit resolution in the installer after the updater API request fails' {
+    It 'aborts before downloading when the requested ref cannot be resolved' {
         $installRoot = Join-Path $TestDrive 'lofiatc-api-fallback'
         New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
-        $argsPath = Join-Path $TestDrive 'fallback-installer-args.json'
-        $env:LOFIATC_TEST_INSTALLER_ARGS = $argsPath
+        $markerPath = Join-Path $installRoot 'active-marker.txt'
+        'active' | Set-Content -Path $markerPath
 
         Mock Invoke-RestMethod -ModuleName LofiATC {
             throw 'Response status code does not indicate success: 504 (Gateway Time-out).'
         }
 
         Mock Invoke-WebRequest -ModuleName LofiATC {
-            param(
-                [string]$Uri,
-                [string]$OutFile,
-                [switch]$UseBasicParsing
-            )
-
-            $Uri | Should -Be 'https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1'
-            @'
-param(
-    [string]$InstallRoot,
-    [string]$Ref,
-    [string]$Repository,
-    [string]$Revision,
-    [switch]$SkipCommitResolution,
-    [switch]$SkipPowerShellProfile
-)
-
-[pscustomobject]@{
-    Revision = $Revision
-    SkipCommitResolution = $SkipCommitResolution.IsPresent
-} | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
-'@ | Set-Content -Path $OutFile -Encoding UTF8
+            throw 'The updater must not download an unverified ref.'
         }
 
-        try {
-            $warnings = Update-LofiATC `
+        {
+            Update-LofiATC `
                 -InstallRoot $installRoot `
                 -Ref 'feature/install-module-command' `
-                -Repository 'RoMinjun/lofiatc.ps1' 3>&1
+                -Repository 'RoMinjun/lofiatc.ps1'
+        } | Should -Throw '*504*'
 
-            $installerArgs = Get-Content -Path $argsPath -Raw | ConvertFrom-Json
-            $installerArgs.Revision | Should -BeNullOrEmpty
-            $installerArgs.SkipCommitResolution | Should -BeTrue
-            @($warnings).Count | Should -Be 1
-            $warnings[0].ToString() | Should -Match "Could not resolve 'feature/install-module-command' to a commit hash"
-        }
-        finally {
-            Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
-        }
+        Get-Content -Path $markerPath | Should -Be 'active'
+        Should -Invoke Invoke-WebRequest -ModuleName LofiATC -Times 0
     }
 
     It 'shows the checked-out commit after updating a Git installation' {
         $installRoot = Join-Path $TestDrive 'git-update'
         New-Item -ItemType Directory -Path (Join-Path $installRoot '.git') -Force | Out-Null
+        $script:gitUpdatePulled = $false
 
         Mock git -ModuleName LofiATC {
             $global:LASTEXITCODE = 0
+            if ($args -contains 'pull') {
+                $script:gitUpdatePulled = $true
+                return
+            }
+            if ($args -contains '--abbrev-ref') {
+                return 'test'
+            }
+            if ($args -contains 'ls-remote') {
+                return 'db17a101234567890db17a101234567890db17a1 refs/heads/test'
+            }
+            if ($args -contains 'rev-parse' -and $script:gitUpdatePulled) {
+                return 'db17a101234567890db17a101234567890db17a1'
+            }
             if ($args -contains 'rev-parse') {
-                return 'db17a101234567890db17a101234567890db17a10'
+                return 'afe8201234567890afe8201234567890afe82012'
             }
             if ($args -contains 'get-url') {
                 return 'git@github.com:RoMinjun/lofiatc.ps1.git'
@@ -336,13 +323,197 @@ param(
 
         $text = $output -join "`n"
         $text | Should -Match 'Updated commit:'
-        $text | Should -Match 'db17a101234567890db17a101234567890db17a10'
-        $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/db17a101234567890db17a101234567890db17a10'
+        $text | Should -Match 'db17a101234567890db17a101234567890db17a1'
+        $text | Should -Match 'https://github\.com/RoMinjun/lofiatc\.ps1/commit/db17a101234567890db17a101234567890db17a1'
         Should -Invoke git -ModuleName LofiATC -ParameterFilter {
             $args -contains 'pull' -and $args -contains '--ff-only'
         }
         Should -Invoke git -ModuleName LofiATC -ParameterFilter {
             $args -contains 'rev-parse' -and $args -contains 'HEAD'
+        }
+    }
+
+    It 'previews a Git update without pulling or changing the checkout' {
+        $installRoot = Join-Path $TestDrive 'git-update-preview'
+        New-Item -ItemType Directory -Path (Join-Path $installRoot '.git') -Force | Out-Null
+
+        Mock git -ModuleName LofiATC {
+            $global:LASTEXITCODE = 0
+            if ($args -contains '--abbrev-ref') {
+                return 'test'
+            }
+            if ($args -contains 'ls-remote') {
+                return 'db17a101234567890db17a101234567890db17a1 refs/heads/test'
+            }
+            if ($args -contains 'rev-parse') {
+                return 'afe8201234567890afe8201234567890afe82012'
+            }
+            if ($args -contains 'get-url') {
+                return 'git@github.com:RoMinjun/lofiatc.ps1.git'
+            }
+            if ($args -contains 'pull') {
+                throw 'Preview mode must not pull.'
+            }
+        }
+
+        $output = Update-LofiATC -InstallRoot $installRoot -WhatIf 6>&1
+        $text = $output -join "`n"
+
+        $text | Should -Match 'Installed commit:'
+        $text | Should -Match 'Available commit:'
+        Should -Invoke git -ModuleName LofiATC -Times 0 -ParameterFilter {
+            $args -contains 'pull'
+        }
+    }
+
+    It 'previews an installer update without downloading or writing files' {
+        $installRoot = Join-Path $TestDrive 'release-preview'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        $markerPath = Join-Path $installRoot 'active-marker.txt'
+        'active' | Set-Content -Path $markerPath
+        [pscustomobject]@{
+            Repository = 'RoMinjun/lofiatc.ps1'
+            Ref        = 'v0.1.0'
+            Release    = 'v0.1.0'
+            Commit     = 'afe8201234567890afe8201234567890afe82012'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
+
+        Mock Get-LofiATCReleaseInfo -ModuleName LofiATC {
+            return [pscustomobject]@{
+                tag_name = 'v0.2.0'
+                assets   = @()
+            }
+        }
+        Mock Resolve-LofiATCCommit -ModuleName LofiATC {
+            return 'db17a101234567890db17a101234567890db17a10'
+        }
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            throw 'Preview mode must not download files.'
+        }
+
+        $output = Update-LofiATC -InstallRoot $installRoot -WhatIf 6>&1
+        $text = $output -join "`n"
+
+        $text | Should -Match 'Installed version: v0\.1\.0'
+        $text | Should -Match 'Available version: v0\.2\.0'
+        Get-Content -Path $markerPath | Should -Be 'active'
+        Should -Invoke Invoke-WebRequest -ModuleName LofiATC -Times 0
+    }
+
+    It 'rejects a release installer checksum mismatch before execution' {
+        $installRoot = Join-Path $TestDrive 'release-checksum-mismatch'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        $markerPath = Join-Path $installRoot 'active-marker.txt'
+        'active' | Set-Content -Path $markerPath
+        [pscustomobject]@{
+            Repository = 'RoMinjun/lofiatc.ps1'
+            Ref        = 'v0.1.0'
+            Release    = 'v0.1.0'
+            Commit     = 'afe8201234567890afe8201234567890afe82012'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
+
+        Mock Get-LofiATCReleaseInfo -ModuleName LofiATC {
+            return [pscustomobject]@{
+                tag_name = 'v0.2.0'
+                assets   = @(
+                    [pscustomobject]@{ name = 'install.ps1'; browser_download_url = 'https://example.invalid/install.ps1' },
+                    [pscustomobject]@{ name = 'install.ps1.sha256'; browser_download_url = 'https://example.invalid/install.ps1.sha256' }
+                )
+            }
+        }
+        Mock Resolve-LofiATCCommit -ModuleName LofiATC {
+            return 'db17a101234567890db17a101234567890db17a10'
+        }
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [string]$OutFile,
+                [switch]$UseBasicParsing
+            )
+
+            if ($Uri -like '*.sha256') {
+                "$('0' * 64)  install.ps1" | Set-Content -Path $OutFile -Encoding ascii
+            }
+            else {
+                "throw 'This unverified installer must not run.'" | Set-Content -Path $OutFile -Encoding UTF8
+            }
+        }
+
+        {
+            Update-LofiATC -InstallRoot $installRoot -Release latest
+        } | Should -Throw '*SHA-256 checksum mismatch*'
+
+        Get-Content -Path $markerPath | Should -Be 'active'
+        Should -Invoke Invoke-WebRequest -ModuleName LofiATC -Times 2
+    }
+
+    It 'verifies and runs a release installer with the selected release tag' {
+        $installRoot = Join-Path $TestDrive 'release-update-success'
+        New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
+        $argsPath = Join-Path $TestDrive 'release-installer-args.json'
+        $env:LOFIATC_TEST_INSTALLER_ARGS = $argsPath
+        [pscustomobject]@{
+            Repository = 'RoMinjun/lofiatc.ps1'
+            Ref        = 'v0.1.0'
+            Release    = 'v0.1.0'
+            Commit     = 'afe8201234567890afe8201234567890afe82012'
+        } | ConvertTo-Json | Set-Content -Path (Join-Path $installRoot '.lofiatc-install.json') -Encoding UTF8
+
+        Mock Get-LofiATCReleaseInfo -ModuleName LofiATC {
+            return [pscustomobject]@{
+                tag_name = 'v0.2.0'
+                assets   = @(
+                    [pscustomobject]@{ name = 'install.ps1'; browser_download_url = 'https://example.invalid/install.ps1' },
+                    [pscustomobject]@{ name = 'install.ps1.sha256'; browser_download_url = 'https://example.invalid/install.ps1.sha256' }
+                )
+            }
+        }
+        Mock Resolve-LofiATCCommit -ModuleName LofiATC {
+            return 'db17a101234567890db17a101234567890db17a10'
+        }
+        Mock Invoke-WebRequest -ModuleName LofiATC {
+            param(
+                [string]$Uri,
+                [string]$OutFile,
+                [switch]$UseBasicParsing
+            )
+
+            if ($Uri -like '*.sha256') {
+                "$script:releaseInstallerHash  install.ps1" | Set-Content -Path $OutFile -Encoding ascii
+                return
+            }
+
+            @'
+param(
+    [string]$InstallRoot,
+    [string]$Repository,
+    [string]$Release,
+    [switch]$SkipPowerShellProfile
+)
+
+[pscustomobject]@{
+    InstallRoot = $InstallRoot
+    Repository = $Repository
+    Release = $Release
+    SkipPowerShellProfile = $SkipPowerShellProfile.IsPresent
+} | ConvertTo-Json | Set-Content -Path $env:LOFIATC_TEST_INSTALLER_ARGS -Encoding UTF8
+'@ | Set-Content -Path $OutFile -Encoding UTF8
+            $script:releaseInstallerHash = (Get-FileHash -Path $OutFile -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+
+        try {
+            $output = Update-LofiATC -InstallRoot $installRoot -Release latest 6>&1
+            $installerArgs = Get-Content -Path $argsPath -Raw | ConvertFrom-Json
+
+            $installerArgs.InstallRoot | Should -Be $installRoot
+            $installerArgs.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
+            $installerArgs.Release | Should -Be 'v0.2.0'
+            $installerArgs.SkipPowerShellProfile | Should -BeTrue
+            ($output -join "`n") | Should -Match 'Updated commit:'
+        }
+        finally {
+            Remove-Item Env:\LOFIATC_TEST_INSTALLER_ARGS -ErrorAction SilentlyContinue
+            Remove-Variable -Name releaseInstallerHash -Scope Script -ErrorAction SilentlyContinue
         }
     }
 
@@ -433,7 +604,9 @@ KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
         [pscustomobject]@{
             Repository            = 'RoMinjun/lofiatc.ps1'
             Ref                   = 'main'
+            Release               = 'v0.1.0'
             Commit                = '1234567890abcdef1234567890abcdef12345678'
+            ArtifactSha256        = 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd'
             InstalledAtUtc        = '2026-06-20T12:00:00.0000000Z'
             InstallRoot           = $installRoot
             ModuleRoot            = 'C:\Modules\LofiATC'
@@ -445,7 +618,9 @@ KDKX,KDKX CTAF,https://www.liveatc.net/play/kdkx_ctaf.pls
 
         $version.Repository | Should -Be 'RoMinjun/lofiatc.ps1'
         $version.Ref | Should -Be 'main'
+        $version.Release | Should -Be 'v0.1.0'
         $version.Commit | Should -Be '1234567890abcdef1234567890abcdef12345678'
+        $version.ArtifactSha256 | Should -Be 'abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd'
         $version.InstallRoot | Should -Be $installRoot
         $version.ModuleRoot | Should -Be 'C:\Modules\LofiATC'
         $version.PowerShellProfilePath | Should -Be 'C:\Profiles\Microsoft.PowerShell_profile.ps1'

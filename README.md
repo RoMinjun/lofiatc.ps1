@@ -104,7 +104,19 @@ Ensure you have the following installed before running the script:
 ---
 
 ## Install
-Install the `lofiatc` PowerShell command:
+
+### Stable releases
+
+Install the latest stable release of the `lofiatc` PowerShell command:
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1))) -Release latest
+```
+
+Stable release archives and installers include SHA-256 checksum files. The installer verifies the archive before extracting or replacing the active installation. A checksum mismatch stops the install and leaves the existing app and module directories unchanged.
+
+### Branch and ref installs
+
+Install the current `main` branch:
 ```powershell
 irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | iex
 ```
@@ -171,7 +183,12 @@ lofiatc -UpdateSources -SourceDiffLimit 0   # show all changes
 
 Source updates use the repository ref recorded during install. You can override it explicitly:
 ```powershell
-lofiatc -UpdateSources -Ref feature/install-module-command
+lofiatc -UpdateSources -Ref test
+```
+
+Preview an app update without downloading or changing files:
+```powershell
+Update-LofiATC -WhatIf
 ```
 
 Update the installed app files:
@@ -179,10 +196,15 @@ Update the installed app files:
 Update-LofiATC
 ```
 
-The updater prints the commit hash as a clickable GitHub link in supported terminals after the update. Installer-based updates use the
-repository and ref recorded during installation unless `-Repository` or `-Ref` is supplied.
+The updater prints the installed and available release/ref and commit before making changes. Stable installs follow the latest published release and verify the downloaded installer and release archive against their published SHA-256 checksums. Branch/ref installs continue to use the repository and ref recorded during installation unless `-Repository` or `-Ref` is supplied. Git checkouts use a fast-forward-only pull.
 
-Show the installed commit, ref, repository, and installation paths:
+Install a specific stable version or switch an installer-based copy to the stable channel:
+```powershell
+Update-LofiATC -Release v0.2.0
+Update-LofiATC -Release latest
+```
+
+Show the installed release, commit, ref, checksum, repository, and installation paths:
 ```powershell
 lofiatc -Version
 # or
@@ -190,6 +212,10 @@ Get-LofiATCVersion
 ```
 
 Installs and updates are staged and validated before the active app and module directories are replaced. If committing the new installation fails, the previous directories are restored. Replacing the directories also removes files that no longer exist in the current package.
+
+### Publishing releases
+
+Maintainers publish a release by tagging a commit on `main` with a semantic version in the form `vMAJOR.MINOR.PATCH`. The release workflow runs Pester, packages the runtime and installed module, updates the packaged module version, generates SHA-256 files for the archive and installer, and creates GitHub release notes. Signed tags are supported but are not required for branch/ref development installs.
 
 You can still clone the repository locally for development:
 ```powershell

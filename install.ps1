@@ -6,6 +6,8 @@ param(
     [string]$PowerShellProfilePath,
     [string]$Ref = 'main',
     [string]$Repository = 'RoMinjun/lofiatc.ps1',
+    [ValidatePattern('^(latest|v?\d+\.\d+\.\d+)$')]
+    [string]$Release,
     [string]$Revision,
     [string]$SourcePath,
     [switch]$SkipCommitResolution,
@@ -52,7 +54,9 @@ Function Write-LofiATCInstallMetadata {
         [string]$Path,
         [string]$Repository,
         [string]$Ref,
+        [string]$Release,
         [string]$Commit,
+        [string]$ArtifactSha256,
         [string]$InstallRoot,
         [string]$ModuleRoot,
         [string]$ShellShimPath,
@@ -64,7 +68,9 @@ Function Write-LofiATCInstallMetadata {
     $metadata = [pscustomobject]@{
         Repository               = $Repository
         Ref                      = $Ref
+        Release                  = $Release
         Commit                   = $Commit
+        ArtifactSha256           = $ArtifactSha256
         InstalledAtUtc           = [DateTime]::UtcNow.ToString('o')
         InstallRoot              = $InstallRoot
         ModuleRoot               = $ModuleRoot
@@ -143,6 +149,70 @@ Function Get-LofiATCSourceCommit {
     }
 
     return $null
+}
+
+Function Get-LofiATCReleaseInfo {
+    param(
+        [string]$Repository,
+        [string]$Release
+    )
+
+    $releaseUrl = if ($Release -eq 'latest') {
+        "https://api.github.com/repos/$Repository/releases/latest"
+    }
+    else {
+        $escapedRelease = [System.Uri]::EscapeDataString($Release) -replace '/', '%2F'
+        "https://api.github.com/repos/$Repository/releases/tags/$escapedRelease"
+    }
+
+    $releaseInfo = Invoke-RestMethod -Uri $releaseUrl -Headers @{
+        Accept = 'application/vnd.github+json'
+    } -TimeoutSec 15 -ErrorAction Stop
+
+    if (-not $releaseInfo.tag_name) {
+        throw "GitHub did not return a tag for release '$Release'."
+    }
+
+    return $releaseInfo
+}
+
+Function Get-LofiATCReleaseAssetUrl {
+    param(
+        $ReleaseInfo,
+        [string]$Name
+    )
+
+    $asset = @($ReleaseInfo.assets | Where-Object { $_.name -eq $Name }) | Select-Object -First 1
+    if (-not $asset -or [string]::IsNullOrWhiteSpace($asset.browser_download_url)) {
+        throw "Release '$($ReleaseInfo.tag_name)' is missing required asset: $Name"
+    }
+
+    return [string]$asset.browser_download_url
+}
+
+Function Assert-LofiATCFileChecksum {
+    param(
+        [string]$Path,
+        [string]$ChecksumPath,
+        [string]$ExpectedFileName
+    )
+
+    $checksumLine = @(Get-Content -Path $ChecksumPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) | Select-Object -First 1
+    if (-not $checksumLine -or $checksumLine -notmatch '^(?<Hash>[0-9a-fA-F]{64})\s+\*?(?<FileName>.+)$') {
+        throw "Invalid SHA-256 checksum file for $ExpectedFileName."
+    }
+
+    if ($Matches.FileName.Trim() -ne $ExpectedFileName) {
+        throw "Checksum file names '$($Matches.FileName.Trim())' but '$ExpectedFileName' was downloaded."
+    }
+
+    $expectedHash = $Matches.Hash.ToLowerInvariant()
+    $actualHash = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) {
+        throw "SHA-256 checksum mismatch for $ExpectedFileName. Expected $expectedHash but received $actualHash."
+    }
+
+    return $actualHash
 }
 
 Function Test-LofiATCPathsOverlap {
@@ -450,6 +520,14 @@ if ($Uninstall) {
     return
 }
 
+if ($Release -and $SourcePath) {
+    throw "Release and SourcePath cannot be used together."
+}
+
+if ($Release -and $PSBoundParameters.ContainsKey('Ref')) {
+    throw "Release and Ref cannot be used together."
+}
+
 $runtimeFiles = @(
     'lofiatc.ps1',
     'atc_sources.csv',
@@ -474,12 +552,21 @@ $moduleBackup = Join-Path $moduleParent ".$moduleLeaf.backup.$transactionId"
 $installCommitted = $false
 $moduleCommitted = $false
 $transactionSucceeded = $false
+$releaseInfo = $null
+$releaseTag = $null
+$artifactSha256 = $null
 
 if (Test-LofiATCPathsOverlap -First $InstallRoot -Second $ModuleRoot) {
     throw "InstallRoot and ModuleRoot must be separate, non-nested directories."
 }
 
 try {
+    if ($Release) {
+        $releaseInfo = Get-LofiATCReleaseInfo -Repository $Repository -Release $Release
+        $releaseTag = [string]$releaseInfo.tag_name
+        $Ref = $releaseTag
+    }
+
     $sourceCommit = Get-LofiATCSourceCommit `
         -SourcePath $sourceRoot `
         -Repository $Repository `
@@ -488,20 +575,37 @@ try {
         -SkipCommitResolution:$SkipCommitResolution
 
     if (-not $sourceRoot) {
+        if ([string]::IsNullOrWhiteSpace($sourceCommit)) {
+            throw "Could not resolve '$Ref' to a commit hash, so the downloaded source cannot be verified."
+        }
+
         $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("lofiatc_install_{0}" -f $transactionId)
         New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
         $zipPath = Join-Path $tempRoot 'lofiatc.zip'
-        $archiveUrl = if ($sourceCommit) {
-            "https://github.com/$Repository/archive/$sourceCommit.zip"
+        if ($releaseInfo) {
+            $archiveName = "lofiatc-$releaseTag.zip"
+            $checksumName = "$archiveName.sha256"
+            $checksumPath = Join-Path $tempRoot $checksumName
+            $archiveUrl = Get-LofiATCReleaseAssetUrl -ReleaseInfo $releaseInfo -Name $archiveName
+            $checksumUrl = Get-LofiATCReleaseAssetUrl -ReleaseInfo $releaseInfo -Name $checksumName
+            Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+            Invoke-WebRequest -Uri $checksumUrl -OutFile $checksumPath -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+            $artifactSha256 = Assert-LofiATCFileChecksum `
+                -Path $zipPath `
+                -ChecksumPath $checksumPath `
+                -ExpectedFileName $archiveName
         }
         else {
-            "https://github.com/$Repository/archive/refs/heads/$Ref.zip"
+            $archiveUrl = "https://github.com/$Repository/archive/$sourceCommit.zip"
+            Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
         }
-        Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+
         Expand-Archive -Path $zipPath -DestinationPath $tempRoot -Force
 
-        $sourceRoot = Get-ChildItem -Path $tempRoot -Directory | Select-Object -First 1 -ExpandProperty FullName
+        $sourceRoot = Get-ChildItem -Path $tempRoot -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName 'lofiatc.ps1') } |
+            Select-Object -First 1 -ExpandProperty FullName
     }
 
     if (-not $sourceRoot -or -not (Test-Path $sourceRoot)) {
@@ -536,7 +640,9 @@ try {
         -Path $stagedInstallRoot `
         -Repository $Repository `
         -Ref $Ref `
+        -Release $releaseTag `
         -Commit $sourceCommit `
+        -ArtifactSha256 $artifactSha256 `
         -InstallRoot ([System.IO.Path]::GetFullPath($InstallRoot)) `
         -ModuleRoot ([System.IO.Path]::GetFullPath($ModuleRoot)) `
         -ShellShimPath $ShellShimPath `

@@ -19,6 +19,7 @@ on:
       - 'tools/**/*.ps1'
       - '.github/PSScriptAnalyzerSettings.psd1'
       - '.github/workflows/powershell-tests.yml'
+      - '.github/workflows/release.yml'
 
   pull_request:
     paths:
@@ -32,6 +33,7 @@ on:
       - 'tools/**/*.ps1'
       - '.github/PSScriptAnalyzerSettings.psd1'
       - '.github/workflows/powershell-tests.yml'
+      - '.github/workflows/release.yml'
 
 jobs:
   pester-pwsh:
