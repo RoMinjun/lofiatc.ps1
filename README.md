@@ -530,6 +530,18 @@ Use `-ShowMap` to open an interactive browser map of all available ATC sources.
 - Can highlight webcam-enabled feeds when available
 - Can center the map around your current location when used with `-Nearby`
 
+In persistent mode (`-ShowMap -KeepOpen` or `-Persistent`), the map also supports keyboard shortcuts. Press `?` in the map to open the shortcut guide. Shortcuts are ignored while typing or using an interactive control.
+
+| Shortcut | Action |
+|---|---|
+| `/` | Focus airport search |
+| `Escape` | Clear search or close the active panel |
+| `R` | Play a random channel |
+| `Space` | Stop or restart ATC |
+| `L` | Stop or restart lofi |
+| `F` | Toggle the active channel favorite |
+| `?` | Show or hide shortcut help |
+
 ### Useful combinations
 ```powershell
 lofiatc -ShowMap

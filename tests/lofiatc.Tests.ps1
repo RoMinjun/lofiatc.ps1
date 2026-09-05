@@ -1178,6 +1178,35 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
                     -FavoritesPath $script:favoritesPath
             } | Should -Throw '*Channel index is required*'
         }
+
+        It 'toggles the currently selected channel favorite for keyboard dispatch' {
+            $script:CurrentMapSelection = $script:mapAtcSources[1]
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'favorite-toggle-current' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -FavoritesPath $script:favoritesPath
+
+            $result.ok | Should -BeTrue
+            $result.favorited | Should -BeTrue
+            $result.channel | Should -Be 'Approach'
+            @(Get-Favorite -path $script:favoritesPath)[0].Channel | Should -Be 'Approach'
+        }
+
+        It 'rejects a current favorite toggle before a channel is selected' {
+            $script:CurrentMapSelection = $null
+
+            {
+                Invoke-MapPlaybackAction `
+                    -Action 'favorite-toggle-current' `
+                    -AtcSources $script:mapAtcSources `
+                    -FavoritesPath $script:favoritesPath
+            } | Should -Throw '*No channel is currently selected*'
+        }
     }
 
     Context 'Map playback controls' {
@@ -1231,6 +1260,62 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:CurrentLofiProcess | Should -BeNullOrEmpty
 
             Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'dispatches the ATC toggle to stop active playback' {
+            $script:CurrentATCProcess = [System.Diagnostics.Process]::new()
+            Mock Test-ManagedProcessAlive { $true }
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'toggle-atc' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi'
+
+            $result.ok | Should -BeTrue
+            $result.stopped | Should -BeTrue
+            $result.atc | Should -BeFalse
+            $script:CurrentATCProcess | Should -BeNullOrEmpty
+        }
+
+        It 'dispatches the ATC toggle to restart the selected channel' {
+            $script:CurrentMapSelection = $script:mapAtcSources[0]
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'toggle-atc' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -NoLofiMusic
+
+            $result.ok | Should -BeTrue
+            $result.atc | Should -BeTrue
+            $result.icao | Should -Be 'EHAM'
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/eham-tower'
+            }
+        }
+
+        It 'dispatches the lofi toggle to restart stopped playback' {
+            $script:CurrentLofiVolume = 37
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'toggle-lofi' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi'
+
+            $result.ok | Should -BeTrue
+            $result.lofi | Should -BeTrue
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly -ParameterFilter {
+                $Url -eq 'http://example.test/lofi' -and $Volume -eq 37 -and $NoVideo
+            }
         }
 
         It 'marks ATC recovery as deliberately stopped from the map' {
@@ -1453,7 +1538,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Not -Match 'cartocdn|CARTO'
         }
 
-        It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
+        It 'includes playback toggles, volume sliders, favorite actions, and start-random script' {
             $html = New-ATCMapHtml `
                 -JsArray '[]' `
                 -CsvName 'test.csv' `
@@ -1467,7 +1552,9 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
                 -LofiVolume 50 `
                 -MapControlToken 'test-token'
 
-            $html | Should -Match 'id="np-stop-lofi"'
+            $html | Should -Match 'id="np-toggle-atc"'
+            $html | Should -Match 'id="np-toggle-lofi"'
+            $html | Should -Match 'id="np-favorite"'
             $html | Should -Match 'id="np-atc-volume"'
             $html | Should -Match 'id="np-lofi-volume"'
             $html | Should -Match 'action=set-volume'
@@ -1476,6 +1563,81 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Match "var mapControlToken = 'test-token'"
             $html | Should -Match "token=' \+ encodeURIComponent\(mapControlToken\)"
             $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'guards keyboard shortcuts while typing and dispatches persistent map actions' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
+
+            $html | Should -Match 'function isEditableShortcutTarget\(target\)'
+            $html | Should -Match "tagName === 'input'"
+            $html | Should -Match "tagName === 'select'"
+            $html | Should -Match 'target\.isContentEditable'
+            $html | Should -Match '\[contenteditable="true"\]'
+            $html | Should -Match 'e\.ctrlKey \|\| e\.metaKey \|\| e\.altKey'
+            $html | Should -Match 'if \(!keepOpen \|\| e\.repeat\) return'
+            $html | Should -Match 'isInteractiveShortcutTarget\(e\.target\)'
+            $html | Should -Match "sendMapAction\('random'\)"
+            $html | Should -Match "sendMapAction\('toggle-atc'\)"
+            $html | Should -Match "sendMapAction\('toggle-lofi'\)"
+            $html | Should -Match 'toggleCurrentFavorite\(\)'
+            $html | Should -Match "action=favorite-toggle-current"
+            $html | Should -Match 'clearMapSearch\(\)'
+            $html | Should -Match 'map\.closePopup\(\)'
+            $html | Should -Match "document\.addEventListener\('keydown', handleMapShortcut\)"
+        }
+
+        It 'includes accessible shortcut help, live regions, and visible focus treatment' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'id="shortcut-help-button"'
+            $html | Should -Match 'role="dialog" aria-modal="true"'
+            $html | Should -Match 'aria-label="Close keyboard shortcuts"'
+            $html | Should -Match 'role="status" aria-live="polite"'
+            $html | Should -Match '#map-search:focus-visible'
+            $html | Should -Match 'prefers-reduced-motion: reduce'
+            $html | Should -Match 'shortcutCloseButton\.focus\(\)'
+            $html | Should -Match 'shortcutReturnFocus\.focus\(\)'
+        }
+
+        It 'makes airport markers keyboard-selectable and restores popup focus' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'function enableAirportKeyboardSelection\(item\)'
+            $html | Should -Match "element\.setAttribute\('tabindex', '0'\)"
+            $html | Should -Match "element\.setAttribute\('role', 'button'\)"
+            $html | Should -Match "e\.key !== 'Enter'.*e\.key !== ' '"
+            $html | Should -Match 'openAirportPopup\(item\.layer\)'
+            $html | Should -Match 'focusFirstAirportPopupControl'
+            $html | Should -Match "map\.on\('popupclose'"
+            $html | Should -Match 'popupReturnFocus\.focus\(\)'
         }
 
         It 'polls and displays ATC recovery status when enabled' {
