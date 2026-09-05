@@ -1,11 +1,11 @@
 # Functions dot-sourced by lofiatc.ps1. Keep script-scoped state in the entrypoint.
 Function Get-LofiATCGenreMap {
     return @{
-        "Chillhop"      = "https://youtu.be/X4VbdwhkE10" # Lofi Girl original
+        "Chillhop"      = "https://youtu.be/rFZHOHl-L8A" # Lofi Girl original
         "Synthwave"     = "https://youtu.be/4xDzrJKXOOY" # Lofi Girl Synthwave
         "SynthAmbient"  = "https://youtu.be/GSfT7H87zq4" # Lofi Girl Synthwave Ambient
         "Sad"           = "https://youtu.be/CwPCy1GLS38" # Lofi Girl sad
-        "Piano"         = "https://youtu.be/5qap5aOn9sA" # Lofi Girl Piano
+        "Piano"         = "https://youtu.be/N0snMcR6aaA" # Lofi Girl Piano
         "Classical"     = "https://youtu.be/jXAEIWcGXwE" # Lofi Girl Classical
         "Jazz"          = "https://youtu.be/E2vONfzoyRI" # Lofi Girl Jazz
         "RelaxJazz"     = "https://youtu.be/A8jDx9TLMQc" # Lofi Girl Relax Jazz
@@ -22,6 +22,12 @@ Function Get-LofiATCGenreMap {
 Function Initialize-LofiATCState {
     $script:OnWindows = $env:OS -eq 'Windows_NT'
     $script:AirportData = $null
+    $script:AirportDataStatus = [pscustomobject]@{
+        Source        = 'Unavailable'
+        CachePath     = $null
+        CacheAgeHours = $null
+        IsStale       = $false
+    }
 
     $script:IanaToWindowsMap = @{
         "Etc/UTC"                        = "UTC"
@@ -74,6 +80,7 @@ Function Initialize-LofiATCState {
     $script:CurrentATCProcess = $null
     $script:CurrentWebcamProcess = $null
     $script:CurrentLofiProcess = $null
+    $script:ATCRecoveryState = $null
 
     $script:CurrentATCVolume = $null
     $script:CurrentLofiVolume = $null
@@ -103,7 +110,12 @@ Function Get-LofiATCIgnoredConfigParameterNames {
         'PipelineVariable',
         'SaveConfig',
         'LoadConfig',
-        'ConfigPath'
+        'ConfigPath',
+        'Profile',
+        'SaveProfile',
+        'ListProfiles',
+        'RemoveProfile',
+        'SelectedChannel'
     )
 }
 
@@ -153,10 +165,181 @@ Function Initialize-LofiATCUserDataPath {
     return $userDataDir
 }
 
+Function Test-LofiATCProfileName {
+    param(
+        [string]$Name
+    )
+
+    return (-not [string]::IsNullOrWhiteSpace($Name) -and $Name -match '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')
+}
+
+Function Get-LofiATCProfilesPath {
+    param(
+        [switch]$Create
+    )
+
+    $profilesPath = Join-Path (Get-LofiATCUserDataPath) 'profiles'
+    if ($Create -and -not (Test-Path -LiteralPath $profilesPath)) {
+        New-Item -ItemType Directory -Path $profilesPath -Force | Out-Null
+    }
+
+    return $profilesPath
+}
+
+Function Resolve-LofiATCProfilePath {
+    param(
+        [string]$Name,
+        [switch]$CreateDirectory
+    )
+
+    if (-not (Test-LofiATCProfileName -Name $Name)) {
+        throw "Profile name '$Name' is invalid. Use 1-64 letters, numbers, underscores, or hyphens, starting with a letter or number."
+    }
+
+    $profilesPath = Get-LofiATCProfilesPath -Create:$CreateDirectory
+    return (Join-Path $profilesPath ($Name + '.json'))
+}
+
+Function Get-LofiATCProfile {
+    $profilesPath = Get-LofiATCProfilesPath
+    if (-not (Test-Path -LiteralPath $profilesPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $profilesPath -Filter '*.json' -File |
+        Where-Object { Test-LofiATCProfileName -Name $_.BaseName } |
+        Sort-Object -Property BaseName |
+        ForEach-Object {
+            [pscustomobject]@{
+                Name          = $_.BaseName
+                Path          = $_.FullName
+                LastWriteTime = $_.LastWriteTime
+            }
+        }
+}
+
+Function Write-LofiATCJsonFileAtomically {
+    param(
+        [object]$InputObject,
+        [string]$Path,
+        [scriptblock]$FileValidator
+    )
+
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    $directory = [System.IO.Path]::GetDirectoryName($resolvedPath)
+    if (-not (Test-Path -LiteralPath $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+
+    $fileName = [System.IO.Path]::GetFileName($resolvedPath)
+    $temporaryPath = Join-Path $directory ('.{0}.{1}.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
+    $backupTemporaryPath = $null
+    $backupPath = $resolvedPath + '.bak'
+
+    try {
+        $json = ConvertTo-Json -InputObject $InputObject -Depth 10
+        $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($temporaryPath, $json, $utf8WithoutBom)
+
+        # Validate the complete temporary file before it can replace user data.
+        if ($FileValidator) {
+            & $FileValidator $temporaryPath
+        }
+        else {
+            $null = Get-Content -LiteralPath $temporaryPath -Raw | ConvertFrom-Json
+        }
+
+        if (Test-Path -LiteralPath $resolvedPath) {
+            $activeFileIsValid = $true
+            try {
+                if ($FileValidator) {
+                    & $FileValidator $resolvedPath
+                }
+                else {
+                    $null = Get-Content -LiteralPath $resolvedPath -Raw | ConvertFrom-Json
+                }
+            }
+            catch {
+                $activeFileIsValid = $false
+            }
+
+            if ($activeFileIsValid) {
+                $backupTemporaryPath = Join-Path $directory ('.{0}.{1}.bak.tmp' -f $fileName, [guid]::NewGuid().ToString('N'))
+                [System.IO.File]::Copy($resolvedPath, $backupTemporaryPath)
+                if ($FileValidator) {
+                    & $FileValidator $backupTemporaryPath
+                }
+                else {
+                    $null = Get-Content -LiteralPath $backupTemporaryPath -Raw | ConvertFrom-Json
+                }
+                Move-LofiATCFileAtomically -SourcePath $backupTemporaryPath -DestinationPath $backupPath
+                $backupTemporaryPath = $null
+            }
+            else {
+                $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+                $corruptBackupPath = '{0}.corrupt-{1}-{2}.bak' -f $resolvedPath, $timestamp, [guid]::NewGuid().ToString('N').Substring(0, 8)
+                [System.IO.File]::Copy($resolvedPath, $corruptBackupPath)
+                Write-Warning "Existing JSON at '$resolvedPath' is malformed or invalid. It was preserved at '$corruptBackupPath' before replacement."
+            }
+
+            Move-LofiATCFileAtomically -SourcePath $temporaryPath -DestinationPath $resolvedPath
+        }
+        else {
+            Move-LofiATCFileAtomically -SourcePath $temporaryPath -DestinationPath $resolvedPath
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Force
+        }
+
+        if ($backupTemporaryPath -and (Test-Path -LiteralPath $backupTemporaryPath)) {
+            Remove-Item -LiteralPath $backupTemporaryPath -Force
+        }
+    }
+}
+
+Function Move-LofiATCFileAtomically {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if (Test-Path -LiteralPath $DestinationPath) {
+        $destinationDirectory = [System.IO.Path]::GetDirectoryName($DestinationPath)
+        $destinationFileName = [System.IO.Path]::GetFileName($DestinationPath)
+        $replacedFilePath = Join-Path $destinationDirectory ('.{0}.{1}.replaced.tmp' -f $destinationFileName, [guid]::NewGuid().ToString('N'))
+        try {
+            [System.IO.File]::Replace($SourcePath, $DestinationPath, $replacedFilePath)
+        }
+        finally {
+            if (Test-Path -LiteralPath $replacedFilePath) {
+                Remove-Item -LiteralPath $replacedFilePath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    else {
+        [System.IO.File]::Move($SourcePath, $DestinationPath)
+    }
+}
+
+Function Read-LofiATCConfigFile {
+    param([string]$Path)
+
+    $config = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if ($null -eq $config -or $config -isnot [pscustomobject]) {
+        throw "The file does not contain a JSON configuration object."
+    }
+
+    return $config
+}
+
 Function Import-LofiATCConfig {
     param(
         [string]$ConfigPath,
-        [hashtable]$BoundParameters
+        [hashtable]$BoundParameters,
+        [int]$VariableScope = 1,
+        [switch]$PassThru
     )
 
     if (-not (Test-Path $ConfigPath)) {
@@ -165,7 +348,28 @@ Function Import-LofiATCConfig {
     }
 
     $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
-    $config = Get-Content -Path $ConfigPath | ConvertFrom-Json
+    $config = $null
+
+    try {
+        $config = Read-LofiATCConfigFile -Path $ConfigPath
+    }
+    catch {
+        Write-Warning "Config file at '$ConfigPath' is malformed or invalid and was left unchanged: $($_.Exception.Message)"
+        $backupPath = $ConfigPath + '.bak'
+        if (Test-Path -LiteralPath $backupPath) {
+            try {
+                $config = Read-LofiATCConfigFile -Path $backupPath
+                Write-Warning "Recovered configuration values from backup '$backupPath'."
+            }
+            catch {
+                Write-Warning "Config backup at '$backupPath' is also malformed or invalid: $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($null -eq $config) {
+        return
+    }
 
     foreach ($prop in $config.PSObject.Properties) {
         $name = $prop.Name
@@ -174,17 +378,22 @@ Function Import-LofiATCConfig {
         }
 
         if (-not $BoundParameters.ContainsKey($name) -and $null -ne $prop.Value -and $prop.Value -ne "") {
-            Set-Variable -Name $name -Value $prop.Value -Scope 1
+            Set-Variable -Name $name -Value $prop.Value -Scope $VariableScope
         }
     }
 
     Write-Information "Loaded config from $ConfigPath"
+    if ($PassThru) {
+        return $config
+    }
 }
 
 Function Export-LofiATCConfig {
     param(
         [string]$CommandPath,
-        [string]$ConfigPath
+        [string]$ConfigPath,
+        [int]$VariableScope = 1,
+        [hashtable]$AdditionalValues
     )
 
     $ignoredParameters = Get-LofiATCIgnoredConfigParameterNames
@@ -196,7 +405,7 @@ Function Export-LofiATCConfig {
             continue
         }
 
-        $value = Get-Variable -Name $name -ValueOnly -Scope 1
+        $value = Get-Variable -Name $name -ValueOnly -Scope $VariableScope
         if ($value -is [System.Management.Automation.SwitchParameter]) {
             $value = [bool]$value
         }
@@ -206,13 +415,131 @@ Function Export-LofiATCConfig {
         }
     }
 
+    if ($AdditionalValues) {
+        foreach ($name in $AdditionalValues.Keys) {
+            $config[$name] = $AdditionalValues[$name]
+        }
+    }
+
     $configDir = Split-Path -Parent $ConfigPath
     if ($configDir -and -not (Test-Path $configDir)) {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
 
-    $config | ConvertTo-Json | Set-Content -Path $ConfigPath
+    Write-LofiATCJsonFileAtomically -InputObject $config -Path $ConfigPath -FileValidator {
+        param($CandidatePath)
+        $null = Read-LofiATCConfigFile -Path $CandidatePath
+    }
     Write-Information "Saved config to $ConfigPath"
+}
+
+Function Import-LofiATCProfile {
+    param(
+        [string]$Name,
+        [hashtable]$BoundParameters
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        throw "Profile '$Name' was not found. Use -ListProfiles to view saved profiles."
+    }
+
+    $profile = Import-LofiATCConfig -ConfigPath $profilePath -BoundParameters $BoundParameters -VariableScope 2 -PassThru
+    if ($null -eq $profile) {
+        return
+    }
+    if ($profile.PSObject.Properties['SelectedChannel']) {
+        return $profile.SelectedChannel
+    }
+}
+
+Function Get-LofiATCProfileChannelData {
+    param(
+        [object]$SelectedATC
+    )
+
+    if (-not $SelectedATC -or -not $SelectedATC.AirportInfo) {
+        return $null
+    }
+
+    return [ordered]@{
+        ICAO               = [string]$SelectedATC.AirportInfo.ICAO
+        ChannelDescription = [string]$SelectedATC.AirportInfo.'Channel Description'
+        StreamUrl          = [string]$SelectedATC.AirportInfo.'Stream URL'
+    }
+}
+
+Function Export-LofiATCProfile {
+    param(
+        [string]$Name,
+        [string]$CommandPath,
+        [object]$SelectedATC
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name -CreateDirectory
+    $additionalValues = @{}
+    $selectedChannel = Get-LofiATCProfileChannelData -SelectedATC $SelectedATC
+    if ($selectedChannel) {
+        $additionalValues.SelectedChannel = $selectedChannel
+    }
+
+    Export-LofiATCConfig `
+        -CommandPath $CommandPath `
+        -ConfigPath $profilePath `
+        -VariableScope 2 `
+        -AdditionalValues $additionalValues
+}
+
+Function Resolve-LofiATCProfileChannel {
+    param(
+        [array]$AtcSources,
+        [object]$SelectedChannel
+    )
+
+    if (-not $SelectedChannel -or
+        [string]::IsNullOrWhiteSpace([string]$SelectedChannel.ICAO) -or
+        [string]::IsNullOrWhiteSpace([string]$SelectedChannel.ChannelDescription)) {
+        return $null
+    }
+
+    $matches = @($AtcSources | Where-Object {
+        $_.ICAO -eq $SelectedChannel.ICAO -and
+        $_.'Channel Description' -eq $SelectedChannel.ChannelDescription
+    })
+
+    $match = $matches | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$SelectedChannel.StreamUrl) -and
+        $_.'Stream URL' -eq $SelectedChannel.StreamUrl
+    } | Select-Object -First 1
+
+    if (-not $match) {
+        $match = $matches | Select-Object -First 1
+    }
+
+    if (-not $match) {
+        Write-Warning "Saved channel '$($SelectedChannel.ICAO) - $($SelectedChannel.ChannelDescription)' is no longer available. Falling back to normal selection."
+        return $null
+    }
+
+    return @{
+        StreamUrl   = $match.'Stream URL'
+        WebcamUrl   = $match.'Webcam URL'
+        AirportInfo = $match
+    }
+}
+
+Function Remove-LofiATCProfile {
+    param(
+        [string]$Name
+    )
+
+    $profilePath = Resolve-LofiATCProfilePath -Name $Name
+    if (-not (Test-Path -LiteralPath $profilePath)) {
+        throw "Profile '$Name' was not found. Use -ListProfiles to view saved profiles."
+    }
+
+    Remove-Item -LiteralPath $profilePath -Force
+    Write-Information "Removed profile '$Name' from $profilePath"
 }
 
 Function Test-ConsoleKeyAvailable {
@@ -690,6 +1017,7 @@ Function Resolve-SelectedATCStream {
         [int]$ATCVolume,
         [int]$LofiVolume,
         [string]$LofiMusicUrl,
+        [object]$ProfileChannel,
         [switch]$Nearby,
         [switch]$ShowMap,
         [switch]$KeepOpen,
@@ -701,7 +1029,10 @@ Function Resolve-SelectedATCStream {
         [switch]$Dark,
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
-        [switch]$ShowLofiTrack
+        [switch]$ShowLofiTrack,
+        [switch]$AutoRecover,
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     $currentUserLocation = $null
@@ -777,7 +1108,10 @@ Function Resolve-SelectedATCStream {
             -LofiMusicUrl $LofiMusicUrl `
             -LofiVolume $LofiVolume `
             -StartRandom:$RandomATC `
-            -FavoritesPath $FavoritesPath
+            -FavoritesPath $FavoritesPath `
+            -AutoRecover:$AutoRecover `
+            -RetryCount $RetryCount `
+            -RecoverAlternateChannel:$RecoverAlternateChannel
 
         if ($KeepOpen) {
             exit 0
@@ -791,7 +1125,18 @@ Function Resolve-SelectedATCStream {
 
     $selectedATC = $null
 
-    if ($ICAO) {
+    $profileChannelMatchesICAO = (
+        -not $ICAO -or
+        -not $ProfileChannel -or
+        [string]$ProfileChannel.ICAO -eq $ICAO
+    )
+    $profileSelectionOverridden = $Nearby -or $ShowMap -or $RandomATC -or $UseFavorite
+
+    if ($ProfileChannel -and $profileChannelMatchesICAO -and -not $profileSelectionOverridden) {
+        $selectedATC = Resolve-LofiATCProfileChannel -AtcSources $AtcSources -SelectedChannel $ProfileChannel
+    }
+
+    if (-not $selectedATC -and $ICAO) {
         $selectedATC = Select-ATCStreamByICAO `
             -AtcSources $AtcSources `
             -ICAO $ICAO `
@@ -998,6 +1343,10 @@ Function Get-NearbyAirports {
 
     if (-not $script:AirportData) {
         Get-AirportInfo -ICAO "KLAX" | Out-Null
+    }
+
+    if (-not $script:AirportData) {
+        throw 'Airport metadata is unavailable, so nearby-airport selection cannot continue. Retry when online after a cache has been created.'
     }
 
     $allAirports = $script:AirportData.PSObject.Properties | ForEach-Object {
@@ -1370,12 +1719,31 @@ Function Test-LofiATCDependencies {
             -Details $(if ($ShowMap) { 'Uses Start-Process on Windows.' } else { 'Not requested.' })
     }
 
+    $airportCachePath = Get-LofiATCAirportCachePath
+    $airportCache = Read-LofiATCAirportCache -Path $airportCachePath
+    $results += Add-DependencyResult `
+        -Name 'Airport data cache' `
+        -Required $false `
+        -Status $(if ($airportCache) { 'OK' } else { 'Warning' }) `
+        -Details $(if ($airportCache) {
+            '{0} cache available at {1}; age {2:N1} hours.' -f $airportCache.Source, $airportCache.Path, $airportCache.Age.TotalHours
+        } else {
+            "No valid cache at $airportCachePath; the first airport metadata request requires network access."
+        }) `
+        -Category 'Data'
+
     $airportDbOk = Test-UrlReachable -Url 'https://raw.githubusercontent.com/rominjun/Airports/master/airports.json'
     $results += Add-DependencyResult `
         -Name 'Airport database service' `
         -Required $false `
         -Status $(if ($airportDbOk) { 'OK' } else { 'Warning' }) `
-        -Details 'Used for airport metadata.' `
+        -Details $(if ($airportDbOk) {
+            'Reachable; live data will refresh when the cache is older than seven days.'
+        } elseif ($airportCache) {
+            'Unavailable; cached airport metadata can be used.'
+        } else {
+            'Unavailable and no valid cache exists.'
+        }) `
         -Category 'Network'
 
     $noaaOk = Test-UrlReachable -Url 'https://aviationweather.gov/api/data/metar?ids=KLAX'

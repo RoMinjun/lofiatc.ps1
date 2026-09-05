@@ -9,7 +9,11 @@ Function Invoke-MapChannelSelection {
         [switch]$NoLofiMusic,
         [switch]$PlayLofiGirlVideo,
         [string]$LofiMusicUrl,
-        [int]$LofiVolume
+        [int]$LofiVolume,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     if (-not $Selection -or -not $Selection.ICAO) {
@@ -50,12 +54,25 @@ Function Invoke-MapChannelSelection {
     Stop-ManagedProcess -Process $script:CurrentWebcamProcess
     $script:CurrentWebcamProcess = $null
 
-    $script:CurrentATCProcess = Start-PlayerProcess `
-        -Url $match.'Stream URL' `
-        -Player $Player `
-        -NoVideo `
-        -BasicArgs `
-        -Volume $effectiveATCVolume
+    $script:CurrentMapSelection = $match
+
+    if ($AutoRecover) {
+        $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+            -Selection $match `
+            -AtcSources $AtcSources `
+            -Player $Player `
+            -Volume $effectiveATCVolume `
+            -RetryCount $RetryCount `
+            -RecoverAlternateChannel:$RecoverAlternateChannel
+    }
+    else {
+        $script:CurrentATCProcess = Start-PlayerProcess `
+            -Url $match.'Stream URL' `
+            -Player $Player `
+            -NoVideo `
+            -BasicArgs `
+            -Volume $effectiveATCVolume
+    }
 
     if ($IncludeWebcamIfAvailable -and -not [string]::IsNullOrWhiteSpace($match.'Webcam URL')) {
         $script:CurrentWebcamProcess = Start-PlayerProcess `
@@ -87,15 +104,21 @@ Function Invoke-MapChannelSelection {
         }
     }
 
-    $script:CurrentMapSelection = $match
-
-    return @{
+    $result = @{
         ICAO    = $match.ICAO
         Channel = $match.'Channel Description'
         Airport = $match.'Airport Name'
         Webcam  = [bool](-not [string]::IsNullOrWhiteSpace($match.'Webcam URL'))
         Lofi    = [bool](-not $NoLofiMusic)
     }
+
+    if ($AutoRecover) {
+        $recovery = Get-ATCRecoveryPayload
+        $result.RecoveryStatus = $recovery.recoveryStatus
+        $result.RecoveryMessage = $recovery.recoveryMessage
+    }
+
+    return $result
 }
 
 # Function to handle various playback actions from the interactive map, such as stopping the ATC stream, stopping all media, restarting the current stream, or selecting a random stream
@@ -115,7 +138,11 @@ Function Invoke-MapPlaybackAction {
         [int]$Volume = -1,
         [string]$ICAO,
         [int]$ChannelIndex = -1,
-        [string]$FavoritesPath
+        [string]$FavoritesPath,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     switch ($Action.ToLowerInvariant()) {
@@ -141,7 +168,12 @@ Function Invoke-MapPlaybackAction {
             return Get-LofiTrackOcr -Source $LofiMusicUrl
         }
 
+        'playback-status' {
+            return Get-ATCRecoveryPayload
+        }
+
         'stop-atc' {
+            Set-ATCRecoveryStopped
             Stop-ManagedProcess -Process $script:CurrentATCProcess
             Stop-ManagedProcess -Process $script:CurrentWebcamProcess
 
@@ -199,12 +231,23 @@ Function Invoke-MapPlaybackAction {
                     Stop-ManagedProcess -Process $script:CurrentATCProcess
                     $script:CurrentATCProcess = $null
 
-                    $script:CurrentATCProcess = Start-PlayerProcess `
-                        -Url $current.'Stream URL' `
-                        -Player $Player `
-                        -NoVideo `
-                        -BasicArgs `
-                        -Volume $script:CurrentATCVolume
+                    if ($AutoRecover) {
+                        $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                            -Selection $current `
+                            -AtcSources $AtcSources `
+                            -Player $Player `
+                            -Volume $script:CurrentATCVolume `
+                            -RetryCount $RetryCount `
+                            -RecoverAlternateChannel:$RecoverAlternateChannel
+                    }
+                    else {
+                        $script:CurrentATCProcess = Start-PlayerProcess `
+                            -Url $current.'Stream URL' `
+                            -Player $Player `
+                            -NoVideo `
+                            -BasicArgs `
+                            -Volume $script:CurrentATCVolume
+                    }
 
                     return @{
                         ok        = $true
@@ -384,6 +427,7 @@ Function Invoke-MapPlaybackAction {
         }
 
         'stop-all' {
+            Set-ATCRecoveryStopped -Message 'All playback was stopped by the user.'
             Stop-ManagedProcess -Process $script:CurrentATCProcess
             Stop-ManagedProcess -Process $script:CurrentWebcamProcess
             Stop-ManagedProcess -Process $script:CurrentLofiProcess
@@ -439,7 +483,10 @@ Function Invoke-MapPlaybackAction {
                 -NoLofiMusic:$NoLofiMusic `
                 -PlayLofiGirlVideo:$PlayLofiGirlVideo `
                 -LofiMusicUrl $LofiMusicUrl `
-                -LofiVolume $LofiVolume
+                -LofiVolume $LofiVolume `
+                -AutoRecover:$AutoRecover `
+                -RetryCount $RetryCount `
+                -RecoverAlternateChannel:$RecoverAlternateChannel
 
             return @{
                 ok      = $true
@@ -480,7 +527,10 @@ Function Invoke-MapPlaybackAction {
                 -NoLofiMusic:$NoLofiMusic `
                 -PlayLofiGirlVideo:$PlayLofiGirlVideo `
                 -LofiMusicUrl $LofiMusicUrl `
-                -LofiVolume $LofiVolume
+                -LofiVolume $LofiVolume `
+                -AutoRecover:$AutoRecover `
+                -RetryCount $RetryCount `
+                -RecoverAlternateChannel:$RecoverAlternateChannel
 
             return @{
                 ok      = $true
@@ -547,7 +597,11 @@ Function Select-ATCMap {
         [string]$LofiMusicUrl,
         [int]$LofiVolume,
         [switch]$StartRandom,
-        [string]$FavoritesPath
+        [string]$FavoritesPath,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     Write-Host "Generating interactive tactical map..." -ForegroundColor Cyan
@@ -555,6 +609,10 @@ Function Select-ATCMap {
 
     if (-not $script:AirportData) {
         Get-AirportInfo -ICAO "KLAX" | Out-Null
+    }
+
+    if (-not $script:AirportData) {
+        throw 'Airport metadata is unavailable, so the interactive map cannot be generated. Retry when online after a cache has been created.'
     }
 
     $server = Start-ATCMapServer
@@ -592,6 +650,7 @@ Function Select-ATCMap {
         -ATCVolume $ATCVolume `
         -LofiVolume $LofiVolume `
         -ShowLofiTrack:$ShowLofiTrack `
+        -AutoRecover:$AutoRecover `
         -MapControlToken $mapControlToken `
         -LazyWeather:$lazyWeather
 
@@ -623,7 +682,10 @@ Function Select-ATCMap {
             -LofiVolume $LofiVolume `
             -FavoritesPath $FavoritesPath `
             -Favorites $Favorites `
-            -MapControlToken $mapControlToken
+            -MapControlToken $mapControlToken `
+            -AutoRecover:$AutoRecover `
+            -RetryCount $RetryCount `
+            -RecoverAlternateChannel:$RecoverAlternateChannel
 
         return $null
     }
@@ -963,7 +1025,8 @@ Function New-ATCMapHtml {
         [int]$ATCVolume,
         [int]$LofiVolume,
         [string]$MapControlToken = '',
-        [switch]$LazyWeather
+        [switch]$LazyWeather,
+        [switch]$AutoRecover
     )
 
     $userLat = if ($UserLocation) {
@@ -1055,6 +1118,13 @@ Function New-ATCMapHtml {
     }
 
     $showLofiTrackJs = if ($KeepOpen -and $ShowLofiTrack) {
+        'true'
+    }
+    else {
+        'false'
+    }
+
+    $autoRecoverJs = if ($KeepOpen -and $AutoRecover) {
         'true'
     }
     else {
@@ -1155,6 +1225,7 @@ $lofiTrackPanel
         '{{USER_RADIUS_METERS}}'    = [string]$userRad
         '{{START_RANDOM_JS}}'       = $startRandomJs
         '{{SHOW_LOFI_TRACK_JS}}'    = $showLofiTrackJs
+        '{{AUTO_RECOVER_JS}}'       = $autoRecoverJs
     }
 
     foreach ($placeholder in $templateValues.Keys) {
@@ -1167,15 +1238,16 @@ $lofiTrackPanel
 Function Start-ATCMapServer {
     param(
         [int]$StartPort = 49152,
-        [int]$MaxRetries = 10
+        [int]$MaxRetries = 256
     )
 
     $port = $StartPort
-    $listener = New-Object System.Net.HttpListener
+    $endPort = $StartPort + $MaxRetries - 1
 
     while ($MaxRetries -gt 0) {
+        $listener = New-Object System.Net.HttpListener
+
         try {
-            $listener.Prefixes.Clear()
             $listener.Prefixes.Add("http://127.0.0.1:$port/")
             $listener.Start()
 
@@ -1185,12 +1257,13 @@ Function Start-ATCMapServer {
             }
         }
         catch {
+            $listener.Close()
             $port++
             $MaxRetries--
         }
     }
 
-    throw "Could not start local web server. Port is blocked."
+    throw "Could not start local web server. Ports $StartPort through $endPort are unavailable."
 }
 
 
@@ -1291,7 +1364,9 @@ Function Select-ATCFromMap {
                     return $selection
                 }
             }
-            catch {}
+            catch {
+                Write-Verbose "Map selection request handling failed. $_"
+            }
         }
 
         throw "Timed out waiting for a map selection after $TimeoutSeconds seconds."
@@ -1320,13 +1395,18 @@ Function Start-PersistentATCMapSession {
         [int]$LofiVolume,
         [string]$FavoritesPath,
         [array]$Favorites,
-        [string]$MapControlToken
+        [string]$MapControlToken,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     $canPollConsole = Test-InteractiveConsoleAvailable
 
     $script:CurrentATCVolume = [int]$ATCVolume
     $script:CurrentLofiVolume = [int]$LofiVolume
+    $lastRecoveryRevision = -1
 
     Write-Host "`nMap opened in your browser! Click channels to switch ATC live." -ForegroundColor Green
     if ($canPollConsole) {
@@ -1342,6 +1422,26 @@ Function Start-PersistentATCMapSession {
 
             while (-not $contextTask.IsCompleted) {
                 Start-Sleep -Milliseconds 100
+
+                if ($AutoRecover -and $script:CurrentMapSelection) {
+                    $recoveryState = Update-ATCPlaybackRecovery `
+                        -Player $Player `
+                        -Volume $script:CurrentATCVolume
+
+                    if ($recoveryState -and $recoveryState.CurrentSelection) {
+                        $script:CurrentMapSelection = $recoveryState.CurrentSelection
+                    }
+
+                    if ($recoveryState -and $recoveryState.Revision -ne $lastRecoveryRevision) {
+                        $lastRecoveryRevision = $recoveryState.Revision
+                        if ($recoveryState.Status -eq 'Failed') {
+                            Write-Warning $recoveryState.Message
+                        }
+                        elseif ($recoveryState.Status -eq 'Recovering' -or $recoveryState.Attempt -gt 0) {
+                            Write-Host $recoveryState.Message -ForegroundColor Yellow
+                        }
+                    }
+                }
 
                 if ($canPollConsole -and (Test-ConsoleKeyAvailable)) {
                     $key = Read-ConsoleKey -Intercept
@@ -1404,9 +1504,12 @@ Function Start-PersistentATCMapSession {
                             -Volume $volumeValue `
                             -ICAO $req.QueryString["icao"] `
                             -ChannelIndex $actionChannelIndex `
-                            -FavoritesPath $FavoritesPath
+                            -FavoritesPath $FavoritesPath `
+                            -AutoRecover:$AutoRecover `
+                            -RetryCount $RetryCount `
+                            -RecoverAlternateChannel:$RecoverAlternateChannel
 
-                        if ($req.QueryString["action"] -ne 'lofi-track') {
+                        if ($req.QueryString["action"] -notin @('lofi-track', 'playback-status')) {
                             Write-Host $payload.message -ForegroundColor Green
                         }
                     }
@@ -1442,16 +1545,30 @@ Function Start-PersistentATCMapSession {
                             -NoLofiMusic:$NoLofiMusic `
                             -PlayLofiGirlVideo:$PlayLofiGirlVideo `
                             -LofiMusicUrl $LofiMusicUrl `
-                            -LofiVolume $LofiVolume
+                            -LofiVolume $LofiVolume `
+                            -AutoRecover:$AutoRecover `
+                            -RetryCount $RetryCount `
+                            -RecoverAlternateChannel:$RecoverAlternateChannel
+
+                        $selectionMessage = "Now monitoring $($started.ICAO) — $($started.Channel)"
+                        if ($AutoRecover -and $started.RecoveryStatus -ne 'Playing') {
+                            $selectionMessage = $started.RecoveryMessage
+                        }
 
                         $payload = @{
                             ok      = $true
-                            message = "Now monitoring $($started.ICAO) — $($started.Channel)"
+                            message = $selectionMessage
                             icao    = $started.ICAO
                             channel = $started.Channel
                             airport = $started.Airport
                             webcam  = $started.Webcam
                             lofi    = $started.Lofi
+                        }
+
+                        if ($AutoRecover) {
+                            $recoveryPayload = Get-ATCRecoveryPayload
+                            $payload.recoveryStatus = $recoveryPayload.recoveryStatus
+                            $payload.recoveryMessage = $recoveryPayload.recoveryMessage
                         }
 
                         Write-Host "Switched to $($started.ICAO) — $($started.Channel)" -ForegroundColor Green
@@ -1492,7 +1609,7 @@ Function Start-PersistentATCMapSession {
         Stop-ManagedProcess -Process $script:CurrentWebcamProcess
         Stop-ManagedProcess -Process $script:CurrentLofiProcess
 
-        try { $Listener.Stop() } catch {}
-        try { $Listener.Close() } catch {}
+        try { $Listener.Stop() } catch { Write-Verbose "Could not stop the map listener cleanly. $_" }
+        try { $Listener.Close() } catch { Write-Verbose "Could not close the map listener cleanly. $_" }
     }
 }

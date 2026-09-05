@@ -680,7 +680,12 @@ Function Start-LofiATCSession {
         [switch]$IncludeWebcamIfAvailable,
         [switch]$OpenRadar,
         [switch]$RandomATC,
-        [switch]$PlayerWasSpecified
+        [switch]$PlayerWasSpecified,
+        [array]$AtcSources,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
     )
 
     $selectedATCUrl = $SelectedATC.StreamUrl
@@ -707,6 +712,45 @@ Function Start-LofiATCSession {
     Write-Verbose "Opening ATC stream: $selectedATCUrl"
     if ($selectedWebcamUrl) {
         Write-Verbose "Opening webcam stream: $selectedWebcamUrl"
+    }
+
+    if ($AutoRecover) {
+        try {
+            $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                -Selection $SelectedATC.AirportInfo `
+                -AtcSources $AtcSources `
+                -Player $Player `
+                -Volume $ATCVolume `
+                -RetryCount $RetryCount `
+                -RecoverAlternateChannel:$RecoverAlternateChannel
+
+            if (-not $NoLofiMusic) {
+                Write-Verbose "Opening Lofi Girl stream: $LofiMusicUrl"
+                $script:CurrentLofiProcess = Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -NoVideo:(-not $PlayLofiGirlVideo) `
+                    -BasicArgs `
+                    -Volume $LofiVolume
+            }
+
+            if ($IncludeWebcamIfAvailable -and $selectedWebcamUrl) {
+                $script:CurrentWebcamProcess = Start-PlayerProcess `
+                    -Url $selectedWebcamUrl `
+                    -Player $Player `
+                    -NoAudio `
+                    -BasicArgs
+            }
+
+            Wait-ATCPlaybackRecovery -Player $Player -Volume $ATCVolume
+        }
+        finally {
+            Stop-ManagedProcess -Process $script:CurrentATCProcess
+            Stop-ManagedProcess -Process $script:CurrentWebcamProcess
+            Stop-ManagedProcess -Process $script:CurrentLofiProcess
+        }
+
+        return
     }
 
     Start-Player -url $selectedATCUrl -player $Player -noVideo -basicArgs -volume $ATCVolume
@@ -826,6 +870,273 @@ Function Start-PlayerProcess {
     }
 
     return Start-Process -FilePath $playerPath -ArgumentList $playerArgs -PassThru
+}
+
+Function Get-ATCRecoveryDelaySeconds {
+    param(
+        [ValidateRange(1,10)]
+        [int]$Attempt,
+        [ValidateRange(1,300)]
+        [int]$MaximumSeconds = 30
+    )
+
+    $delay = [math]::Pow(2, $Attempt - 1)
+    return [int][math]::Min($delay, $MaximumSeconds)
+}
+
+Function Initialize-ATCRecoveryState {
+    param(
+        [object]$Selection,
+        [array]$AtcSources,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel
+    )
+
+    if (-not $Selection -or [string]::IsNullOrWhiteSpace([string]$Selection.'Stream URL')) {
+        throw 'A valid ATC selection is required for automatic recovery.'
+    }
+
+    $candidates = @($Selection)
+    if ($RecoverAlternateChannel) {
+        $alternates = @($AtcSources | Where-Object {
+            $_.ICAO -eq $Selection.ICAO -and
+            $_.'Stream URL' -ne $Selection.'Stream URL'
+        })
+        $candidates += $alternates
+    }
+
+    $script:ATCRecoveryState = [pscustomobject]@{
+        Enabled             = $true
+        DeliberatelyStopped = $false
+        RetryCount          = $RetryCount
+        Attempt             = 0
+        Candidates          = @($candidates)
+        CurrentSelection    = $Selection
+        Status              = 'Starting'
+        Message             = "Starting $($Selection.ICAO) — $($Selection.'Channel Description')."
+        LastError           = $null
+        NextAttemptAt       = $null
+        StartedAt           = $null
+        Revision            = 1
+    }
+
+    return $script:ATCRecoveryState
+}
+
+Function Set-ATCRecoveryStopped {
+    param([string]$Message = 'ATC playback was stopped by the user.')
+
+    if ($null -eq $script:ATCRecoveryState) {
+        return
+    }
+
+    $script:ATCRecoveryState.DeliberatelyStopped = $true
+    $script:ATCRecoveryState.Status = 'Stopped'
+    $script:ATCRecoveryState.Message = $Message
+    $script:ATCRecoveryState.NextAttemptAt = $null
+    $script:ATCRecoveryState.Revision++
+}
+
+Function Set-ATCRecoveryPending {
+    param(
+        [datetime]$Now = (Get-Date),
+        [string]$ErrorMessage
+    )
+
+    $state = $script:ATCRecoveryState
+    if ($null -eq $state -or $state.DeliberatelyStopped) {
+        return
+    }
+
+    if ($state.Attempt -ge $state.RetryCount) {
+        $state.Status = 'Failed'
+        $state.NextAttemptAt = $null
+        $state.LastError = $ErrorMessage
+        $state.Message = "ATC recovery exhausted after $($state.RetryCount) attempts for $($state.CurrentSelection.ICAO). Select another channel or rerun LofiATC. Last error: $ErrorMessage"
+        $state.Revision++
+        return
+    }
+
+    $nextAttempt = $state.Attempt + 1
+    $delay = Get-ATCRecoveryDelaySeconds -Attempt $nextAttempt
+    $state.Status = 'Recovering'
+    $state.LastError = $ErrorMessage
+    $state.NextAttemptAt = $Now.AddSeconds($delay)
+    $state.Message = "ATC playback stopped unexpectedly. Retry $nextAttempt of $($state.RetryCount) in $delay second(s)."
+    $state.Revision++
+}
+
+Function Start-ATCPlaybackWithRecovery {
+    param(
+        [object]$Selection,
+        [array]$AtcSources,
+        [string]$Player,
+        [ValidateRange(0,100)]
+        [int]$Volume,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel,
+        [datetime]$Now = (Get-Date)
+    )
+
+    $state = Initialize-ATCRecoveryState `
+        -Selection $Selection `
+        -AtcSources $AtcSources `
+        -RetryCount $RetryCount `
+        -RecoverAlternateChannel:$RecoverAlternateChannel
+
+    try {
+        $process = Start-PlayerProcess `
+            -Url $Selection.'Stream URL' `
+            -Player $Player `
+            -NoVideo `
+            -BasicArgs `
+            -Volume $Volume
+
+        if ($null -eq $process) {
+            throw 'The media player did not return a process.'
+        }
+
+        $state.Status = 'Playing'
+        $state.Message = "Now monitoring $($Selection.ICAO) — $($Selection.'Channel Description')."
+        $state.StartedAt = $Now
+        $state.Revision++
+        return $process
+    }
+    catch {
+        Set-ATCRecoveryPending -Now $Now -ErrorMessage $_.Exception.Message
+        return $null
+    }
+}
+
+Function Update-ATCPlaybackRecovery {
+    param(
+        [string]$Player,
+        [ValidateRange(0,100)]
+        [int]$Volume,
+        [datetime]$Now = (Get-Date)
+    )
+
+    $state = $script:ATCRecoveryState
+    if ($null -eq $state -or -not $state.Enabled -or $state.DeliberatelyStopped) {
+        return $state
+    }
+
+    if (Test-ManagedProcessAlive -Process $script:CurrentATCProcess) {
+        if ($state.Attempt -gt 0 -and $state.StartedAt -and ($Now - $state.StartedAt).TotalSeconds -ge 10) {
+            $state.Attempt = 0
+            $state.Message = "ATC playback is stable on $($state.CurrentSelection.ICAO) — $($state.CurrentSelection.'Channel Description')."
+            $state.Revision++
+        }
+        return $state
+    }
+
+    if ($state.Status -eq 'Failed') {
+        return $state
+    }
+
+    if ($state.Status -ne 'Recovering') {
+        Set-ATCRecoveryPending -Now $Now -ErrorMessage 'The managed ATC player exited unexpectedly.'
+        return $state
+    }
+
+    if ($state.NextAttemptAt -and $Now -lt $state.NextAttemptAt) {
+        return $state
+    }
+
+    $attempt = $state.Attempt + 1
+    $candidateIndex = 0
+    if ($state.Candidates.Count -gt 1) {
+        $candidateIndex = ($attempt - 1) % $state.Candidates.Count
+    }
+    $candidate = $state.Candidates[$candidateIndex]
+    $state.Attempt = $attempt
+
+    try {
+        $process = Start-PlayerProcess `
+            -Url $candidate.'Stream URL' `
+            -Player $Player `
+            -NoVideo `
+            -BasicArgs `
+            -Volume $Volume
+
+        if ($null -eq $process) {
+            throw 'The media player did not return a process.'
+        }
+
+        $script:CurrentATCProcess = $process
+        $state.CurrentSelection = $candidate
+        $state.Status = 'Playing'
+        $state.StartedAt = $Now
+        $state.NextAttemptAt = $null
+        $state.LastError = $null
+        $state.Message = "Recovered $($candidate.ICAO) — $($candidate.'Channel Description') on attempt $attempt of $($state.RetryCount)."
+        $state.Revision++
+    }
+    catch {
+        Set-ATCRecoveryPending -Now $Now -ErrorMessage $_.Exception.Message
+    }
+
+    return $state
+}
+
+Function Get-ATCRecoveryPayload {
+    $state = $script:ATCRecoveryState
+    if ($null -eq $state) {
+        return @{
+            ok             = $true
+            recoveryStatus = 'Disabled'
+            message        = 'Automatic ATC recovery is disabled.'
+        }
+    }
+
+    $selection = $state.CurrentSelection
+    return @{
+        ok              = ($state.Status -ne 'Failed')
+        recoveryStatus  = $state.Status
+        recoveryMessage = $state.Message
+        message         = $state.Message
+        attempt         = $state.Attempt
+        retryCount      = $state.RetryCount
+        icao            = if ($selection) { [string]$selection.ICAO } else { $null }
+        channel         = if ($selection) { [string]$selection.'Channel Description' } else { $null }
+        airport         = if ($selection) { [string]$selection.'Airport Name' } else { $null }
+    }
+}
+
+Function Wait-ATCPlaybackRecovery {
+    param(
+        [string]$Player,
+        [ValidateRange(0,100)]
+        [int]$Volume,
+        [scriptblock]$CancellationRequested
+    )
+
+    $lastRevision = -1
+
+    while ($true) {
+        if ($CancellationRequested -and (& $CancellationRequested)) {
+            throw [System.OperationCanceledException]::new('ATC recovery monitoring cancelled.')
+        }
+
+        $state = Update-ATCPlaybackRecovery -Player $Player -Volume $Volume
+        if ($state -and $state.Status -eq 'Failed') {
+            throw $state.Message
+        }
+
+        if ($state -and $state.Revision -ne $lastRevision) {
+            $lastRevision = $state.Revision
+            if ($state.Status -eq 'Recovering') {
+                Write-Warning $state.Message
+            }
+            elseif ($state.Status -eq 'Playing' -and $state.Attempt -gt 0) {
+                Write-Host $state.Message -ForegroundColor Green
+            }
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
 }
 
 # Function to stop a media player process gracefully

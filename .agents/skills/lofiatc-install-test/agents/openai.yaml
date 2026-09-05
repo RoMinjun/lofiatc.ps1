@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Install Testing"
+  short_description: "Test branches through the install script"
+  default_prompt: "Use $lofiatc-install-test to produce and validate a non-Git user installation test for this branch."

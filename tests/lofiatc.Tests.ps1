@@ -27,6 +27,7 @@ Describe 'lofiatc.ps1 helper functions' {
             Get-Command Resolve-StreamUrl -CommandType Function | Should -Not -Be $null
             Get-Command Resolve-Player -CommandType Function | Should -Not -Be $null
             Get-Command Get-DistanceKm -CommandType Function | Should -Not -Be $null
+            Get-Command Update-ATCPlaybackRecovery -CommandType Function | Should -Not -Be $null
         }
     }
 
@@ -38,6 +39,171 @@ Describe 'lofiatc.ps1 helper functions' {
         It 'returns non-special URLs unchanged' {
             $url = 'https://example.com/audio.mp3'
             Resolve-StreamUrl $url | Should -Be $url
+        }
+    }
+
+    Context 'Automatic ATC playback recovery' {
+        BeforeEach {
+            $script:ATCRecoveryState = $null
+            $script:CurrentATCProcess = $null
+            $script:recoveryNow = [datetime]'2026-09-04T12:00:00Z'
+            $script:recoverySources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Tower'
+                    'Stream URL'          = 'https://example.test/eham-tower.pls'
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Airport Name'        = 'Amsterdam Schiphol'
+                    'Channel Description' = 'Approach'
+                    'Stream URL'          = 'https://example.test/eham-approach.pls'
+                }
+            )
+        }
+
+        It 'uses bounded exponential backoff delays' {
+            Get-ATCRecoveryDelaySeconds -Attempt 1 | Should -Be 1
+            Get-ATCRecoveryDelaySeconds -Attempt 2 | Should -Be 2
+            Get-ATCRecoveryDelaySeconds -Attempt 3 | Should -Be 4
+            Get-ATCRecoveryDelaySeconds -Attempt 10 | Should -Be 30
+        }
+
+        It 're-resolves the stream after a failed start and recovers' {
+            $script:resolveAttempts = 0
+            Mock Resolve-StreamUrl {
+                $script:resolveAttempts++
+                if ($script:resolveAttempts -eq 1) {
+                    throw 'resolver unavailable'
+                }
+                return $Url
+            }
+            Mock Test-Player { '/usr/bin/mpv' }
+            Mock Start-Process { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $process = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            $process | Should -BeNullOrEmpty
+            $script:ATCRecoveryState.Status | Should -Be 'Recovering'
+            $script:ATCRecoveryState.NextAttemptAt | Should -Be $script:recoveryNow.AddSeconds(1)
+
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+
+            $script:resolveAttempts | Should -Be 2
+            $script:ATCRecoveryState.Status | Should -Be 'Playing'
+            $script:ATCRecoveryState.Attempt | Should -Be 1
+            $script:ATCRecoveryState.Message | Should -Match 'Recovered EHAM.*Tower.*attempt 1 of 3'
+        }
+
+        It 'recovers an unexpectedly exited managed player without duplicate launches' {
+            Mock Start-PlayerProcess { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'VLC' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            Update-ATCPlaybackRecovery `
+                -Player 'VLC' `
+                -Volume 65 `
+                -Now $script:recoveryNow | Out-Null
+
+            $script:ATCRecoveryState.Status | Should -Be 'Recovering'
+
+            Update-ATCPlaybackRecovery `
+                -Player 'VLC' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+
+            $script:ATCRecoveryState.Status | Should -Be 'Playing'
+            Should -Invoke Start-PlayerProcess -Times 2 -Exactly
+        }
+
+        It 'tries another channel on a later attempt and reports exhaustion clearly' {
+            $script:attemptedUrls = @()
+            Mock Start-PlayerProcess {
+                $script:attemptedUrls += $Url
+                throw "could not start $Url"
+            }
+            Mock Test-ManagedProcessAlive { $false }
+
+            Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 2 `
+                -RecoverAlternateChannel `
+                -Now $script:recoveryNow | Out-Null
+
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(1) | Out-Null
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddSeconds(3) | Out-Null
+
+            $script:attemptedUrls.Count | Should -Be 3
+            $script:attemptedUrls[0] | Should -Be 'https://example.test/eham-tower.pls'
+            $script:attemptedUrls[1] | Should -Be 'https://example.test/eham-tower.pls'
+            $script:attemptedUrls[2] | Should -Be 'https://example.test/eham-approach.pls'
+            $script:ATCRecoveryState.Status | Should -Be 'Failed'
+            $script:ATCRecoveryState.Message | Should -Match 'recovery exhausted after 2 attempts'
+            $script:ATCRecoveryState.Message | Should -Match 'Select another channel or rerun LofiATC'
+        }
+
+        It 'does not restart playback after a deliberate stop' {
+            Mock Start-PlayerProcess { [System.Diagnostics.Process]::new() }
+            Mock Test-ManagedProcessAlive { $false }
+
+            $script:CurrentATCProcess = Start-ATCPlaybackWithRecovery `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -Player 'MPV' `
+                -Volume 65 `
+                -RetryCount 3 `
+                -Now $script:recoveryNow
+
+            Set-ATCRecoveryStopped
+            $script:CurrentATCProcess = $null
+            Update-ATCPlaybackRecovery `
+                -Player 'MPV' `
+                -Volume 65 `
+                -Now $script:recoveryNow.AddMinutes(1) | Out-Null
+
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly
+            $script:ATCRecoveryState.Status | Should -Be 'Stopped'
+        }
+
+        It 'supports cancellation while monitoring recovery' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:recoverySources[0] `
+                -AtcSources $script:recoverySources `
+                -RetryCount 3 | Out-Null
+
+            {
+                Wait-ATCPlaybackRecovery `
+                    -Player 'MPV' `
+                    -Volume 65 `
+                    -CancellationRequested { $true }
+            } | Should -Throw '*recovery monitoring cancelled*'
         }
     }
 
@@ -141,16 +307,26 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
 
         It 'finds Tesseract in its standard Windows install directory when it is not in PATH' {
             $script:OnWindows = $true
+            $originalProgramFiles = $env:ProgramFiles
+            $env:ProgramFiles = $TestDrive
+            $expectedPath = Join-Path $TestDrive 'Tesseract-OCR\tesseract.exe'
             Mock Test-CommandAvailable { $null }
             Mock Test-Path {
-                $LiteralPath -eq 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+                $LiteralPath -eq $expectedPath
             }
 
-            Resolve-TesseractPath | Should -Be 'C:\Program Files\Tesseract-OCR\tesseract.exe'
+            try {
+                Resolve-TesseractPath | Should -Be $expectedPath
+            }
+            finally {
+                $env:ProgramFiles = $originalProgramFiles
+            }
         }
 
         It 'finds Tesseract from a registered custom installer location' {
             $script:OnWindows = $true
+            $installDirectory = Join-Path $TestDrive 'OCR'
+            $expectedPath = Join-Path $installDirectory 'tesseract.exe'
             Mock Test-CommandAvailable { $null }
             Mock Get-ChildItem {
                 [pscustomobject]@{ PSPath = 'TestRegistry:\Tesseract-OCR' }
@@ -159,13 +335,13 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             Mock Get-ItemProperty {
                 [pscustomobject]@{
                     DisplayName     = 'Tesseract-OCR'
-                    InstallLocation = 'D:\Tools\OCR'
+                    InstallLocation = $installDirectory
                     DisplayIcon     = $null
                 }
             }
-            Mock Test-Path { $LiteralPath -eq 'D:\Tools\OCR\tesseract.exe' }
+            Mock Test-Path { $LiteralPath -eq $expectedPath }
 
-            Resolve-TesseractPath | Should -Be 'D:\Tools\OCR\tesseract.exe'
+            Resolve-TesseractPath | Should -Be $expectedPath
         }
 
         It 'returns a recent cached OCR result without invoking tools again' {
@@ -308,12 +484,13 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
     Context 'ConvertFrom-METAR' {
         It 'decodes common METAR fields' {
             $decoded = ConvertFrom-METAR 'EGLL 121650Z 18012G20KT 9999 BKN020 18/12 Q1013'
+            $degree = [char]0x00B0
 
             $decoded.Wind | Should -Match '180.*12 knots'
             $decoded.Visibility | Should -Be '10+ km (Unlimited)'
             $decoded.Ceiling | Should -Be 'Broken at 2000 ft'
-            $decoded.Temperature | Should -Be '18°C'
-            $decoded.DewPoint | Should -Be '12°C'
+            $decoded.Temperature | Should -Be "18${degree}C"
+            $decoded.DewPoint | Should -Be "12${degree}C"
             $decoded.Pressure | Should -Be '1013 hPa'
         }
 
@@ -404,12 +581,325 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
     }
 
+    Context 'Recoverable JSON persistence' {
+        It 'keeps the previous JSON as a last-known-good backup' {
+            $jsonPath = Join-Path $TestDrive 'recoverable-config.json'
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'VLC' } -Path $jsonPath
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $jsonPath
+
+            (Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            (Get-Content -LiteralPath ($jsonPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'uses atomic replacement for normal saved configuration' {
+            $commandPath = Join-Path $TestDrive 'config-command.ps1'
+            $configPath = Join-Path $TestDrive 'saved-config.json'
+            'param([string]$Player)' | Set-Content -LiteralPath $commandPath -Encoding UTF8
+            $Player = 'VLC'
+
+            Export-LofiATCConfig -CommandPath $commandPath -ConfigPath $configPath -VariableScope 1
+            $Player = 'MPV'
+            Export-LofiATCConfig -CommandPath $commandPath -ConfigPath $configPath -VariableScope 1
+
+            (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            (Get-Content -LiteralPath ($configPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+        }
+
+        It 'preserves malformed active JSON before replacing it' {
+            $jsonPath = Join-Path $TestDrive 'malformed-config.json'
+            '{broken-json' | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+            Mock Write-Warning
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $jsonPath
+
+            (Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json).Player | Should -Be 'MPV'
+            $corruptBackups = @(Get-ChildItem -LiteralPath $TestDrive -Filter 'malformed-config.json.corrupt-*.bak')
+            $corruptBackups.Count | Should -Be 1
+            (Get-Content -LiteralPath $corruptBackups[0].FullName -Raw) | Should -Match 'broken-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'malformed or invalid.*preserved'
+            }
+        }
+
+        It 'preserves the active file and cleans temporary files when replacement fails' {
+            $script:failedConfigPath = Join-Path $TestDrive 'failed-config.json'
+            '{"Player":"VLC"}' | Set-Content -LiteralPath $script:failedConfigPath -Encoding UTF8
+            Mock Move-LofiATCFileAtomically {
+                param($SourcePath, $DestinationPath)
+
+                if ($DestinationPath -eq ($script:failedConfigPath + '.bak')) {
+                    [System.IO.File]::Move($SourcePath, $DestinationPath)
+                    return
+                }
+
+                throw 'Simulated replacement failure.'
+            }
+
+            { Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $script:failedConfigPath } |
+                Should -Throw '*Simulated replacement failure*'
+
+            (Get-Content -LiteralPath $script:failedConfigPath -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            (Get-Content -LiteralPath ($script:failedConfigPath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath $TestDrive -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'loads configuration from the backup when the active file is malformed' {
+            $configPath = Join-Path $TestDrive 'recover-config.json'
+            '{broken-json' | Set-Content -LiteralPath $configPath -Encoding UTF8
+            '{"Player":"VLC"}' | Set-Content -LiteralPath ($configPath + '.bak') -Encoding UTF8
+            $Player = 'MPV'
+            Mock Write-Warning
+
+            Import-LofiATCConfig -ConfigPath $configPath -BoundParameters @{} -VariableScope 1
+
+            $Player | Should -Be 'VLC'
+            (Get-Content -LiteralPath $configPath -Raw) | Should -Match 'broken-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'malformed or invalid.*left unchanged'
+            }
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Recovered configuration values from backup'
+            }
+        }
+    }
+
+    Context 'Named configuration profiles' {
+        BeforeEach {
+            $script:previousUserDataPath = $env:LOFIATC_USER_DATA
+            $env:LOFIATC_USER_DATA = Join-Path $TestDrive ('user-data-' + [guid]::NewGuid().ToString('N'))
+        }
+
+        AfterEach {
+            if ($null -eq $script:previousUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $script:previousUserDataPath
+            }
+        }
+
+        It 'exposes named profile operations on the script entrypoint' {
+            $parameters = (Get-Command $scriptPath).Parameters
+
+            $parameters.Keys | Should -Contain 'Profile'
+            $parameters.Keys | Should -Contain 'SaveProfile'
+            $parameters.Keys | Should -Contain 'ListProfiles'
+            $parameters.Keys | Should -Contain 'RemoveProfile'
+        }
+
+        It 'resolves profile names beneath the user data directory' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work_2' -CreateDirectory
+            $expectedPath = Join-Path (Join-Path $env:LOFIATC_USER_DATA 'profiles') 'Work_2.json'
+
+            $profilePath | Should -Be $expectedPath
+            Test-Path -LiteralPath (Split-Path -Parent $profilePath) | Should -BeTrue
+        }
+
+        It 'rejects profile names that could escape the profile directory' {
+            { Resolve-LofiATCProfilePath -Name '../work' } | Should -Throw '*Profile name*invalid*'
+            { Resolve-LofiATCProfilePath -Name 'work/profile' } | Should -Throw '*Profile name*invalid*'
+            { Resolve-LofiATCProfilePath -Name '.hidden' } | Should -Throw '*Profile name*invalid*'
+        }
+
+        It 'loads profile values while preserving explicit command-line values' {
+            $profilesPath = Get-LofiATCProfilesPath -Create
+            @'
+{
+  "Player": "VLC",
+  "OpenRadar": true,
+  "ATCVolume": 70,
+  "LofiVolume": 45,
+  "SelectedChannel": {
+    "ICAO": "EHAM",
+    "ChannelDescription": "EHAM Tower",
+    "StreamUrl": "https://example.com/eham-twr"
+  }
+}
+'@ | Set-Content -Path (Join-Path $profilesPath 'Work.json') -Encoding UTF8
+
+            $Player = 'MPV'
+            $OpenRadar = $false
+            $ATCVolume = 65
+            $LofiVolume = 50
+            $boundParameters = @{ Player = $true }
+
+            $profileChannel = Import-LofiATCProfile -Name 'Work' -BoundParameters $boundParameters
+
+            $Player | Should -Be 'MPV'
+            $OpenRadar | Should -BeTrue
+            $ATCVolume | Should -Be 70
+            $LofiVolume | Should -Be 45
+            $profileChannel.ICAO | Should -Be 'EHAM'
+            $profileChannel.ChannelDescription | Should -Be 'EHAM Tower'
+        }
+
+        It 'saves the selected ATC channel in the profile' {
+            $commandPath = Join-Path $TestDrive 'profile-command.ps1'
+            'param([string]$Player)' | Set-Content -LiteralPath $commandPath -Encoding UTF8
+            $Player = 'MPV'
+            $selectedATC = @{
+                AirportInfo = [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                }
+            }
+
+            Export-LofiATCProfile `
+                -Name 'Work' `
+                -CommandPath $commandPath `
+                -SelectedATC $selectedATC `
+                -InformationAction SilentlyContinue
+
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work'
+            $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            $profile.Player | Should -Be 'MPV'
+            $profile.SelectedChannel.ICAO | Should -Be 'EHAM'
+            $profile.SelectedChannel.ChannelDescription | Should -Be 'EHAM Tower'
+            $profile.SelectedChannel.StreamUrl | Should -Be 'https://example.com/eham-twr'
+        }
+
+        It 'restores the saved channel without invoking channel selection' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/eham-twr'
+                    'Webcam URL'          = ''
+                },
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Select-ATCStreamByICAO { throw 'Interactive channel selection should not run.' }
+
+            $selection = Resolve-SelectedATCStream `
+                -AtcSources $sources `
+                -ProfileChannel $savedChannel
+
+            $selection.SelectedATC.AirportInfo.'Channel Description' | Should -Be 'EHAM Tower'
+            Should -Invoke Select-ATCStreamByICAO -Times 0 -Exactly
+        }
+
+        It 'matches a saved channel by description when its stream URL changes' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Tower'
+                    'Stream URL'          = 'https://example.com/new-eham-twr'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/old-eham-twr'
+            }
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected.StreamUrl | Should -Be 'https://example.com/new-eham-twr'
+        }
+
+        It 'warns and returns to normal selection when the saved channel disappeared' {
+            $sources = @(
+                [pscustomobject]@{
+                    ICAO                  = 'EHAM'
+                    'Channel Description' = 'EHAM Ground'
+                    'Stream URL'          = 'https://example.com/eham-gnd'
+                    'Webcam URL'          = ''
+                }
+            )
+            $savedChannel = [pscustomobject]@{
+                ICAO               = 'EHAM'
+                ChannelDescription = 'EHAM Tower'
+                StreamUrl          = 'https://example.com/eham-twr'
+            }
+            Mock Write-Warning
+
+            $selected = Resolve-LofiATCProfileChannel -AtcSources $sources -SelectedChannel $savedChannel
+
+            $selected | Should -BeNullOrEmpty
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Saved channel.*EHAM Tower.*no longer available'
+            }
+        }
+
+        It 'writes valid JSON atomically and leaves no temporary files' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work' -CreateDirectory
+
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'VLC' } -Path $profilePath
+            Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV'; ATCVolume = 35 } -Path $profilePath
+
+            $profile = Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json
+            $profile.Player | Should -Be 'MPV'
+            $profile.ATCVolume | Should -Be 35
+            (Get-Content -LiteralPath ($profilePath + '.bak') -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath (Split-Path -Parent $profilePath) -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'preserves the active profile and cleans up when a write fails' {
+            $profilePath = Resolve-LofiATCProfilePath -Name 'Work' -CreateDirectory
+            '{"Player":"VLC"}' | Set-Content -LiteralPath $profilePath -Encoding UTF8
+            Mock ConvertTo-Json { throw 'Simulated serialization failure.' }
+
+            { Write-LofiATCJsonFileAtomically -InputObject @{ Player = 'MPV' } -Path $profilePath } |
+                Should -Throw '*Simulated serialization failure*'
+
+            (Get-Content -LiteralPath $profilePath -Raw | ConvertFrom-Json).Player | Should -Be 'VLC'
+            @(Get-ChildItem -LiteralPath (Split-Path -Parent $profilePath) -Filter '*.tmp').Count | Should -Be 0
+        }
+
+        It 'lists profiles in name order and removes only the selected profile' {
+            $profilesPath = Get-LofiATCProfilesPath -Create
+            '{}' | Set-Content -Path (Join-Path $profilesPath 'Zulu.json') -Encoding UTF8
+            '{}' | Set-Content -Path (Join-Path $profilesPath 'Alpha.json') -Encoding UTF8
+
+            (@((Get-LofiATCProfile).Name) -join ',') | Should -Be 'Alpha,Zulu'
+
+            Remove-LofiATCProfile -Name 'Alpha' -InformationAction SilentlyContinue
+
+            Test-Path -LiteralPath (Join-Path $profilesPath 'Alpha.json') | Should -BeFalse
+            Test-Path -LiteralPath (Join-Path $profilesPath 'Zulu.json') | Should -BeTrue
+        }
+
+        It 'reports a missing profile instead of continuing with defaults' {
+            { Import-LofiATCProfile -Name 'Missing' -BoundParameters @{} } |
+                Should -Throw "*Profile 'Missing' was not found*"
+        }
+
+        It 'excludes profile management parameters from saved profile data' {
+            $ignored = Get-LofiATCIgnoredConfigParameterNames
+
+            $ignored | Should -Contain 'Profile'
+            $ignored | Should -Contain 'SaveProfile'
+            $ignored | Should -Contain 'ListProfiles'
+            $ignored | Should -Contain 'RemoveProfile'
+            $ignored | Should -Contain 'SelectedChannel'
+        }
+    }
+
     Context 'Favorites persistence' {
         BeforeEach {
             $script:testDrivePath = Join-Path $TestDrive 'favorites.json'
             if (Test-Path $script:testDrivePath) {
                 Remove-Item $script:testDrivePath -Force
             }
+            if (Test-Path ($script:testDrivePath + '.bak')) {
+                Remove-Item ($script:testDrivePath + '.bak') -Force
+            }
+            Get-ChildItem -LiteralPath $TestDrive -Filter 'favorites.json.corrupt-*.bak' |
+                Remove-Item -Force
         }
 
         It 'returns an empty array when favorites file does not exist' {
@@ -443,16 +933,66 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 3
         }
 
-        It 'returns an empty array for malformed JSON' {
+        It 'warns and returns an empty array for malformed JSON without changing the file' {
             '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
 
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+            (Get-Content -LiteralPath $script:testDrivePath -Raw) | Should -Match 'not-valid-json'
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Favorites file.*malformed or invalid.*left unchanged'
+            }
         }
 
-        It 'returns an empty array when JSON is valid but not a favorites array' {
+        It 'warns and returns an empty array when JSON is valid but not a favorites array' {
             '"hello"' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
 
             @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 0
+            Should -Invoke Write-Warning -Times 1 -Exactly
+        }
+
+        It 'recovers favorites from the last-known-good backup' {
+            '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            @'
+[
+  { "ICAO": "EHAM", "Channel": "Tower", "Count": 2, "LastUsed": "2026-08-18T12:00:00Z" }
+]
+'@ | Set-Content -Path ($script:testDrivePath + '.bak') -Encoding UTF8
+            Mock Write-Warning
+
+            $favorites = @(Get-Favorite -path $script:testDrivePath)
+
+            $favorites.Count | Should -Be 1
+            $favorites[0].ICAO | Should -Be 'EHAM'
+            $favorites[0].Count | Should -Be 2
+            Should -Invoke Write-Warning -Times 1 -Exactly -ParameterFilter {
+                $Message -match 'Recovered favorites from backup'
+            }
+        }
+
+        It 'writes favorites atomically and retains the previous valid file' {
+            Add-Favorite -path $script:testDrivePath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+            Add-Favorite -path $script:testDrivePath -ICAO 'EHAM' -Channel 'Ground' -maxEntries 10
+
+            $activeFavorites = @(Get-Favorite -path $script:testDrivePath)
+            $backupFavorites = @(Get-Favorite -path ($script:testDrivePath + '.bak'))
+
+            $activeFavorites.Count | Should -Be 2
+            $backupFavorites.Count | Should -Be 1
+            $backupFavorites[0].ICAO | Should -Be 'KLAX'
+        }
+
+        It 'preserves malformed favorites before a later write' {
+            '{not-valid-json' | Set-Content -Path $script:testDrivePath -Encoding UTF8
+            Mock Write-Warning
+
+            Add-Favorite -path $script:testDrivePath -ICAO 'KLAX' -Channel 'Tower' -maxEntries 10
+
+            @(Get-Favorite -path $script:testDrivePath).Count | Should -Be 1
+            $corruptBackups = @(Get-ChildItem -LiteralPath $TestDrive -Filter 'favorites.json.corrupt-*.bak')
+            $corruptBackups.Count | Should -Be 1
+            (Get-Content -LiteralPath $corruptBackups[0].FullName -Raw) | Should -Match 'not-valid-json'
         }
     }
 
@@ -462,6 +1002,9 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:addedFavoritesPath = Join-Path $TestDrive 'added_favorites.json'
             if (Test-Path $script:addedFavoritesPath) {
                 Remove-Item $script:addedFavoritesPath -Force
+            }
+            if (Test-Path ($script:addedFavoritesPath + '.bak')) {
+                Remove-Item ($script:addedFavoritesPath + '.bak') -Force
             }
         }
 
@@ -645,6 +1188,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:CurrentMapSelection = $null
             $script:CurrentATCVolume = $null
             $script:CurrentLofiVolume = $null
+            $script:ATCRecoveryState = $null
 
             Mock Stop-ManagedProcess {}
             Mock Start-PlayerProcess {
@@ -687,6 +1231,43 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $script:CurrentLofiProcess | Should -BeNullOrEmpty
 
             Should -Invoke Stop-ManagedProcess -Times 1 -Exactly
+        }
+
+        It 'marks ATC recovery as deliberately stopped from the map' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:mapAtcSources[0] `
+                -AtcSources $script:mapAtcSources `
+                -RetryCount 3 | Out-Null
+            $script:CurrentATCProcess = [System.Diagnostics.Process]::new()
+
+            $result = Invoke-MapPlaybackAction `
+                -Action 'stop-atc' `
+                -AtcSources $script:mapAtcSources `
+                -Player 'MPV' `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -LofiMusicUrl 'http://example.test/lofi' `
+                -AutoRecover
+
+            $result.stopped | Should -BeTrue
+            $script:ATCRecoveryState.DeliberatelyStopped | Should -BeTrue
+            $script:ATCRecoveryState.Status | Should -Be 'Stopped'
+        }
+
+        It 'returns recovery state for persistent map polling' {
+            Initialize-ATCRecoveryState `
+                -Selection $script:mapAtcSources[0] `
+                -AtcSources $script:mapAtcSources `
+                -RetryCount 3 | Out-Null
+            Set-ATCRecoveryPending `
+                -Now ([datetime]'2026-09-04T12:00:00Z') `
+                -ErrorMessage 'player exited'
+
+            $result = Invoke-MapPlaybackAction -Action 'playback-status'
+
+            $result.recoveryStatus | Should -Be 'Recovering'
+            $result.recoveryMessage | Should -Match 'Retry 1 of 3'
+            $result.icao | Should -Be 'EHAM'
         }
 
         It 'returns OCR track data only when Lofi track display is enabled' {
@@ -803,6 +1384,36 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
     }
 
+    Context 'Map server port selection' {
+        It 'searches beyond a short reserved port block' {
+            $script:mapServerStartAttempts = 0
+            $fakePrefixes = [pscustomobject]@{ Values = @() }
+            $fakePrefixes | Add-Member -MemberType ScriptMethod -Name Clear -Value {
+                $this.Values = @()
+            }
+            $fakePrefixes | Add-Member -MemberType ScriptMethod -Name Add -Value {
+                param($Value)
+                $this.Values += $Value
+            }
+
+            $fakeListener = [pscustomobject]@{ Prefixes = $fakePrefixes }
+            $fakeListener | Add-Member -MemberType ScriptMethod -Name Start -Value {
+                $script:mapServerStartAttempts++
+                if ($script:mapServerStartAttempts -le 100) {
+                    throw 'Port is reserved.'
+                }
+            }
+            $fakeListener | Add-Member -MemberType ScriptMethod -Name Close -Value {}
+
+            Mock New-Object { $fakeListener } -ParameterFilter { $TypeName -eq 'System.Net.HttpListener' }
+
+            $server = Start-ATCMapServer
+
+            $server.Port | Should -Be 49252
+            $script:mapServerStartAttempts | Should -Be 101
+        }
+    }
+
     Context 'Generated map HTML for added controls' {
         It 'loads the external map HTML template and replaces all placeholders' {
             Get-ATCMapHtmlTemplatePath | Should -Be (Join-Path $repoRoot 'templates\atc-map.html')
@@ -819,6 +1430,27 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
 
             $html | Should -Match '<!DOCTYPE html>'
             $html | Should -Not -Match '\{\{[A-Z0-9_]+\}\}'
+        }
+
+        It 'uses keyless OpenFreeMap styles with a standard OpenStreetMap fallback' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -ATCVolume 65 `
+                -LofiVolume 50
+
+            $html | Should -Match 'maplibre-gl@5\.24\.0'
+            $html | Should -Match '@maplibre/maplibre-gl-leaflet@0\.1\.4'
+            $html | Should -Match 'https://tiles\.openfreemap\.org/styles/positron'
+            $html | Should -Match 'https://tiles\.openfreemap\.org/styles/dark'
+            $html | Should -Match 'https://tile\.openstreetmap\.org/\{z\}/\{x\}/\{y\}\.png'
+            $html | Should -Match 'maplibregl\.supported\(\)'
+            $html | Should -Match 'mapLibreMap\.setStyle'
+            $html | Should -Not -Match 'cartocdn|CARTO'
         }
 
         It 'includes stop-lofi, volume sliders, favorite actions, and start-random script' {
@@ -844,6 +1476,26 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             $html | Should -Match "var mapControlToken = 'test-token'"
             $html | Should -Match "token=' \+ encodeURIComponent\(mapControlToken\)"
             $html | Should -Match "sendMapAction\('random'\)"
+        }
+
+        It 'polls and displays ATC recovery status when enabled' {
+            $html = New-ATCMapHtml `
+                -JsArray '[]' `
+                -CsvName 'test.csv' `
+                -UserLocation $null `
+                -Radius 500 `
+                -NoWeather `
+                -Port 49152 `
+                -KeepOpen `
+                -AutoRecover `
+                -ATCVolume 65 `
+                -LofiVolume 50 `
+                -MapControlToken 'test-token'
+
+            $html | Should -Match 'var autoRecover = true'
+            $html | Should -Match 'action=playback-status'
+            $html | Should -Match 'setInterval\(pollRecoveryStatus, 1000\)'
+            $html | Should -Not -Match '\{\{AUTO_RECOVER_JS\}\}'
         }
 
         It 'includes the Lofi OCR panel and polling script when enabled' {
@@ -970,14 +1622,15 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
                 -EnableFavoriteActions
 
             $marker = @($json | ConvertFrom-Json)[0]
+            $star = [regex]::Escape([string][char]0x2605)
 
             $marker.icao | Should -Be 'EHAM'
             $marker.isFav | Should -BeTrue
             $marker.isAirportFav | Should -BeTrue
             $marker.airportFavHtml | Should -Match 'toggleAirportFavorite'
-            $marker.airportFavHtml | Should -Match '★ Remove airport favorite'
+            $marker.airportFavHtml | Should -Match "$star Remove airport favorite"
             $marker.desc | Should -Match 'toggleFavorite'
-            $marker.desc | Should -Match '★ Remove favorite'
+            $marker.desc | Should -Match "$star Remove favorite"
         }
     }
 
@@ -992,7 +1645,7 @@ ICAO,Channel Description,Stream URL,Webcam URL,NearbyICAOs
 KLAX,Tower,http://example.com/stream,,KSNA;KBUR
 '@ | Set-Content -Path $script:csvPath -Encoding UTF8
 
-            $result = Import-ATCSource -csvPath $script:csvPath
+            $result = @(Import-ATCSource -csvPath $script:csvPath)
             $result.Count | Should -Be 1
             $result[0].ICAO | Should -Be 'KLAX'
         }
@@ -1067,6 +1720,7 @@ KLAX,Tower,http://example.com/stream
             'ICAO,Channel Description,Stream URL' | Set-Content -Path (Join-Path $script:scriptDir 'atc_sources.csv') -Encoding UTF8
 
             Mock Test-UrlReachable { $true }
+            Mock Read-LofiATCAirportCache { $null }
         }
 
         It 'treats fzf as required only when UseFZF is set' {
@@ -1133,10 +1787,16 @@ KLAX,Tower,http://example.com/stream
     Context 'Start-PlayerProcess' {
         BeforeEach {
             $script:OnWindows = $true
+            $originalAppData = $env:APPDATA
+            $env:APPDATA = $TestDrive
 
             Mock Resolve-StreamUrl { $Url }
             Mock Test-Player { 'C:\Program Files\VideoLAN\VLC\vlc.exe' }
             Mock Start-Process { [System.Diagnostics.Process]::new() }
+        }
+
+        AfterEach {
+            $env:APPDATA = $originalAppData
         }
 
         It 'starts VLC as a separate instance so managed lofi playback remains trackable' {
@@ -1149,6 +1809,23 @@ KLAX,Tower,http://example.com/stream
 
             Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
                 $ArgumentList -match '--no-one-instance'
+            }
+        }
+
+        It 'keeps MPV recovery launches audio-only with the requested volume' {
+            Mock Test-Player { '/usr/bin/mpv' }
+
+            Start-PlayerProcess `
+                -Url 'http://example.test/atc' `
+                -Player 'MPV' `
+                -NoVideo `
+                -BasicArgs `
+                -Volume 42 | Out-Null
+
+            Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter {
+                $ArgumentList -match '--no-video' -and
+                $ArgumentList -match '--force-window=immediate' -and
+                $ArgumentList -match '--volume=42'
             }
         }
     }
@@ -1223,6 +1900,9 @@ KLAX,Tower,http://example.com/stream
             $result.City | Should -Be 'Los Angeles'
             $result.Country | Should -Be 'United States'
             $result.Source | Should -Be 'IP'
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 5 -and $ErrorAction -eq 'Stop'
+            }
         }
 
         It 'returns null when the provider call fails' {
@@ -1284,7 +1964,9 @@ KLAX,Tower,http://example.com/stream
 
             Get-MapWeatherData -AtcSources $sources | Out-Null
 
-            Should -Invoke Invoke-RestMethod -Times 3 -Exactly
+            Should -Invoke Invoke-RestMethod -Times 3 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 12 -and $ErrorAction -eq 'Stop'
+            }
             Should -Not -Invoke Invoke-WebRequest
         }
 
@@ -1319,7 +2001,9 @@ KLAX,Tower,http://example.com/stream
 
             $result = Get-MapWeatherData -AtcSources $sources -UseVatsimFallback
 
-            Should -Invoke Invoke-WebRequest -Times 2 -Exactly
+            Should -Invoke Invoke-WebRequest -Times 2 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 2 -and $ErrorAction -eq 'Stop'
+            }
             $result.WeatherMap.ContainsKey('KAAA') | Should -BeTrue
             $result.WeatherMap['KAAA'].Source | Should -Be 'VATSIM'
             $result.WeatherMap.ContainsKey('KCCC') | Should -BeTrue
@@ -1391,21 +2075,112 @@ KLAX,Tower,http://example.com/stream
         }
     }
 
-    Context 'Get-AirportInfo remote failure behavior' {
+    Context 'Get-AirportInfo resilient cache behavior' {
         BeforeEach {
+            $script:previousAirportUserDataPath = $env:LOFIATC_USER_DATA
+            $env:LOFIATC_USER_DATA = Join-Path $TestDrive ('airport-data-' + [guid]::NewGuid().ToString('N'))
             $script:AirportData = $null
+            $script:AirportDataStatus = $null
+            $script:testAirportData = [pscustomobject]@{
+                KLAX = [pscustomobject]@{
+                    icao = 'KLAX'
+                    name = 'Los Angeles International'
+                    tz   = 'America/Los_Angeles'
+                    lat  = 33.9416
+                    lon  = -118.4085
+                }
+            }
         }
 
-        It 'returns null when remote airport database fetch fails' {
+        AfterEach {
+            if ($null -eq $script:previousAirportUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $script:previousAirportUserDataPath
+            }
+            $script:AirportData = $null
+            $script:AirportDataStatus = $null
+        }
+
+        It 'downloads and caches airport data with a bounded request' {
+            Mock Invoke-RestMethod { $script:testAirportData }
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+            $cachePath = Get-LofiATCAirportCachePath
+
+            $result.icao | Should -Be 'KLAX'
+            Test-Path -LiteralPath $cachePath | Should -BeTrue
+            $script:AirportDataStatus.Source | Should -Be 'Live'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+                $TimeoutSec -eq 10 -and $ErrorAction -eq 'Stop'
+            }
+        }
+
+        It 'uses a fresh user cache without making a remote request' {
+            $cachePath = Get-LofiATCAirportCachePath
+            Save-LofiATCAirportCache -AirportData $script:testAirportData -Path $cachePath
+            $script:AirportData = $null
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Cached'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Not -Invoke Invoke-RestMethod
+        }
+
+        It 'uses stale last-known-good data when refresh fails' {
+            $cachePath = Get-LofiATCAirportCachePath
+            $cache = [ordered]@{
+                Version        = 1
+                RetrievedAtUtc = [datetime]::UtcNow.AddDays(-8).ToString('o', [System.Globalization.CultureInfo]::InvariantCulture)
+                SourceUrl      = 'https://example.test/airports.json'
+                Airports       = $script:testAirportData
+            }
+            Write-LofiATCJsonFileAtomically -InputObject $cache -Path $cachePath
+            Mock Invoke-RestMethod { throw 'network failure' }
+            Mock Write-Warning {}
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Cached'
+            $script:AirportDataStatus.IsStale | Should -BeTrue
+            Should -Invoke Write-Warning -Times 1 -Exactly
+        }
+
+        It 'recovers from a last-known-good backup when the active cache is invalid' {
+            $cachePath = Get-LofiATCAirportCachePath
+            Save-LofiATCAirportCache -AirportData $script:testAirportData -Path $cachePath
+            Copy-Item -LiteralPath $cachePath -Destination ($cachePath + '.bak')
+            Set-Content -LiteralPath $cachePath -Value '{ invalid json' -Encoding UTF8
+            Mock Invoke-RestMethod { throw 'Should not be called' }
+            Mock Write-Warning {}
+
+            $result = Get-AirportInfo -ICAO 'KLAX'
+
+            $result.icao | Should -Be 'KLAX'
+            $script:AirportDataStatus.Source | Should -Be 'Fallback'
+            $script:AirportDataStatus.IsStale | Should -BeFalse
+            Should -Invoke Write-Warning -Times 1 -Exactly
+            Should -Not -Invoke Invoke-RestMethod
+        }
+
+        It 'returns null when the first download fails and no valid cache exists' {
             Mock Invoke-RestMethod { throw 'network failure' }
             Mock Write-Error {}
 
             $result = Get-AirportInfo -ICAO 'KLAX'
 
             $result | Should -Be $null
+            $script:AirportDataStatus.Source | Should -Be 'Unavailable'
+            Test-Path -LiteralPath (Get-LofiATCAirportCachePath) | Should -BeFalse
         }
 
-        It 'returns airport info from cached data without remote fetch' {
+        It 'returns airport info from in-memory data without remote fetch' {
             $script:AirportData = [pscustomobject]@{
                 KLAX = [pscustomobject]@{
                     icao = 'KLAX'
@@ -1494,6 +2269,9 @@ KLAX,Tower,http://example.com/stream
             $result.Report | Should -Match '^KSNA '
             $result.DistanceKm | Should -BeGreaterThan 0
             $result.DistanceNm | Should -BeGreaterThan 0
+            Should -Invoke Invoke-WebRequest -ParameterFilter {
+                $TimeoutSec -eq 8 -and $ErrorAction -eq 'Stop'
+            }
         }
 
         It 'returns the unavailable object when all sources fail' {

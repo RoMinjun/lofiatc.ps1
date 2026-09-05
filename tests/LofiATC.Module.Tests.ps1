@@ -3,13 +3,187 @@ Set-StrictMode -Version Latest
 Describe 'LofiATC module updater' {
     BeforeAll {
         $repoRoot = Split-Path -Parent $PSScriptRoot
+        $scriptEntryPoint = Join-Path $repoRoot 'lofiatc.ps1'
         $moduleManifest = Join-Path $repoRoot 'packaging/LofiATC/LofiATC.psd1'
+        $installedOnlyParameters = @('UpdateSources', 'Version', 'SourceDiffLimit', 'Ref', 'Repository')
         Remove-Module LofiATC -Force -ErrorAction SilentlyContinue
         Import-Module $moduleManifest -Force
+
+        function Get-TestParameterAstMap {
+            param([System.Management.Automation.Language.ParamBlockAst]$ParamBlock)
+
+            $result = @{}
+            foreach ($parameter in $ParamBlock.Parameters) {
+                $result[$parameter.Name.VariablePath.UserPath] = $parameter
+            }
+            return $result
+        }
+
+        function Get-TestValidationSignature {
+            param([System.Management.Automation.ParameterMetadata]$Parameter)
+
+            $signatures = @()
+            foreach ($attribute in $Parameter.Attributes) {
+                if ($attribute -is [System.Management.Automation.ValidateSetAttribute]) {
+                    $values = @($attribute.ValidValues | Sort-Object)
+                    $signatures += 'ValidateSet:{0}' -f ($values -join ',')
+                }
+                elseif ($attribute -is [System.Management.Automation.ValidateRangeAttribute]) {
+                    $signatures += 'ValidateRange:{0},{1}' -f $attribute.MinRange, $attribute.MaxRange
+                }
+                elseif ($attribute -is [System.Management.Automation.ValidatePatternAttribute]) {
+                    $signatures += 'ValidatePattern:{0}' -f $attribute.RegexPattern
+                }
+            }
+            return (@($signatures | Sort-Object) -join ';')
+        }
+
+        function Get-TestHelpDescription {
+            param($ParameterHelp)
+
+            $text = @($ParameterHelp.Description | ForEach-Object { $_.Text }) -join ' '
+            return (($text -replace '\s+', ' ').Trim())
+        }
     }
 
     AfterAll {
         Remove-Module LofiATC -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'exposes and validates named profile parameters on the installed command' {
+        $parameters = (Get-Command lofiatc).Parameters
+
+        $parameters.Keys | Should -Contain 'Profile'
+        $parameters.Keys | Should -Contain 'SaveProfile'
+        $parameters.Keys | Should -Contain 'ListProfiles'
+        $parameters.Keys | Should -Contain 'RemoveProfile'
+
+        $profilePattern = @($parameters.Profile.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidatePatternAttribute] })[0]
+        $profilePattern.RegexPattern | Should -Be '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$'
+    }
+
+    It 'exposes validated ATC recovery parameters on the installed command' {
+        $parameters = (Get-Command lofiatc).Parameters
+
+        $parameters.Keys | Should -Contain 'AutoRecover'
+        $parameters.Keys | Should -Contain 'RetryCount'
+        $parameters.Keys | Should -Contain 'RecoverAlternateChannel'
+
+        $retryRange = @($parameters.RetryCount.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateRangeAttribute] })[0]
+        $retryRange.MinRange | Should -Be 1
+        $retryRange.MaxRange | Should -Be 10
+    }
+
+    Context 'CLI parameter parity' {
+        It 'keeps shared names, types, aliases, defaults, and validation rules aligned' {
+            $parseTokens = $null
+            $parseErrors = $null
+            $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+                $scriptEntryPoint,
+                [ref]$parseTokens,
+                [ref]$parseErrors
+            )
+            $parseErrors | Should -BeNullOrEmpty
+
+            $scriptCommand = Get-Command $scriptEntryPoint
+            $wrapperCommand = Get-Command lofiatc
+            $wrapperParseTokens = $null
+            $wrapperParseErrors = $null
+            $wrapperAst = [System.Management.Automation.Language.Parser]::ParseInput(
+                $wrapperCommand.Definition,
+                [ref]$wrapperParseTokens,
+                [ref]$wrapperParseErrors
+            )
+            $wrapperParseErrors | Should -BeNullOrEmpty
+            $scriptAstParameters = Get-TestParameterAstMap -ParamBlock $scriptAst.ParamBlock
+            $wrapperAstParameters = Get-TestParameterAstMap -ParamBlock $wrapperAst.ParamBlock
+            $scriptNames = @($scriptAstParameters.Keys | Sort-Object)
+            $forwardedWrapperNames = @(
+                $wrapperAstParameters.Keys |
+                    Where-Object { $_ -notin $installedOnlyParameters } |
+                    Sort-Object
+            )
+
+            Compare-Object $scriptNames $forwardedWrapperNames | Should -BeNullOrEmpty
+
+            foreach ($name in $scriptNames) {
+                $scriptParameter = $scriptCommand.Parameters[$name]
+                $wrapperParameter = $wrapperCommand.Parameters[$name]
+                $scriptDefault = $scriptAstParameters[$name].DefaultValue
+                $wrapperDefault = $wrapperAstParameters[$name].DefaultValue
+
+                $wrapperParameter.ParameterType.FullName | Should -Be $scriptParameter.ParameterType.FullName
+                (@($wrapperParameter.Aliases | Sort-Object) -join ',') |
+                    Should -Be (@($scriptParameter.Aliases | Sort-Object) -join ',')
+                (Get-TestValidationSignature -Parameter $wrapperParameter) |
+                    Should -Be (Get-TestValidationSignature -Parameter $scriptParameter)
+
+                if ($null -eq $scriptDefault) {
+                    $wrapperDefault | Should -BeNullOrEmpty
+                }
+                else {
+                    $wrapperDefault.Extent.Text | Should -Be $scriptDefault.Extent.Text
+                }
+            }
+        }
+
+        It 'limits intentional wrapper-only parameters to the documented updater controls' {
+            $scriptParameters = (Get-Command $scriptEntryPoint).Parameters
+            $wrapperParameters = (Get-Command lofiatc).Parameters
+
+            foreach ($name in $installedOnlyParameters) {
+                $wrapperParameters.Keys | Should -Contain $name
+                $scriptParameters.Keys | Should -Not -Contain $name
+            }
+        }
+
+        It 'documents every shared parameter consistently in both help surfaces' {
+            $parseTokens = $null
+            $parseErrors = $null
+            $scriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
+                $scriptEntryPoint,
+                [ref]$parseTokens,
+                [ref]$parseErrors
+            )
+            $scriptAstParameters = Get-TestParameterAstMap -ParamBlock $scriptAst.ParamBlock
+            $scriptNames = @($scriptAstParameters.Keys)
+            $scriptHelp = Get-Help $scriptEntryPoint -Full
+            $wrapperHelp = Get-Help lofiatc -Full
+
+            foreach ($name in $scriptNames) {
+                $scriptParameterHelp = @($scriptHelp.Parameters.Parameter | Where-Object Name -eq $name)[0]
+                $wrapperParameterHelp = @($wrapperHelp.Parameters.Parameter | Where-Object Name -eq $name)[0]
+                $scriptDescription = Get-TestHelpDescription -ParameterHelp $scriptParameterHelp
+                $wrapperDescription = Get-TestHelpDescription -ParameterHelp $wrapperParameterHelp
+
+                $scriptDescription | Should -Not -BeNullOrEmpty
+                $wrapperDescription | Should -Be $scriptDescription
+            }
+        }
+    }
+
+    It 'completes saved profile names' {
+        $previousUserDataPath = $env:LOFIATC_USER_DATA
+        $env:LOFIATC_USER_DATA = Join-Path $TestDrive 'completion-user-data'
+        $profilesPath = Join-Path $env:LOFIATC_USER_DATA 'profiles'
+        New-Item -ItemType Directory -Path $profilesPath -Force | Out-Null
+        '{}' | Set-Content -Path (Join-Path $profilesPath 'Work.json') -Encoding UTF8
+        '{}' | Set-Content -Path (Join-Path $profilesPath 'Home.json') -Encoding UTF8
+
+        try {
+            $inputScript = 'lofiatc -Profile Wo'
+            $completion = TabExpansion2 $inputScript $inputScript.Length
+            @($completion.CompletionMatches.CompletionText) | Should -Contain 'Work'
+            @($completion.CompletionMatches.CompletionText) | Should -Not -Contain 'Home'
+        }
+        finally {
+            if ($null -eq $previousUserDataPath) {
+                Remove-Item Env:\LOFIATC_USER_DATA -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:LOFIATC_USER_DATA = $previousUserDataPath
+            }
+        }
     }
 
     It 'runs the downloaded installer without mutating the PowerShell profile' {
@@ -183,11 +357,11 @@ param(
 
         Mock Invoke-RestMethod -ModuleName LofiATC {
             param(
-                [string]$Uri,
+                [uri]$Uri,
                 [hashtable]$Headers
             )
 
-            $Uri | Should -Be 'https://api.github.com/repos/RoMinjun/lofiatc.ps1/commits/feature%2Finstall-module-command'
+            $Uri.OriginalString | Should -Be 'https://api.github.com/repos/RoMinjun/lofiatc.ps1/commits/feature%2Finstall-module-command'
             return [pscustomobject]@{
                 sha = 'afe8201234567890afe8201234567890afe82012'
             }

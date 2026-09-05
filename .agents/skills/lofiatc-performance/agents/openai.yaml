@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Performance"
+  short_description: "Measure and improve LofiATC performance"
+  default_prompt: "Use $lofiatc-performance to measure this slow path and implement a behavior-preserving optimization."

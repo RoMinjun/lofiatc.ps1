@@ -140,7 +140,7 @@ lofiatc -CheckDependencies -Player VLC
 - supported media players found in `PATH`
 - optional tools like `fzf`, `yt-dlp`, and `youtube-dl`
 - local files such as `config.json`, `favorites.json`, and ATC source CSVs
-- optional network/service checks for airport and weather endpoints
+- the airport metadata cache and optional network/service checks for airport and weather endpoints
 
 The installer copies the app files to a per-user install directory and installs a small PowerShell module command named `lofiatc`. That command preserves PowerShell help and tab completion on Windows, macOS, and Linux:
 ```powershell
@@ -237,6 +237,14 @@ lofiatc -UseFZF -OpenRadar -ATCVolume 70 -LofiVolume 45
 # Load your last-used settings, but override to open radar this time
 lofiatc -LoadConfig -OpenRadar
 
+# Save and reuse a named setup; explicit values still override the profile
+lofiatc -SaveProfile Work -ATCVolume 70
+lofiatc -Profile Work -ATCVolume 80
+
+# List or remove named profiles without starting playback
+lofiatc -ListProfiles
+lofiatc -RemoveProfile Work
+
 # Force a specific player
 lofiatc -Player mpv
 lofiatc -Player vlc
@@ -255,6 +263,12 @@ lofiatc -ShowMap -Nearby
 
 # Open the map and include webcam-enabled feeds where available
 lofiatc -ShowMap -IncludeWebcamIfAvailable
+
+# Monitor ATC playback and retry an interrupted or expired stream
+lofiatc -ICAO EHAM -AutoRecover -RetryCount 3
+
+# Let later retries try another channel at the same airport
+lofiatc -ICAO EHAM -AutoRecover -RecoverAlternateChannel
 
 # Show the current Lofi Girl track using OCR in persistent map mode
 lofiatc -ShowMap -KeepOpen -ShowLofiTrack
@@ -306,6 +320,10 @@ Get-Help lofiatc -Full
 | `-SaveConfig`   | switch    | false   | Saves the current flags/values to your user `config.json`. |
 | `-LoadConfig`   | switch    | false   | Loads options from your user `config.json`. CLI flags override loaded values. |
 | `-ConfigPath`   | string    | user data path | Custom path for saving/loading. |
+| `-Profile`      | string    | none    | Loads a named profile from the user data directory. CLI flags override profile values. |
+| `-SaveProfile`  | string    | none    | Saves the current flags/values and selected ATC channel as a named profile. |
+| `-ListProfiles` | switch    | false   | Lists saved profiles and exits without starting playback. |
+| `-RemoveProfile` | string   | none    | Removes a named profile and exits without starting playback. |
 | `-UseBaseCSV`   | switch    | false   | Force using the base `atc_sources.csv` even if a local updated file exists. |
 | `-ICAO`         | string    | none    | Select a specific airport by ICAO code. If multiple channels exist, you’ll be prompted unless `-RandomATC` is used. |
 | `-Nearby`       | switch    | false   | Uses your current location to show or select nearby airports. |
@@ -314,6 +332,9 @@ Get-Help lofiatc -Full
 | `-NoWeather`    | switch    | false   | Skips live weather/METAR fetching for the map to improve load speed. |
 | `-Dark`         | switch    | false   | Starts the interactive map in dark mode. |
 | `-KeepOpen` / `-Persistent` | switch | false | Keeps the interactive map open after selecting a channel so you can make repeated selections. |
+| `-AutoRecover` | switch | false | Monitors the managed ATC player and retries failed starts or unexpected exits. Keeps a non-map terminal session open until cancelled. |
+| `-RetryCount` | int 1–10 | `3` | Maximum recovery attempts when `-AutoRecover` is enabled. |
+| `-RecoverAlternateChannel` | switch | false | Allows later recovery attempts to try another channel at the same airport. Requires `-AutoRecover`. |
 | `-NoLofiMusic`  | switch    | false   | Disables the lofi stream and only plays ATC audio. |
 | `-IncludeWebcamIfAvailable` | switch | false | Includes webcam-enabled feeds when available. |
 | `-CheckDependencies` | switch | false | Prints a dependency report and exits without starting playback. Useful for validating players, optional tools, files, and service reachability. |
@@ -322,6 +343,8 @@ Get-Help lofiatc -Full
 | `-SourceDiffLimit` | int | `50` | Limits added/removed source rows printed by `-UpdateSources`. Use `0` to show all. |
 | `-Ref` | string | installed ref | Repository ref used by `-UpdateSources`. Available from the installed `lofiatc` command. |
 | `-Repository` | string | installed repository | GitHub `owner/repo` used by `-UpdateSources`. Available from the installed `lofiatc` command. |
+
+CLI parity tests intentionally exclude the installed-command-only parameters `-UpdateSources`, `-Version`, `-SourceDiffLimit`, `-Ref`, and `-Repository`; every other declared parameter is required to match `lofiatc.ps1`.
 
 > [!TIP]
 > Switches are boolean, just include them (no `true/false` needed). CLI overrides always win over loaded config.
@@ -352,7 +375,41 @@ Even if your config has `OpenRadar: false`, you can re-enable it with:
 lofiatc -LoadConfig -OpenRadar
 ```
 
-By default, installed runs store `config.json` and `favorites.json` in your user data folder:
+Configuration and profile files are written through a validated temporary file before replacement. When an existing file is valid, its previous contents are retained in a neighboring `.bak` file. If the active JSON becomes malformed, LofiATC warns and attempts to load the last-known-good backup without modifying the damaged file. A later save preserves malformed JSON in a uniquely named `.corrupt-*.bak` file before replacing it.
+
+### Offline airport data
+
+Airport metadata used by the map, nearby-airport selection, local time, and sunrise/sunset features is cached as `airport-data-cache.json` in the user data folder. A cache is considered fresh for seven days. After that, LofiATC attempts a bounded refresh and uses the stale last-known-good cache if the service is unavailable. If the active cache is malformed, a valid neighboring `.bak` cache can be used instead.
+
+The first airport-data request still needs network access when no cache exists. Optional IP location, METAR, and sunrise/sunset failures return unavailable data without stopping unrelated ATC or lofi playback. Run `lofiatc -Verbose` to see whether airport data came from the live service, active cache, backup fallback, or was unavailable; `lofiatc -CheckDependencies` reports the current cache path, source, and age.
+
+### Automatic ATC recovery
+
+Use `-AutoRecover` to keep the selected ATC process under supervision. Failed starts and unexpected player exits are retried with delays of 1, 2, 4, and then up to 30 seconds, bounded by `-RetryCount`. Each retry resolves the configured stream URL again before launching the player. `-RecoverAlternateChannel` lets successive attempts rotate through other configured channels for the same ICAO.
+
+Outside persistent map mode, recovery monitoring keeps the terminal command active; press Ctrl+C to stop it. Deliberate **Stop ATC** and **Stop All** map actions disable recovery until you restart or select a channel. Persistent map mode displays recovering, recovered, and exhausted states in Now Playing. Lofi and webcam processes are not treated as ATC recovery attempts.
+
+### Named profiles
+
+Named profiles let you keep several reusable setups while preserving the existing `config.json` behavior. Profile names are 1–64 letters, numbers, underscores, or hyphens and must start with a letter or number.
+
+```powershell
+# Create or replace a profile, then choose the channel to remember
+lofiatc -SaveProfile Work -ATCVolume 70 -LofiVolume 45
+
+# Load it; the explicit volume wins over the saved value
+lofiatc -Profile Work -ATCVolume 80
+
+# Manage profiles without launching players or a browser
+lofiatc -ListProfiles
+lofiatc -RemoveProfile Work
+```
+
+The selected ATC channel is saved with the profile, so `-Profile Work` can start that feed without asking for a channel again. If the saved feed is no longer available, LofiATC warns and falls back to the normal selection flow. Explicit selection modes such as `-RandomATC`, `-Nearby`, `-ShowMap`, and `-UseFavorite` take precedence over the saved channel.
+
+The installed PowerShell command completes saved names for `-Profile`, `-SaveProfile`, and `-RemoveProfile`. Named profiles are written through a validated temporary file before replacement and are stored in the `profiles` subdirectory of the user data folder.
+
+By default, installed runs store `config.json`, `favorites.json`, and named profiles in your user data folder:
 - Windows: `$env:APPDATA\lofiatc`
 - macOS/Linux: `$XDG_CONFIG_HOME/lofiatc` or `~/.config/lofiatc`
 
@@ -374,6 +431,7 @@ Each time you select a stream, its ICAO and channel are recorded in your user `f
 
 - Use `-UseFavorite` to pick from this list (combine with `-UseFZF` to search within favorites).
 - Streams chosen with `-RandomATC` aren't saved to the favorites list.
+- Favorites writes use the same validated replacement and backup behavior as configuration files. If `favorites.json` is malformed, LofiATC warns and uses `favorites.json.bak` when it is valid; damaged JSON is preserved before any later write.
 
 **Example `favorites.json`**
 ```json
@@ -439,6 +497,7 @@ Use `-ShowMap` to open an interactive browser map of all available ATC sources.
 
 ### What it does
 - Opens a local HTML map in your browser
+- Uses keyless [OpenFreeMap](https://openfreemap.org/) light and dark vector basemaps, with a standard OpenStreetMap fallback when WebGL is unavailable
 - Lets you search by ICAO, city, or country
 - Shows active ATC sources as clickable markers
 - Optionally overlays live weather categories and wind arrows
@@ -468,6 +527,7 @@ lofiatc -CheckDependencies
 - optional tools such as `fzf`, `yt-dlp`, `youtube-dl`, `ffmpeg`, and Tesseract OCR
 - ATC source CSV availability
 - `config.json` / `favorites.json` presence and JSON validity
+- airport metadata cache availability, source, path, and age
 - optional browser/map helpers such as `xdg-open` on Linux or `open` on macOS
 - optional network/service checks for airport and weather data sources
 
@@ -503,6 +563,8 @@ lofiatc -CheckDependencies
 - **yt-dlp errors:** update it to the latest version and retry.
 - **YouTube or webcam streams not loading in player:** make sure `yt-dlp` is up to date; recent upstream changes may require extra packages depending on your platform.
 - **Map opens slowly:** use `-ShowMap -NoWeather` to skip live weather fetch and load faster.
+- **Map reports that local ports are unavailable:** another program or a Windows reserved-port range may overlap the map listener. LofiATC automatically searches beyond short reserved ranges before failing.
+- **Airport data is unavailable:** the first map or nearby-airport request needs network access. After a successful request, LofiATC keeps a seven-day user cache and can use stale data during an outage. Run `lofiatc -CheckDependencies` for its status.
 - **Map opens but clicking a channel does nothing:** make sure the PowerShell window is still running in the background; the browser talks back to a temporary local listener started by the script.
 - **Map selection feels stuck:** return to the terminal and press `Q` to cancel the map selection flow.
 - **Nearby airport lookup fails:** location access may be unavailable on your device; the script falls back to IP-based lookup, which is approximate.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Change Verifier"
+  short_description: "Verify changes across supported platforms"
+  default_prompt: "Use $lofiatc-verify-change to select and run the checks required for this change."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LofiATC Source Maintenance"
+  short_description: "Maintain verified and sorted ATC sources"
+  default_prompt: "Use $lofiatc-source-maintenance to update or validate the ATC source data safely."

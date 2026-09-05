@@ -97,11 +97,11 @@ Function Resolve-LofiATCCommit {
         return $Ref.ToLowerInvariant()
     }
 
-    $escapedRef = [System.Uri]::EscapeDataString($Ref)
+    $escapedRef = [System.Uri]::EscapeDataString($Ref) -replace '/', '%2F'
     $commitUrl = "https://api.github.com/repos/$Repository/commits/$escapedRef"
     $commit = Invoke-RestMethod -Uri $commitUrl -Headers @{
         Accept = 'application/vnd.github+json'
-    }
+    } -TimeoutSec 10 -ErrorAction Stop
 
     if (-not $commit.sha) {
         throw "GitHub did not return a commit hash for ref '$Ref'."
@@ -290,7 +290,7 @@ Function Update-LofiATCSources {
         throw "Install root not found: $InstallRoot"
     }
 
-    Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing
+    Invoke-WebRequest -Uri $sourceUrl -OutFile $tempPath -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
 
     try {
         if ($sourceCommit) {
@@ -372,7 +372,7 @@ Function Update-LofiATC {
     }
 
     try {
-        Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing
+        Invoke-WebRequest -Uri $installerUrl -OutFile $tempInstaller -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
         $installerParameters = @{
             InstallRoot           = $InstallRoot
             Ref                   = $Ref
@@ -406,6 +406,108 @@ Streams lofi music with live air traffic control.
 Runs the installed lofiatc.ps1 script while preserving PowerShell-native help,
 parameter completion, and ValidateSet completion for common options.
 
+.PARAMETER IncludeWebcamIfAvailable
+Include webcam video stream if available for the selected ATC source.
+
+.PARAMETER NoLofiMusic
+Do not play Lofi music.
+
+.PARAMETER RandomATC
+Select a random ATC stream from the list of sources. When combined with -ICAO,
+choose a random channel for that airport.
+
+.PARAMETER PlayLofiGirlVideo
+Play the Lofi Girl video instead of just the audio.
+
+.PARAMETER ShowLofiTrack
+Uses OCR to show the current Lofi Girl track in persistent map mode. Requires yt-dlp or youtube-dl, ffmpeg, and Tesseract OCR.
+
+.PARAMETER UseFZF
+Use fzf for searching and filtering channels.
+
+.PARAMETER UseBaseCSV
+Force the script to load atc_sources.csv even if liveatc_sources.csv exists.
+
+.PARAMETER UseFavorite
+Load a previously saved favorite from favorites.json and skip continent/country selection. The file stores how often you play each stream and keeps the top entries.
+
+.PARAMETER Player
+Specify the media player to use (VLC, Potplayer, MPC-HC or MPV).
+
+If not specified, the script auto-detects a suitable player:
+- On Windows, it first checks the default app for .mp4 and uses it if supported and available in PATH.
+- If no supported default is available, it falls back to the first supported installed player.
+- On non-Windows systems, it prefers MPV first, then VLC.
+
+.PARAMETER ATCVolume
+Volume level for the ATC stream. Default is 65.
+
+.PARAMETER LofiVolume
+Volume level for the Lofi Girl stream. Default is 50.
+
+.PARAMETER LofiSource
+Specify a custom URL or file path for the Lofi audio/video source Defaults to the Lofi Girl Youtube stream if not provided.
+
+.PARAMETER LofiGenre
+Specify a Lofi genre preset. Valid options: Chillhop, Synthwave, SynthAmbient, Sad, Piano, Classical, Jazz, RelaxJazz, SleepAmbient, DarkAmbient, Medieval, Asian, SleepChill, Guitar, Pomodoro. This is overridden by -LofiSource.
+
+.PARAMETER ICAO
+Specify an airport by ICAO code. If multiple channels exist you will be prompted to select one unless -RandomATC is used to choose randomly.
+
+.PARAMETER OpenRadar
+Open the FlightAware radar page for the selected ICAO after displaying the welcome screen.
+
+.PARAMETER SaveConfig
+Save the parameters used for the current run to a configuration file.
+
+.PARAMETER LoadConfig
+Load options from the default or custom configuration file. Explicit command-line values take precedence.
+
+.PARAMETER ConfigPath
+Optional path for the saved configuration file. Defaults to user data when installed, with repo-local config as a compatibility fallback.
+
+.PARAMETER Profile
+Load a named profile from the user data directory. Explicit command-line values take precedence.
+
+.PARAMETER SaveProfile
+Save the current options and selected ATC channel as a named profile in the user data directory.
+
+.PARAMETER ListProfiles
+List saved named profiles and exit without starting playback.
+
+.PARAMETER RemoveProfile
+Remove a named profile and exit without starting playback.
+
+.PARAMETER Nearby
+Shows a list of nearby airports to your current device location (IP as fallback)
+
+.PARAMETER NearbyRadius
+If specified, to be used in combination with -Nearby, to change the radius of nearby airports in kilometers
+
+.PARAMETER ShowMap
+Generates and opens an interactive HTML map in your browser showing all available ATC sources.
+
+.PARAMETER NoWeather
+Skips the live METAR weather fetch when loading the map to vastly improve startup speed.
+
+.PARAMETER Dark
+Initializes the HTML Map in Dark Mode.
+
+.PARAMETER CheckDependencies
+Checks required files, player availability, optional tools, and network dependencies, then prints a dependency report and exits.
+
+.PARAMETER KeepOpen
+When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
+
+.PARAMETER AutoRecover
+Monitors the managed ATC player and retries unexpected exits or failed starts with bounded exponential backoff.
+
+.PARAMETER RetryCount
+Maximum number of automatic ATC recovery attempts. Default is 3.
+
+.PARAMETER RecoverAlternateChannel
+Allows later recovery attempts to try another channel at the selected airport. Requires -AutoRecover.
+
 .PARAMETER UpdateSources
 Refreshes liveatc_sources.csv in the installed app directory and exits.
 
@@ -418,8 +520,8 @@ Limits the number of added and removed sources printed by -UpdateSources. Use 0 
 .PARAMETER Ref
 Repository ref to use with -UpdateSources. Defaults to the ref recorded by the installer.
 
-.PARAMETER ShowLofiTrack
-Uses OCR to show the current Lofi Girl track in persistent map mode.
+.PARAMETER Repository
+GitHub owner/repository used by -UpdateSources. Defaults to the repository recorded by the installer.
 #>
     [CmdletBinding()]
     param (
@@ -437,7 +539,7 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
         [int]$ATCVolume = 65,
         [ValidateRange(0,100)]
         [int]$LofiVolume = 50,
-        [string]$LofiSource = "https://youtu.be/X4VbdwhkE10",
+        [string]$LofiSource = "https://youtu.be/rFZHOHl-L8A",
         [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient", "Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian")]
         [string]$LofiGenre,
         [ValidatePattern('^[A-Za-z0-9]{4}$')]
@@ -445,6 +547,13 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
         [switch]$LoadConfig,
         [switch]$SaveConfig,
         [string]$ConfigPath,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$Profile,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$SaveProfile,
+        [switch]$ListProfiles,
+        [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+        [string]$RemoveProfile,
         [switch]$OpenRadar,
         [switch]$Nearby,
         [ValidateRange(1,5000)]
@@ -455,6 +564,10 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
         [switch]$CheckDependencies,
         [Alias("Persistent")]
         [switch]$KeepOpen,
+        [switch]$AutoRecover,
+        [ValidateRange(1,10)]
+        [int]$RetryCount = 3,
+        [switch]$RecoverAlternateChannel,
         [switch]$UpdateSources,
         [switch]$Version,
         [string]$Ref = (Get-LofiATCInstallRef),
@@ -486,6 +599,47 @@ Uses OCR to show the current Lofi Girl track in persistent map mode.
     }
 
     & $scriptPath @forwardedParameters
+}
+
+$profileNameCompleter = {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    if ($env:LOFIATC_USER_DATA) {
+        $userDataPath = $env:LOFIATC_USER_DATA
+    }
+    elseif ($env:APPDATA) {
+        $userDataPath = Join-Path $env:APPDATA 'lofiatc'
+    }
+    elseif ($env:XDG_CONFIG_HOME) {
+        $userDataPath = Join-Path $env:XDG_CONFIG_HOME 'lofiatc'
+    }
+    else {
+        $userDataPath = Join-Path $HOME '.config/lofiatc'
+    }
+
+    $profilesPath = Join-Path $userDataPath 'profiles'
+    if (-not (Test-Path -LiteralPath $profilesPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $profilesPath -Filter '*.json' -File |
+        Where-Object {
+            $_.BaseName -match '^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$' -and
+            $_.BaseName -like ($wordToComplete + '*')
+        } |
+        Sort-Object -Property BaseName |
+        ForEach-Object {
+            New-Object System.Management.Automation.CompletionResult(
+                $_.BaseName,
+                $_.BaseName,
+                [System.Management.Automation.CompletionResultType]::ParameterValue,
+                "Saved LofiATC profile '$($_.BaseName)'"
+            )
+        }
+}
+
+foreach ($profileParameterName in @('Profile', 'SaveProfile', 'RemoveProfile')) {
+    Register-ArgumentCompleter -CommandName lofiatc -ParameterName $profileParameterName -ScriptBlock $profileNameCompleter
 }
 
 Export-ModuleMember -Function lofiatc, Update-LofiATC, Update-LofiATCSources, Get-LofiATCVersion

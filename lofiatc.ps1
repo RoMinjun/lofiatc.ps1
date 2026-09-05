@@ -59,8 +59,23 @@ Open the FlightAware radar page for the selected ICAO after displaying the welco
 .PARAMETER SaveConfig
 Save the parameters used for the current run to a configuration file.
 
+.PARAMETER LoadConfig
+Load options from the default or custom configuration file. Explicit command-line values take precedence.
+
 .PARAMETER ConfigPath
 Optional path for the saved configuration file. Defaults to user data when installed, with repo-local config as a compatibility fallback.
+
+.PARAMETER Profile
+Load a named profile from the user data directory. Explicit command-line values take precedence.
+
+.PARAMETER SaveProfile
+Save the current options and selected ATC channel as a named profile in the user data directory.
+
+.PARAMETER ListProfiles
+List saved named profiles and exit without starting playback.
+
+.PARAMETER RemoveProfile
+Remove a named profile and exit without starting playback.
 
 .PARAMETER Nearby
 Shows a list of nearby airports to your current device location (IP as fallback)
@@ -82,6 +97,15 @@ Checks required files, player availability, optional tools, and network dependen
 
 .PARAMETER KeepOpen
 When used with -ShowMap, keeps the interactive map open after selecting a channel and allows repeated channel selections from the map.
+
+.PARAMETER AutoRecover
+Monitors the managed ATC player and retries unexpected exits or failed starts with bounded exponential backoff.
+
+.PARAMETER RetryCount
+Maximum number of automatic ATC recovery attempts. Default is 3.
+
+.PARAMETER RecoverAlternateChannel
+Allows later recovery attempts to try another channel at the selected airport. Requires -AutoRecover.
 #>
 
 [CmdletBinding()]
@@ -100,14 +124,21 @@ param (
     [int]$ATCVolume = 65,
     [ValidateRange(0,100)]
     [int]$LofiVolume = 50,
-    [string]$LofiSource = "https://youtu.be/X4VbdwhkE10",
-    [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient","Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian", "DarkAmbient")]
+    [string]$LofiSource = "https://youtu.be/rFZHOHl-L8A",
+    [ValidateSet("Chillhop", "Synthwave", "Jazz", "DarkAmbient", "Medieval", "Sad", "Piano", "SleepChill", "RelaxJazz", "Classical", "Guitar", "Pomodoro", "SleepAmbient", "SynthAmbient", "Asian")]
     [string]$LofiGenre,
     [ValidatePattern('^[A-Za-z0-9]{4}$')]
     [string]$ICAO,
     [switch]$LoadConfig,
     [switch]$SaveConfig,
     [string]$ConfigPath,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+    [string]$Profile,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+    [string]$SaveProfile,
+    [switch]$ListProfiles,
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$')]
+    [string]$RemoveProfile,
     [switch]$OpenRadar,
     [switch]$Nearby,
     [ValidateRange(1,5000)]
@@ -117,7 +148,11 @@ param (
     [switch]$Dark,
     [switch]$CheckDependencies,
     [Alias("Persistent")]
-    [switch]$KeepOpen
+    [switch]$KeepOpen,
+    [switch]$AutoRecover,
+    [ValidateRange(1,10)]
+    [int]$RetryCount = 3,
+    [switch]$RecoverAlternateChannel
 )
 
 $script:ModuleRoot = Join-Path $PSScriptRoot 'modules'
@@ -150,10 +185,45 @@ try {
     # set reference point for relative paths
     $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+    if ($ListProfiles -and $RemoveProfile) {
+        throw '-ListProfiles and -RemoveProfile cannot be used together.'
+    }
+
+    if (($ListProfiles -or $RemoveProfile) -and ($Profile -or $SaveProfile -or $LoadConfig -or $SaveConfig)) {
+        throw '-ListProfiles and -RemoveProfile cannot be combined with profile or configuration load/save operations.'
+    }
+
+    if ($Profile -and $LoadConfig) {
+        throw '-Profile and -LoadConfig cannot be used together.'
+    }
+
+    if ($SaveProfile -and $SaveConfig) {
+        throw '-SaveProfile and -SaveConfig cannot be used together.'
+    }
+
+    if ($ConfigPath -and ($Profile -or $SaveProfile -or $ListProfiles -or $RemoveProfile)) {
+        throw '-ConfigPath applies only to -LoadConfig and -SaveConfig, not named profiles.'
+    }
+
+    if ($ListProfiles) {
+        Get-LofiATCProfile
+        return
+    }
+
+    if ($RemoveProfile) {
+        Remove-LofiATCProfile -Name $RemoveProfile
+        return
+    }
+
     # Load config if specified, then override with any directly provided parameters
     if ($LoadConfig) {
         if (-not $ConfigPath) { $ConfigPath = Resolve-LofiATCUserFilePath -FileName 'config.json' -ScriptDir $scriptDir }
         Import-LofiATCConfig -ConfigPath $ConfigPath -BoundParameters $PSBoundParameters
+    }
+
+    $profileChannel = $null
+    if ($Profile) {
+        $profileChannel = Import-LofiATCProfile -Name $Profile -BoundParameters $PSBoundParameters
     }
 
     if ($ICAO) {
@@ -162,6 +232,10 @@ try {
         if ($ICAO -notmatch '^[A-Z0-9]{4}$') {
             throw "ICAO must be a 4-character airport code."
         }
+    }
+
+    if ($RetryCount -lt 1 -or $RetryCount -gt 10) {
+        throw '-RetryCount must be between 1 and 10.'
     }
     
     if ($CheckDependencies) {
@@ -193,10 +267,18 @@ try {
         throw '-ShowLofiTrack cannot be used with -NoLofiMusic.'
     }
 
+    if ($RecoverAlternateChannel -and -not $AutoRecover) {
+        throw '-RecoverAlternateChannel requires -AutoRecover.'
+    }
+
     # Save config if specified, excluding common PowerShell parameters and any that were directly provided to override config values
     if ($SaveConfig) {
         if (-not $ConfigPath) { $ConfigPath = Join-Path (Initialize-LofiATCUserDataPath) 'config.json' }
         Export-LofiATCConfig -CommandPath $MyInvocation.MyCommand.Path -ConfigPath $ConfigPath
+    }
+
+    if ($SaveProfile -and $ShowMap -and $KeepOpen) {
+        Export-LofiATCProfile -Name $SaveProfile -CommandPath $MyInvocation.MyCommand.Path
     }
 
     # Test the selected player
@@ -237,6 +319,7 @@ try {
         -ATCVolume $ATCVolume `
         -LofiVolume $LofiVolume `
         -LofiMusicUrl $lofiMusicUrl `
+        -ProfileChannel $profileChannel `
         -Nearby:$Nearby `
         -ShowMap:$ShowMap `
         -KeepOpen:$KeepOpen `
@@ -248,7 +331,17 @@ try {
         -Dark:$Dark `
         -NoLofiMusic:$NoLofiMusic `
         -PlayLofiGirlVideo:$PlayLofiGirlVideo `
-        -ShowLofiTrack:$ShowLofiTrack
+        -ShowLofiTrack:$ShowLofiTrack `
+        -AutoRecover:$AutoRecover `
+        -RetryCount $RetryCount `
+        -RecoverAlternateChannel:$RecoverAlternateChannel
+
+    if ($SaveProfile) {
+        Export-LofiATCProfile `
+            -Name $SaveProfile `
+            -CommandPath $MyInvocation.MyCommand.Path `
+            -SelectedATC $selection.SelectedATC
+    }
 
     Start-LofiATCSession `
         -SelectedATC $selection.SelectedATC `
@@ -263,7 +356,11 @@ try {
         -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
         -OpenRadar:$OpenRadar `
         -RandomATC:$RandomATC `
-        -PlayerWasSpecified:($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"])
+        -PlayerWasSpecified:($PSCmdlet -and $PSCmdlet.MyInvocation.BoundParameters["Player"]) `
+        -AtcSources $atcSources `
+        -AutoRecover:$AutoRecover `
+        -RetryCount $RetryCount `
+        -RecoverAlternateChannel:$RecoverAlternateChannel
 }
 catch [System.OperationCanceledException] {
     Write-Warning $_.Exception.Message

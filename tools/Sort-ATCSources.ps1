@@ -17,6 +17,26 @@ if (-not $rows) {
   exit 2
 }
 
+$expectedCols = @(
+  'Continent', 'Country', 'City', 'State/Province', 'Airport Name',
+  'ICAO', 'IATA', 'Channel Description', 'Stream URL', 'Webcam URL', 'NearbyICAOs'
+)
+$actualCols = @($rows[0].psobject.Properties.Name)
+if (($actualCols.Count -ne $expectedCols.Count) -or
+    (($actualCols -join ',') -cne ($expectedCols -join ','))) {
+  Write-Error "Unexpected CSV schema in '$InputCsvPath'. Expected: $($expectedCols -join ',')"
+  exit 2
+}
+
+$duplicateRows = @($rows | Group-Object {
+  $row = $_
+  ($expectedCols | ForEach-Object { [string]$row.PSObject.Properties[$_].Value }) -join [char]31
+} | Where-Object { $_.Count -gt 1 })
+if ($duplicateRows.Count -gt 0) {
+  Write-Error "Found $($duplicateRows.Count) duplicate row group(s) in '$InputCsvPath'."
+  exit 2
+}
+
 # Grab the filename for dynamic console logging
 $fileName = Split-Path $InputCsvPath -Leaf
 
@@ -32,13 +52,13 @@ $rows | ForEach-Object {
 
 # Canonical sort
 $sorted = $rows | Sort-Object `
-  @{ Expression = { ($_.Continent        ?? '').Trim() } ; Ascending = $true }, `
-  @{ Expression = { ($_.Country          ?? '').Trim() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.Continent).Trim() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.Country).Trim() } ; Ascending = $true }, `
   @{ Expression = { [string]::IsNullOrWhiteSpace($_.'State/Province') } }, `
-  @{ Expression = { ($_. 'State/Province'?? '').Trim() } ; Ascending = $true }, `
-  @{ Expression = { ($_.City             ?? '').Trim() } ; Ascending = $true }, `
-  @{ Expression = { ($_.ICAO             ?? '').Trim().ToUpper() } ; Ascending = $true }, `
-  @{ Expression = { ($_. 'Channel Description' ?? '').Trim() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.'State/Province').Trim() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.City).Trim() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.ICAO).Trim().ToUpperInvariant() } ; Ascending = $true }, `
+  @{ Expression = { ([string]$_.'Channel Description').Trim() } ; Ascending = $true }, `
   @{ Expression = { $_._idx } }
 
 # Strip helper index

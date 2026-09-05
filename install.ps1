@@ -133,7 +133,7 @@ Function Get-LofiATCSourceCommit {
         $escapedRef = [System.Uri]::EscapeDataString($Ref)
         $commit = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/commits/$escapedRef" -Headers @{
             Accept = 'application/vnd.github+json'
-        }
+        } -TimeoutSec 10 -ErrorAction Stop
         if ($commit.sha) {
             return [string]$commit.sha
         }
@@ -498,7 +498,7 @@ try {
         else {
             "https://github.com/$Repository/archive/refs/heads/$Ref.zip"
         }
-        Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing
+        Invoke-WebRequest -Uri $archiveUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
         Expand-Archive -Path $zipPath -DestinationPath $tempRoot -Force
 
         $sourceRoot = Get-ChildItem -Path $tempRoot -Directory | Select-Object -First 1 -ExpandProperty FullName
