@@ -110,9 +110,9 @@ irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/main/install.ps1 | ie
 ```
 
 > [!NOTE]
-> If you wish to install a branch other than `main`, you can do that by passing `-Ref` followed by the branch name, see following example for `test` branch:
+> To install a branch other than `main`, download `install.ps1` from that branch and pass the same branch name to `-Ref`. For example, to install the `test` branch:
 > ```powershell
-> & ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/feature/install-module-command/install.ps1))) -Ref test
+> & ([scriptblock]::Create((irm https://raw.githubusercontent.com/RoMinjun/lofiatc.ps1/test/install.ps1))) -Ref test
 > ```
 
 Open a new PowerShell session after installation, then run:
