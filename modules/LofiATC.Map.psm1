@@ -145,7 +145,53 @@ Function Invoke-MapPlaybackAction {
         [switch]$RecoverAlternateChannel
     )
 
-    switch ($Action.ToLowerInvariant()) {
+    $normalizedAction = $Action.ToLowerInvariant()
+
+    if ($normalizedAction -eq 'toggle-atc') {
+        if (Test-ManagedProcessAlive -Process $script:CurrentATCProcess) {
+            $normalizedAction = 'stop-atc'
+        }
+        else {
+            $normalizedAction = 'restart'
+        }
+    }
+
+    if ($normalizedAction -eq 'toggle-lofi') {
+        if (Test-ManagedProcessAlive -Process $script:CurrentLofiProcess) {
+            $normalizedAction = 'stop-lofi'
+        }
+        else {
+            $normalizedAction = 'start-lofi'
+        }
+    }
+
+    if ($normalizedAction -eq 'favorite-toggle-current') {
+        if (-not $script:CurrentMapSelection) {
+            throw 'No channel is currently selected.'
+        }
+
+        $ICAO = [string]$script:CurrentMapSelection.ICAO
+        $icaoMatches = @($AtcSources | Where-Object { $_.ICAO -eq $ICAO })
+        $ChannelIndex = -1
+
+        for ($i = 0; $i -lt $icaoMatches.Count; $i++) {
+            if (
+                $icaoMatches[$i].'Channel Description' -eq $script:CurrentMapSelection.'Channel Description' -and
+                $icaoMatches[$i].'Stream URL' -eq $script:CurrentMapSelection.'Stream URL'
+            ) {
+                $ChannelIndex = $i
+                break
+            }
+        }
+
+        if ($ChannelIndex -lt 0) {
+            throw 'Could not find the current channel in the source list.'
+        }
+
+        $normalizedAction = 'favorite-toggle'
+    }
+
+    switch ($normalizedAction) {
         'lofi-track' {
             if (-not $ShowLofiTrack) {
                 return @{
@@ -183,6 +229,7 @@ Function Invoke-MapPlaybackAction {
             return @{
                 ok      = $true
                 stopped = $true
+                atc     = $false
                 message = 'ATC and webcam playback stopped.'
             }
         }
@@ -199,6 +246,41 @@ Function Invoke-MapPlaybackAction {
                 ok      = $true
                 message = 'Lofi playback stopped.'
                 lofi    = $false
+            }
+        }
+
+        'start-lofi' {
+            if ($NoLofiMusic) {
+                throw 'Lofi playback is disabled.'
+            }
+
+            $volumeToUse = $LofiVolume
+            if ($null -ne $script:CurrentLofiVolume) {
+                $volumeToUse = [int]$script:CurrentLofiVolume
+            }
+
+            $script:CurrentLofiProcess = if ($PlayLofiGirlVideo) {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -BasicArgs `
+                    -Volume $volumeToUse
+            }
+            else {
+                Start-PlayerProcess `
+                    -Url $LofiMusicUrl `
+                    -Player $Player `
+                    -NoVideo `
+                    -BasicArgs `
+                    -Volume $volumeToUse
+            }
+
+            $script:CurrentLofiVolume = $volumeToUse
+
+            return @{
+                ok      = $true
+                lofi    = $true
+                message = 'Lofi playback restarted.'
             }
         }
 
@@ -443,6 +525,7 @@ Function Invoke-MapPlaybackAction {
             return @{
                 ok      = $true
                 stopped = $true
+                atc     = $false
                 lofi    = $false
                 message = 'All playback stopped.'
             }
@@ -496,6 +579,7 @@ Function Invoke-MapPlaybackAction {
                 airport = $started.Airport
                 webcam  = $started.Webcam
                 lofi    = $started.Lofi
+                atc     = $true
             }
         }
 
@@ -540,6 +624,7 @@ Function Invoke-MapPlaybackAction {
                 airport = $started.Airport
                 webcam  = $started.Webcam
                 lofi    = $started.Lofi
+                atc     = $true
             }
         }
 
@@ -817,6 +902,7 @@ Function ConvertTo-MapMarkers {
 
         $airportFavoriteChannel = '__AIRPORT__'
         $icaoJs = ConvertTo-JsSafeString $icaoCode
+        $icaoHtml = ConvertTo-HtmlSafeString $icaoCode
 
         $isAirportFavorite = @(
             $Favorites | Where-Object {
@@ -846,7 +932,7 @@ Function ConvertTo-MapMarkers {
         }
 
         $airportFavoriteLink = if ($EnableFavoriteActions) {
-            "<div class=`"airport-favorite-row`"><a href=`"javascript:void(0)`" onclick=`"toggleAirportFavorite('$icaoJs', this)`" class=`"$airportFavClass`" data-favorited=`"$airportFavState`">$airportFavText</a></div>"
+            "<div class=`"airport-favorite-row`"><button type=`"button`" onclick=`"toggleAirportFavorite('$icaoJs', this)`" class=`"$airportFavClass`" data-favorited=`"$airportFavState`" aria-pressed=`"$airportFavState`">$airportFavText</button></div>"
         }
         else {
             ""
@@ -892,13 +978,13 @@ Function ConvertTo-MapMarkers {
             }
 
             $favoriteLink = if ($EnableFavoriteActions) {
-                " <span class=`"channel-separator`">·</span> <a href=`"javascript:void(0)`" onclick=`"toggleFavorite('$icaoJs', $i, this)`" class=`"$favClass`" data-favorited=`"$favState`">$favText</a>"
+                " <span class=`"channel-separator`">·</span> <button type=`"button`" onclick=`"toggleFavorite('$icaoJs', $i, this)`" class=`"$favClass`" data-favorited=`"$favState`" data-icao=`"$icaoHtml`" data-channel=`"$descHtml`" data-channel-index=`"$i`" aria-pressed=`"$favState`">$favText</button>"
             }
             else {
                 ""
             }
 
-            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoJs', $i)`" class=`"channel-link`">$descHtml</a>$camIcon$favoriteLink"
+            $channelLinks += "&bull; <a href=`"javascript:void(0)`" onclick=`"playChannel('$icaoJs', $i)`" class=`"channel-link`" aria-label=`"Play $icaoHtml $descHtml`">$descHtml</a>$camIcon$favoriteLink"
 
         }
 
@@ -1173,11 +1259,12 @@ Function New-ATCMapHtml {
 
 @"
 $lofiTrackPanel
-        <div class="np-actions">
+        <div class="np-actions" role="group" aria-label="Playback controls">
             <button type="button" id="np-restart" class="np-btn">Restart</button>
-            <button type="button" id="np-random" class="np-btn">Random</button>
-            <button type="button" id="np-stop-atc" class="np-btn">Stop ATC</button>
-            <button type="button" id="np-stop-lofi" class="np-btn">Stop Lofi</button>
+            <button type="button" id="np-random" class="np-btn" title="Random channel (R)" aria-keyshortcuts="R">Random</button>
+            <button type="button" id="np-toggle-atc" class="np-btn" title="Stop or restart ATC (Space)" aria-keyshortcuts="Space">Stop ATC</button>
+            <button type="button" id="np-toggle-lofi" class="np-btn" title="Stop or restart lofi (L)" aria-keyshortcuts="L">Stop Lofi</button>
+            <button type="button" id="np-favorite" class="np-btn" title="Toggle active channel favorite (F)" aria-keyshortcuts="F">Toggle Favorite</button>
             <button type="button" id="np-stop-all" class="np-btn danger">Stop All</button>
         </div>
 

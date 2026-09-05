@@ -20,6 +20,7 @@
             --popup-bg: rgba(255, 255, 255, 0.95);
             --divider: #ddd;
             --hover-color: #1a1a2e;
+            --focus-ring: #e94560;
         }
         body.dark-mode {
             --bg-color: #0b0f19;
@@ -30,6 +31,25 @@
             --popup-bg: rgba(22, 33, 62, 0.95);
             --divider: #333;
             --hover-color: #fff;
+        }
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        a:focus-visible,
+        [tabindex]:focus-visible {
+            outline: 3px solid var(--focus-ring);
+            outline-offset: 3px;
         }
         .radar-controls {
             margin-top: 8px;
@@ -195,8 +215,6 @@
             color: var(--text-primary);
         }
 
-        #now-playing-overlay:not(.playing) .np-actions,
-        #now-playing-overlay:not(.playing) .np-volume-panel,
         #now-playing-overlay:not(.playing) .np-eq {
             display: none;
         }
@@ -381,9 +399,105 @@
         #brand-overlay h1 span { color: #e94560; }
         #brand-overlay p { margin: 0; font-size: 13px; color: var(--text-secondary); }
         #brand-overlay .sub-text { font-size: 11px; opacity: 0.6; margin-top: 3px; font-style: italic; }
-        #search-container { position: absolute; top: 20px; left: 60px; z-index: 1000; }
+        #search-container { position: absolute; top: 20px; left: 60px; z-index: 1000; display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; width: 330px; }
         #map-search { background: var(--overlay-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 10px 15px; border-radius: 20px; width: 280px; outline: none; backdrop-filter: blur(4px); font-size: 14px; transition: 0.3s;}
         #map-search::placeholder { color: var(--text-secondary); opacity: 0.8; }
+        #map-search:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+        #shortcut-help-button {
+            width: 40px;
+            height: 40px;
+            border: 1px solid var(--border-color);
+            border-radius: 50%;
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 800;
+            backdrop-filter: blur(4px);
+        }
+
+        #shortcut-help-button:hover {
+            border-color: var(--focus-ring);
+        }
+
+        #search-status {
+            flex-basis: 100%;
+        }
+
+        #shortcut-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 3000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.62);
+        }
+
+        #shortcut-dialog {
+            width: min(440px, calc(100vw - 40px));
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            box-sizing: border-box;
+            padding: 22px;
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            background: var(--popup-bg);
+            color: var(--text-primary);
+            box-shadow: 0 18px 55px rgba(0,0,0,0.45);
+        }
+
+        .shortcut-dialog-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .shortcut-dialog-header h2 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        #shortcut-close {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 6px 10px;
+            background: transparent;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .shortcut-list {
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 10px 16px;
+            margin: 20px 0 0;
+        }
+
+        .shortcut-list dt,
+        .shortcut-list dd {
+            margin: 0;
+        }
+
+        .shortcut-list kbd {
+            display: inline-block;
+            min-width: 22px;
+            padding: 2px 6px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            background: var(--overlay-bg);
+            color: var(--text-primary);
+            text-align: center;
+            font-family: inherit;
+            font-weight: 700;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
 
         #map-search.search-error {
             background: rgba(231, 76, 60, 0.8) !important;
@@ -424,6 +538,11 @@
             color: #e94560;
             text-decoration: none;
             font-size: 11px;
+            font-family: inherit;
+            border: 0;
+            padding: 0;
+            background: transparent;
+            cursor: pointer;
             transition: 0.2s;
         }
 
@@ -444,6 +563,11 @@
             color: #e94560;
             text-decoration: none;
             font-weight: 700;
+            font-family: inherit;
+            border: 0;
+            padding: 0;
+            background: transparent;
+            cursor: pointer;
             transition: 0.2s;
         }
 
@@ -476,11 +600,12 @@
                 top: 140px;
                 left: 60px;
                 right: 20px;
+                width: auto;
             }
 
             #map-search {
                 box-sizing: border-box;
-                width: 100%;
+                width: calc(100% - 48px);
             }
 
             #legend-overlay {
@@ -500,12 +625,23 @@
                 overflow-y: auto;
             }
         }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                scroll-behavior: auto !important;
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
     </style>
 </head>
 <body{{DARK_MODE_CLASS}}>
     <div id="search-container">
-        <input type="text" id="map-search" placeholder="Search ICAO, airport, city, country, channel...">
-        <div id="search-status"></div>
+        <label for="map-search" class="sr-only">Search airports and ATC channels</label>
+        <input type="search" id="map-search" placeholder="Search ICAO, airport, city, country, channel..." aria-describedby="search-status" aria-keyshortcuts="/">
+        <button type="button" id="shortcut-help-button" aria-haspopup="dialog" aria-controls="shortcut-overlay" aria-keyshortcuts="?" title="Keyboard shortcuts (?)">?</button>
+        <div id="search-status" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <div id="brand-overlay">
@@ -514,7 +650,7 @@
         <p class="sub-text">Loaded from: {{CSV_NAME}}</p>
     </div>
 
-    <div id="legend-overlay">
+    <div id="legend-overlay" role="region" aria-label="Map filters and overlays">
         <div class="legend-section-title">Map Filters</div>
         {{WEATHER_LEGEND_ITEMS}}
         {{WEBCAM_LEGEND_ITEM}}
@@ -530,7 +666,7 @@
                 <button type="button" id="radar-live" class="radar-btn" title="Jump to latest radar frame">Live</button>
                 <button type="button" id="radar-forward" class="radar-btn" title="Go 10 minutes later">Newer &#9654;</button>
             </div>
-            <input type="range" id="radar-timeline" min="0" max="0" step="1" value="0" disabled>
+            <input type="range" id="radar-timeline" min="0" max="0" step="1" value="0" aria-label="Radar history frame" disabled>
             <div class="radar-scale">
                 <span>-1h</span>
                 <span>Now</span>
@@ -545,10 +681,29 @@
 
     <div id="credit-overlay">made with <span style="color: #e94560;">&#x2764;</span> by <a href="https://github.com/RoMinjun" target="_blank">RoMinjun</a></div>
 
-    <div id="map"></div>
-    <div id="toast"></div>
+    <div id="map" role="region" aria-label="Interactive airport map"></div>
+    <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
-    <div id="now-playing-overlay" aria-live="polite">
+    <div id="shortcut-overlay" hidden>
+        <div id="shortcut-dialog" role="dialog" aria-modal="true" aria-labelledby="shortcut-title" tabindex="-1">
+            <div class="shortcut-dialog-header">
+                <h2 id="shortcut-title">Keyboard shortcuts</h2>
+                <button type="button" id="shortcut-close" aria-label="Close keyboard shortcuts">Close</button>
+            </div>
+            <p>Playback shortcuts are available while the map remains open in persistent mode.</p>
+            <dl class="shortcut-list">
+                <dt><kbd>/</kbd></dt><dd>Focus airport search</dd>
+                <dt><kbd>Esc</kbd></dt><dd>Clear search or close the active panel</dd>
+                <dt><kbd>R</kbd></dt><dd>Play a random channel</dd>
+                <dt><kbd>Space</kbd></dt><dd>Stop or restart ATC</dd>
+                <dt><kbd>L</kbd></dt><dd>Stop or restart lofi</dd>
+                <dt><kbd>F</kbd></dt><dd>Toggle the active channel favorite</dd>
+                <dt><kbd>?</kbd></dt><dd>Show or hide this help</dd>
+            </dl>
+        </div>
+    </div>
+
+    <div id="now-playing-overlay" role="region" aria-label="Now playing" aria-live="polite" aria-atomic="true">
         <div class="np-kicker">
             <span class="np-dot"></span>
             <span id="np-kicker-text">Idle</span>
@@ -589,6 +744,7 @@
             var toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = isError ? 'show error' : 'show';
+            toast.setAttribute('role', isError ? 'alert' : 'status');
 
             clearTimeout(window.__lofiatcToastTimer);
             window.__lofiatcToastTimer = setTimeout(function() {
@@ -598,6 +754,9 @@
         var currentPlayingPulse = null;
         var currentPlayingPulseTimer = null;
         var currentPlayingItem = null;
+        var keepOpen = {{KEEP_OPEN_JS}};
+        var atcPlaybackActive = false;
+        var lofiPlaybackActive = false;
         var showLofiTrack = {{SHOW_LOFI_TRACK_JS}};
         var lofiTrackPollTimer = null;
         var lofiTrackPollPending = false;
@@ -615,6 +774,12 @@
             var icao = data && data.icao ? data.icao : '';
             var channel = data && data.channel ? data.channel : 'Unknown channel';
             var airport = data && data.airport ? data.airport : 'Unknown airport';
+
+            atcPlaybackActive = true;
+            if (data && typeof data.lofi === 'boolean') {
+                lofiPlaybackActive = data.lofi;
+            }
+            updatePlaybackControlLabels();
 
             if (kicker) {
                 kicker.textContent = data && data.recoveryStatus === 'Recovering' ? 'Recovering' : 'Now playing';
@@ -794,8 +959,6 @@
         }
 
         function playChannel(icao, channelIndex) {
-            var keepOpen = {{KEEP_OPEN_JS}};
-
             if (!keepOpen) {
                 document.getElementById('starting-screen').style.display = 'flex';
             }
@@ -849,6 +1012,7 @@
                     if (el) {
                         el.textContent = data.favorited ? '★ Remove favorite' : '☆ Add favorite';
                         el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
+                        el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
                         el.classList.toggle('active', !!data.favorited);
                     }
 
@@ -877,6 +1041,7 @@
                     if (el) {
                         el.textContent = data.favorited ? '★ Remove airport favorite' : '☆ Add airport favorite';
                         el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
+                        el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
                         el.classList.toggle('active', !!data.favorited);
                     }
 
@@ -891,8 +1056,63 @@
             });
         }
 
+        function syncCurrentFavoriteControl(data) {
+            if (!data || !data.icao || !data.channel) return;
+
+            document.querySelectorAll('.favorite-link[data-icao][data-channel]').forEach(function(el) {
+                if (el.getAttribute('data-icao') !== data.icao || el.getAttribute('data-channel') !== data.channel) {
+                    return;
+                }
+
+                el.textContent = data.favorited ? '★ Remove favorite' : '☆ Add favorite';
+                el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
+                el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
+                el.classList.toggle('active', !!data.favorited);
+            });
+        }
+
+        function toggleCurrentFavorite() {
+            fetch(
+                controlUrl('?action=favorite-toggle-current'),
+                { method: 'GET' }
+            )
+            .then(function(res) {
+                return res.json();
+            })
+            .then(function(data) {
+                if (data && data.ok) {
+                    syncCurrentFavoriteControl(data);
+                    showToast(data.message || 'Favorite updated.', false);
+                } else {
+                    showToast((data && data.message) || 'Select a channel before updating its favorite.', true);
+                }
+            })
+            .catch(function(err) {
+                console.error('Current favorite update failed', err);
+                showToast('Could not reach the local LofiATC session.', true);
+            });
+        }
+
+        function updatePlaybackControlLabels() {
+            var atcButton = document.getElementById('np-toggle-atc');
+            var lofiButton = document.getElementById('np-toggle-lofi');
+
+            if (atcButton) {
+                atcButton.textContent = atcPlaybackActive ? 'Stop ATC' : 'Restart ATC';
+                atcButton.setAttribute('aria-label', atcButton.textContent + ' (Space)');
+            }
+
+            if (lofiButton) {
+                lofiButton.textContent = lofiPlaybackActive ? 'Stop Lofi' : 'Restart Lofi';
+                lofiButton.setAttribute('aria-label', lofiButton.textContent + ' (L)');
+            }
+        }
+
         function setPlaybackStopped(message) {
             clearNowPlayingPulse();
+
+            atcPlaybackActive = false;
+            updatePlaybackControlLabels();
 
             var overlay = document.getElementById('now-playing-overlay');
             var kicker = document.getElementById('np-kicker-text');
@@ -920,6 +1140,14 @@
             })
             .then(function(data) {
                 if (data && data.ok) {
+                    if (typeof data.atc === 'boolean') {
+                        atcPlaybackActive = data.atc;
+                    }
+                    if (typeof data.lofi === 'boolean') {
+                        lofiPlaybackActive = data.lofi;
+                    }
+                    updatePlaybackControlLabels();
+
                     if (data.lofi === false && showLofiTrack) {
                         var trackText = document.getElementById('np-lofi-track-text');
                         if (trackText) trackText.textContent = 'Lofi playback is not active.';
@@ -1032,14 +1260,20 @@
 
         bindPlaybackButton('np-restart', 'restart');
         bindPlaybackButton('np-random', 'random');
-        bindPlaybackButton('np-stop-atc', 'stop-atc');
-        bindPlaybackButton('np-stop-lofi', 'stop-lofi');
+        bindPlaybackButton('np-toggle-atc', 'toggle-atc');
+        bindPlaybackButton('np-toggle-lofi', 'toggle-lofi');
         bindPlaybackButton('np-stop-all', 'stop-all');
+
+        var currentFavoriteButton = document.getElementById('np-favorite');
+        if (currentFavoriteButton) {
+            currentFavoriteButton.addEventListener('click', toggleCurrentFavorite);
+        }
         
         stopMapInteractionForElement(document.querySelector('.np-volume-panel'));
 
         bindVolumeSlider('np-atc-volume', 'np-atc-volume-value', 'atc');
         bindVolumeSlider('np-lofi-volume', 'np-lofi-volume-value', 'lofi');
+        updatePlaybackControlLabels();
 
         if (showLofiTrack) {
             pollLofiTrack();
@@ -1081,6 +1315,47 @@
 
             layer.openPopup();
         }
+
+        var popupReturnFocus = null;
+
+        function focusFirstAirportPopupControl() {
+            var popup = document.querySelector('.leaflet-popup');
+            if (!popup) return;
+
+            var firstControl = popup.querySelector('a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])');
+            if (firstControl) {
+                firstControl.focus();
+            }
+        }
+
+        function enableAirportKeyboardSelection(item) {
+            if (!item || !item.layer || typeof item.layer.getElement !== 'function') return;
+
+            var element = item.layer.getElement();
+            if (!element || element.getAttribute('data-lofiatc-keyboard') === 'true') return;
+
+            element.setAttribute('tabindex', '0');
+            element.setAttribute('role', 'button');
+            element.setAttribute('aria-label', 'Open ' + item.data.icao + ' ' + item.data.name + ' channels');
+            element.setAttribute('data-lofiatc-keyboard', 'true');
+
+            element.addEventListener('keydown', function(e) {
+                if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+
+                e.preventDefault();
+                e.stopPropagation();
+                popupReturnFocus = element;
+                openAirportPopup(item.layer);
+                setTimeout(focusFirstAirportPopupControl, 0);
+            });
+        }
+
+        map.on('popupclose', function() {
+            if (popupReturnFocus && typeof popupReturnFocus.focus === 'function') {
+                popupReturnFocus.focus();
+            }
+            popupReturnFocus = null;
+        });
 
         function setAirportMarkerStyle(item, options) {
             if (!item || !item.layer || typeof item.layer.setStyle !== 'function') return;
@@ -1624,6 +1899,7 @@
             allMapItems.push(mapItem);
             mapItemsByIcao[m.icao] = mapItem;
             addAirportLayer(dot);
+            enableAirportKeyboardSelection(mapItem);
             if (windArrow) windArrow.addTo(map);
         });
 
@@ -1794,7 +2070,7 @@
                 status.textContent = '';
                 clearSearchHighlight();
                 applyFilters();
-                return;
+                return null;
             }
 
             allMapItems.forEach(function(item) {
@@ -1844,8 +2120,19 @@
             if (matchedBounds.length === 0) {
                 flashSearchError();
             }
+
+            return exactItem;
         }
         var searchDebounceTimer = null;
+
+        function clearMapSearch() {
+            var searchInput = document.getElementById('map-search');
+            searchInput.value = '';
+            clearSearchError();
+            runMapSearch('', false);
+            clearSearchHighlight();
+            map.setView([20, 0], 2);
+        }
 
         document.getElementById('map-search').addEventListener('input', function(e) {
             clearTimeout(searchDebounceTimer);
@@ -1857,17 +2144,147 @@
 
         document.getElementById('map-search').addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
-                e.target.value = '';
-                clearSearchError();
-                runMapSearch('', false);
-                clearSearchHighlight();
-                map.setView([20, 0], 2);
+                e.preventDefault();
+                clearMapSearch();
             }
 
             if (e.key === 'Enter') {
-                runMapSearch(e.target.value, true);
+                var exactItem = runMapSearch(e.target.value, true);
+                if (exactItem) {
+                    popupReturnFocus = e.target;
+                    setTimeout(focusFirstAirportPopupControl, 400);
+                }
             }
         });
+
+        var shortcutReturnFocus = null;
+        var shortcutOverlay = document.getElementById('shortcut-overlay');
+        var shortcutDialog = document.getElementById('shortcut-dialog');
+        var shortcutCloseButton = document.getElementById('shortcut-close');
+        var shortcutHelpButton = document.getElementById('shortcut-help-button');
+
+        function openShortcutHelp() {
+            shortcutReturnFocus = document.activeElement;
+            shortcutOverlay.hidden = false;
+            shortcutCloseButton.focus();
+        }
+
+        function closeShortcutHelp() {
+            if (shortcutOverlay.hidden) return false;
+
+            shortcutOverlay.hidden = true;
+            if (
+                shortcutReturnFocus &&
+                shortcutReturnFocus !== document.body &&
+                typeof shortcutReturnFocus.focus === 'function'
+            ) {
+                shortcutReturnFocus.focus();
+            } else {
+                shortcutHelpButton.focus();
+            }
+            shortcutReturnFocus = null;
+            return true;
+        }
+
+        function isEditableShortcutTarget(target) {
+            if (!target) return false;
+
+            var tagName = (target.tagName || '').toLowerCase();
+            return tagName === 'input' ||
+                tagName === 'textarea' ||
+                tagName === 'select' ||
+                target.isContentEditable ||
+                (typeof target.closest === 'function' && !!target.closest('[contenteditable="true"]'));
+        }
+
+        function isInteractiveShortcutTarget(target) {
+            return !!(
+                target &&
+                typeof target.closest === 'function' &&
+                target.closest('button, a, [role="button"]')
+            );
+        }
+
+        function handleMapShortcut(e) {
+            var shortcutHelpOpen = !shortcutOverlay.hidden;
+
+            if (shortcutHelpOpen) {
+                if (e.key === 'Escape' || e.key === '?') {
+                    e.preventDefault();
+                    closeShortcutHelp();
+                    return;
+                }
+
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    shortcutCloseButton.focus();
+                }
+                return;
+            }
+
+            var key = e.key;
+            var lowerKey = key.toLowerCase();
+
+            if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+
+            if (key === 'Escape' && !isEditableShortcutTarget(e.target)) {
+                var searchInput = document.getElementById('map-search');
+                if (searchInput.value) {
+                    e.preventDefault();
+                    clearMapSearch();
+                    return;
+                }
+
+                var popup = document.querySelector('.leaflet-popup');
+                if (popup) {
+                    e.preventDefault();
+                    map.closePopup();
+                }
+                return;
+            }
+
+            if (isEditableShortcutTarget(e.target) || isInteractiveShortcutTarget(e.target)) return;
+
+            if (key === '/') {
+                e.preventDefault();
+                document.getElementById('map-search').focus();
+                return;
+            }
+
+            if (key === '?') {
+                e.preventDefault();
+                openShortcutHelp();
+                return;
+            }
+
+            if (!keepOpen || e.repeat) return;
+
+            if (lowerKey === 'r') {
+                e.preventDefault();
+                sendMapAction('random');
+            } else if (key === ' ' || key === 'Spacebar') {
+                e.preventDefault();
+                sendMapAction('toggle-atc');
+            } else if (lowerKey === 'l') {
+                e.preventDefault();
+                sendMapAction('toggle-lofi');
+            } else if (lowerKey === 'f') {
+                e.preventDefault();
+                toggleCurrentFavorite();
+            }
+        }
+
+        shortcutHelpButton.addEventListener('click', openShortcutHelp);
+        shortcutCloseButton.addEventListener('click', closeShortcutHelp);
+        shortcutOverlay.addEventListener('click', function(e) {
+            if (e.target === shortcutOverlay) {
+                closeShortcutHelp();
+            }
+        });
+        shortcutDialog.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+        document.addEventListener('keydown', handleMapShortcut);
 
         document.querySelectorAll('.filter-cb').forEach(function(cb) {
             cb.addEventListener('change', applyFilters);
