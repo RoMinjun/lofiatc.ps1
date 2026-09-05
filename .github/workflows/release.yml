@@ -1,0 +1,87 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Test and publish release artifacts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate semantic version tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Release tags must use the form vMAJOR.MINOR.PATCH. Received: $env:GITHUB_REF_NAME"
+          }
+
+          $releaseCommit = git rev-parse "$($env:GITHUB_REF_NAME)^{commit}"
+          git merge-base --is-ancestor $releaseCommit origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw "Stable release tags must point to a commit on main."
+          }
+
+      - name: Install Pester
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.5.0 -Force
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          $env:LOFIATC_TEST_MODE = '1'
+          Invoke-Pester ./tests -CI
+
+      - name: Build versioned release archive and checksums
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $version = $tag.Substring(1)
+          $distRoot = Join-Path $PWD 'dist'
+          $packageName = "lofiatc-$tag"
+          $packageRoot = Join-Path $distRoot $packageName
+          New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
+
+          foreach ($path in @('lofiatc.ps1', 'atc_sources.csv', 'liveatc_sources.csv', 'modules', 'templates', 'install.ps1', 'uninstall.ps1', 'packaging')) {
+            Copy-Item -LiteralPath (Join-Path $PWD $path) -Destination $packageRoot -Recurse -Force
+          }
+
+          Update-ModuleManifest -Path (Join-Path $packageRoot 'packaging/LofiATC/LofiATC.psd1') -ModuleVersion $version
+
+          $archiveName = "$packageName.zip"
+          $archivePath = Join-Path $distRoot $archiveName
+          Compress-Archive -Path $packageRoot -DestinationPath $archivePath -CompressionLevel Optimal
+          $archiveHash = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$archiveHash  $archiveName" | Set-Content -Path "$archivePath.sha256" -Encoding ascii -NoNewline
+
+          $installerPath = Join-Path $distRoot 'install.ps1'
+          Copy-Item -LiteralPath (Join-Path $PWD 'install.ps1') -Destination $installerPath
+          $installerHash = (Get-FileHash -Path $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$installerHash  install.ps1" | Set-Content -Path "$installerPath.sha256" -Encoding ascii -NoNewline
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          gh release create $tag `
+            "dist/lofiatc-$tag.zip" `
+            "dist/lofiatc-$tag.zip.sha256" `
+            'dist/install.ps1' `
+            'dist/install.ps1.sha256' `
+            --verify-tag `
+            --generate-notes `
+            --title $tag
