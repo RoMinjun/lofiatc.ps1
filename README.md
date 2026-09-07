@@ -537,7 +537,7 @@ In persistent mode (`-ShowMap -KeepOpen` or `-Persistent`), the map also support
 | `/` | Focus airport search |
 | `Escape` | Clear search or close the active panel |
 | `R` | Play a random channel |
-| `Space` | Stop or restart ATC |
+| `Space` | Stop or resume ATC without changing lofi playback |
 | `L` | Stop or restart lofi |
 | `F` | Toggle the active channel favorite |
 | `?` | Show or hide shortcut help |

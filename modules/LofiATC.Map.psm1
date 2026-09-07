@@ -152,7 +152,7 @@ Function Invoke-MapPlaybackAction {
             $normalizedAction = 'stop-atc'
         }
         else {
-            $normalizedAction = 'restart'
+            $normalizedAction = 'resume-atc'
         }
     }
 
@@ -531,7 +531,7 @@ Function Invoke-MapPlaybackAction {
             }
         }
 
-        'restart' {
+        { $_ -in @('restart', 'resume-atc') } {
             if (-not $script:CurrentMapSelection) {
                 throw 'No channel is currently selected.'
             }
@@ -554,8 +554,11 @@ Function Invoke-MapPlaybackAction {
                 throw 'Could not find the current channel in the source list.'
             }
 
-            Stop-ManagedProcess -Process $script:CurrentLofiProcess
-            $script:CurrentLofiProcess = $null
+            $resumeATC = $normalizedAction -eq 'resume-atc'
+            if (-not $resumeATC) {
+                Stop-ManagedProcess -Process $script:CurrentLofiProcess
+                $script:CurrentLofiProcess = $null
+            }
 
             $started = Invoke-MapChannelSelection `
                 -Selection @{ ICAO = $current.ICAO; ChannelIndex = $channelIndex } `
@@ -563,7 +566,7 @@ Function Invoke-MapPlaybackAction {
                 -Player $Player `
                 -ATCVolume $ATCVolume `
                 -IncludeWebcamIfAvailable:$IncludeWebcamIfAvailable `
-                -NoLofiMusic:$NoLofiMusic `
+                -NoLofiMusic:($NoLofiMusic -or $resumeATC) `
                 -PlayLofiGirlVideo:$PlayLofiGirlVideo `
                 -LofiMusicUrl $LofiMusicUrl `
                 -LofiVolume $LofiVolume `
@@ -573,12 +576,12 @@ Function Invoke-MapPlaybackAction {
 
             return @{
                 ok      = $true
-                message = "Restarted $($started.ICAO) — $($started.Channel)"
+                message = "Started $($started.ICAO) — $($started.Channel)"
                 icao    = $started.ICAO
                 channel = $started.Channel
                 airport = $started.Airport
                 webcam  = $started.Webcam
-                lofi    = $started.Lofi
+                lofi    = [bool](Test-ManagedProcessAlive -Process $script:CurrentLofiProcess)
                 atc     = $true
             }
         }
