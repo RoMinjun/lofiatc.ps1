@@ -1009,12 +1009,7 @@
             })
             .then(function(data) {
                 if (data && data.ok) {
-                    if (el) {
-                        el.textContent = data.favorited ? '★ Remove favorite' : '☆ Add favorite';
-                        el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
-                        el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
-                        el.classList.toggle('active', !!data.favorited);
-                    }
+                    syncCurrentFavoriteControl(data);
 
                     showToast(data.message || 'Favorite updated.', false);
                 } else {
@@ -1038,12 +1033,7 @@
             })
             .then(function(data) {
                 if (data && data.ok) {
-                    if (el) {
-                        el.textContent = data.favorited ? '★ Remove airport favorite' : '☆ Add airport favorite';
-                        el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
-                        el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
-                        el.classList.toggle('active', !!data.favorited);
-                    }
+                    syncCurrentFavoriteControl(data);
 
                     showToast(data.message || 'Airport favorite updated.', false);
                 } else {
@@ -1057,18 +1047,59 @@
         }
 
         function syncCurrentFavoriteControl(data) {
-            if (!data || !data.icao || !data.channel) return;
+            if (!data || !data.ok || !Array.isArray(data.favorites)) return;
 
-            document.querySelectorAll('.favorite-link[data-icao][data-channel]').forEach(function(el) {
-                if (el.getAttribute('data-icao') !== data.icao || el.getAttribute('data-channel') !== data.channel) {
-                    return;
+            allMapItems.forEach(function(item) {
+                var m = item.data;
+                var favorites = data.favorites.filter(function(f) {
+                    return f.ICAO.toUpperCase() === m.icao.toUpperCase();
+                });
+                var content = document.createElement('div');
+                content.innerHTML = (m.airportFavHtml || '') + (m.desc || '');
+                content.querySelectorAll('.favorite-link, .airport-favorite-link').forEach(function(el) {
+                    var airport = el.classList.contains('airport-favorite-link');
+                    var channel = airport ? '__AIRPORT__' : el.getAttribute('data-channel');
+                    var active = favorites.some(function(f) {
+                        return f.Channel.toUpperCase() === channel.toUpperCase();
+                    });
+                    el.textContent = (active ? '★ Remove ' : '☆ Add ') + (airport ? 'airport favorite' : 'favorite');
+                    el.setAttribute('data-favorited', String(active));
+                    el.setAttribute('aria-pressed', String(active));
+                    el.classList.toggle('active', active);
+                });
+                var airportRow = content.querySelector('.airport-favorite-row');
+                var airportHtml = airportRow ? airportRow.outerHTML : '';
+                if (airportRow) airportRow.remove();
+                var desc = content.innerHTML;
+                var count = favorites.reduce(function(sum, f) { return sum + Number(f.Count || 0); }, 0);
+                if (m.airportFavHtml === airportHtml && m.desc === desc && m.favCount === count) return;
+
+                var popup = item.layer.getPopup();
+                var popupElement = popup && popup.getElement();
+                var focused = document.activeElement;
+                var focusIndex = popupElement ? Array.prototype.indexOf.call(popupElement.querySelectorAll('button, a'), focused) : -1;
+                m.airportFavHtml = airportHtml;
+                m.desc = desc;
+                m.favCount = count;
+                m.isFav = count > 0;
+                var visual = getMarkerVisual(m);
+                item.cat = visual.cat;
+                item.color = visual.color;
+                item.radius = visual.radius;
+                if (item !== currentPlayingItem) {
+                    setAirportMarkerStyle(item, { color: visual.color, radius: visual.radius, fillOpacity: 0.7, weight: 2 });
                 }
-
-                el.textContent = data.favorited ? '★ Remove favorite' : '☆ Add favorite';
-                el.setAttribute('data-favorited', data.favorited ? 'true' : 'false');
-                el.setAttribute('aria-pressed', data.favorited ? 'true' : 'false');
-                el.classList.toggle('active', !!data.favorited);
+                item.layer.setPopupContent(buildMarkerPopupHtml(m, visual.color));
+                if (focusIndex >= 0 && popup.getElement()) {
+                    var replacement = popup.getElement().querySelectorAll('button, a')[focusIndex];
+                    if (replacement) replacement.focus();
+                }
             });
+            applyFilters();
+            if (!document.activeElement || document.activeElement === document.body) {
+                var control = document.getElementById('np-favorite');
+                if (control) control.focus();
+            }
         }
 
         function toggleCurrentFavorite() {

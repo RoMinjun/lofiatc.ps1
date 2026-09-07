@@ -1151,6 +1151,20 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             @(Get-Favorite -path $script:favoritesPath).Count | Should -Be 0
         }
 
+        It 'returns confirmed favorites including other channels and airport entries' {
+            Add-Favorite -path $script:favoritesPath -ICAO 'EHAM' -Channel 'Approach'
+            Add-Favorite -path $script:favoritesPath -ICAO 'EHAM' -Channel '__AIRPORT__'
+            foreach ($expectedCount in @(3, 2, 3, 2)) {
+                $result = Invoke-MapPlaybackAction -Action 'favorite-toggle' -AtcSources $script:mapAtcSources -ICAO 'EHAM' -ChannelIndex 0 -FavoritesPath $script:favoritesPath
+                @($result.favorites).Count | Should -Be $expectedCount
+                @($result.favorites.Channel) | Should -Contain 'Approach'
+                @($result.favorites.Channel) | Should -Contain '__AIRPORT__'
+            }
+            $result = Invoke-MapPlaybackAction -Action 'airport-favorite-toggle' -AtcSources $script:mapAtcSources -ICAO 'EHAM' -FavoritesPath $script:favoritesPath
+            @($result.favorites).Count | Should -Be 1
+            $result.favorites[0].Channel | Should -Be 'Approach'
+        }
+
         It 'requires ICAO for channel favorite actions' {
             {
                 Invoke-MapPlaybackAction `
