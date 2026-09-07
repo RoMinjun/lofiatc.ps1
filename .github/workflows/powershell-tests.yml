@@ -54,12 +54,12 @@ jobs:
       - name: Install Pester
         shell: pwsh
         run: |
-          Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -SkipPublisherCheck -Scope CurrentUser
-          Import-Module Pester -MinimumVersion 5.5.0 -Force
+          ./tools/Install-CIPester.ps1
 
       - name: Run Pester tests
         shell: pwsh
         run: |
+          Import-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -ErrorAction Stop
           $env:LOFIATC_TEST_MODE = '1'
           Invoke-Pester ./tests -CI
 
@@ -81,12 +81,12 @@ jobs:
       - name: Install Pester
         shell: powershell
         run: |
-          Install-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -SkipPublisherCheck -Scope CurrentUser
-          Import-Module Pester -MinimumVersion 5.5.0 -Force
+          ./tools/Install-CIPester.ps1
 
       - name: Run Pester tests
         shell: powershell
         run: |
+          Import-Module Pester -MinimumVersion 5.5.0 -MaximumVersion 5.99.99 -Force -ErrorAction Stop
           $env:LOFIATC_TEST_MODE = '1'
           Invoke-Pester ./tests -CI
 
