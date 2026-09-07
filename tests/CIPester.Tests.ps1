@@ -4,7 +4,7 @@ BeforeAll {
 
 Describe 'CI Pester dependency setup' {
     BeforeEach {
-        $script:setupCalls = 0
+        $setupState = @{ Calls = 0 }
         Mock Install-Module {}
         Mock Import-Module { [pscustomobject]@{ Version = [version]'5.7.1' } }
         Mock Start-Sleep {}
@@ -25,12 +25,12 @@ Describe 'CI Pester dependency setup' {
     ) {
         param($Stage)
         Mock $Stage {
-            $script:setupCalls++
-            if ($script:setupCalls -eq 1) { throw 'Temporary module lookup failure' }
+            $setupState.Calls++
+            if ($setupState.Calls -eq 1) { throw 'Temporary module lookup failure' }
             [pscustomobject]@{ Version = [version]'5.7.1' }
         }
         & $setupScript
-        $script:setupCalls | Should -Be 2
+        $setupState.Calls | Should -Be 2
         Should -Invoke Start-Sleep -Times 1 -Exactly -ParameterFilter { $Seconds -eq 10 }
     }
 
