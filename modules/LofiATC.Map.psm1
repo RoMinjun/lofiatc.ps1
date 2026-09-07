@@ -432,6 +432,7 @@ Function Invoke-MapPlaybackAction {
 
                 return @{
                     ok        = $true
+                    favorites = @(Get-Favorite -path $FavoritesPath)
                     favorited = $false
                     icao      = $ICAO
                     channel   = $channel
@@ -447,6 +448,7 @@ Function Invoke-MapPlaybackAction {
 
             return @{
                 ok        = $true
+                favorites = @(Get-Favorite -path $FavoritesPath)
                 favorited = $true
                 icao      = $ICAO
                 channel   = $channel
@@ -486,6 +488,7 @@ Function Invoke-MapPlaybackAction {
 
                 return @{
                     ok        = $true
+                    favorites = @(Get-Favorite -path $FavoritesPath)
                     favorited = $false
                     icao      = $ICAO
                     airport   = $airportName
@@ -501,6 +504,7 @@ Function Invoke-MapPlaybackAction {
 
             return @{
                 ok        = $true
+                favorites = @(Get-Favorite -path $FavoritesPath)
                 favorited = $true
                 icao      = $ICAO
                 airport   = $airportName

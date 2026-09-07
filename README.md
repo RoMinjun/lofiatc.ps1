@@ -539,7 +539,7 @@ In persistent mode (`-ShowMap -KeepOpen` or `-Persistent`), the map also support
 | `R` | Play a random channel |
 | `Space` | Stop or restart ATC |
 | `L` | Stop or restart lofi |
-| `F` | Toggle the active channel favorite |
+| `F` | Toggle the active channel favorite; markers, filters, and popup controls update immediately |
 | `?` | Show or hide shortcut help |
 
 ### Useful combinations
