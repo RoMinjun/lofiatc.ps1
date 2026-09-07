@@ -1300,6 +1300,51 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
             }
         }
 
+        It 'preserves lofi across repeated ATC toggles when lofi is <State>' -TestCases @(
+            @{ State = 'running'; Running = $true; Disabled = $false }
+            @{ State = 'stopped'; Running = $false; Disabled = $false }
+            @{ State = 'disabled'; Running = $false; Disabled = $true }
+        ) {
+            param($State, $Running, $Disabled)
+            $script:CurrentMapSelection = $script:mapAtcSources[0]
+            if ($Running) { $script:CurrentLofiProcess = [System.Diagnostics.Process]::new() }
+            $originalLofi = $script:CurrentLofiProcess
+            Mock Test-ManagedProcessAlive { param($Process) $null -ne $Process }
+
+            foreach ($iteration in 1..3) {
+                $resumed = Invoke-MapPlaybackAction -Action 'toggle-atc' -AtcSources $script:mapAtcSources -Player 'MPV' -NoLofiMusic:$Disabled
+                $resumed.atc | Should -BeTrue
+                $resumed.lofi | Should -Be $Running
+                $script:CurrentLofiProcess | Should -Be $originalLofi
+                $stopped = Invoke-MapPlaybackAction -Action 'toggle-atc' -AtcSources $script:mapAtcSources -Player 'MPV' -NoLofiMusic:$Disabled
+                $stopped.atc | Should -BeFalse
+                $script:CurrentLofiProcess | Should -Be $originalLofi
+            }
+            Should -Invoke Start-PlayerProcess -Times 3 -Exactly
+            Should -Invoke Start-PlayerProcess -Times 0 -Exactly -ParameterFilter { $Url -ne 'http://example.test/eham-tower' }
+            if ($Running) {
+                Should -Invoke Stop-ManagedProcess -Times 0 -Exactly -ParameterFilter { [object]::ReferenceEquals($Process, $originalLofi) }
+            }
+        }
+
+        It 'resumes through recovery with the selected volume' {
+            $script:CurrentMapSelection = $script:mapAtcSources[0]
+            $script:CurrentATCVolume = 37
+            Mock Start-ATCPlaybackWithRecovery { [System.Diagnostics.Process]::new() }
+            Invoke-MapPlaybackAction -Action 'toggle-atc' -AtcSources $script:mapAtcSources -Player 'MPV' -AutoRecover -RetryCount 2 -RecoverAlternateChannel
+            Should -Invoke Start-ATCPlaybackWithRecovery -Times 1 -Exactly -ParameterFilter { $Volume -eq 37 -and $RetryCount -eq 2 -and $RecoverAlternateChannel }
+            Should -Invoke Start-PlayerProcess -Times 0 -Exactly
+        }
+
+        It 'reports missing selection and failed ATC starts without starting lofi' {
+            { Invoke-MapPlaybackAction -Action 'toggle-atc' } | Should -Throw '*No channel*'
+            $script:CurrentMapSelection = $script:mapAtcSources[0]
+            Mock Start-PlayerProcess { throw 'Unable to start ATC player' }
+            { Invoke-MapPlaybackAction -Action 'toggle-atc' -AtcSources $script:mapAtcSources -Player 'MPV' } | Should -Throw '*Unable to start ATC player*'
+            $script:CurrentATCProcess | Should -BeNullOrEmpty
+            Should -Invoke Start-PlayerProcess -Times 1 -Exactly
+        }
+
         It 'dispatches the lofi toggle to restart stopped playback' {
             $script:CurrentLofiVolume = 37
 
