@@ -86,6 +86,7 @@ Function Initialize-LofiATCState {
     $script:CurrentLofiVolume = $null
     $script:CurrentLofiTrackResult = $null
     $script:CurrentLofiTrackCheckedAt = $null
+    $script:LofiTrackWorker = $null
     $script:LastAnnouncedLofiTrack = $null
     $script:StableLofiTrack = $null
     $script:StableLofiTrackSource = $null

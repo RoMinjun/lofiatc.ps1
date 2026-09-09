@@ -462,6 +462,106 @@ Function Get-LofiTrackOcr {
     return $script:CurrentLofiTrackResult
 }
 
+Function New-LofiTrackWorker {
+    param([string]$Source)
+
+    # A separate runspace keeps native OCR commands off the map listener thread
+    # while retaining the existing OCR URL cache and title stabilization state.
+    $state = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($name in @(
+        'Test-CommandAvailable', 'Resolve-TesseractPath', 'Resolve-LofiOcrVideoUrl',
+        'ConvertFrom-LofiTrackOcrText', 'ConvertFrom-LofiTrackOcrTsv',
+        'Resolve-StableLofiTrack', 'Write-LofiTrackUpdate', 'Get-LofiTrackOcr'
+    )) {
+        $definition = (Get-Command $name -CommandType Function).Definition
+        $state.Commands.Add([System.Management.Automation.Runspaces.SessionStateFunctionEntry]::new($name, $definition))
+    }
+    $state.Variables.Add([System.Management.Automation.Runspaces.SessionStateVariableEntry]::new('OnWindows', $script:OnWindows, ''))
+    $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($state)
+    $pipeline = [System.Management.Automation.PowerShell]::Create()
+    try {
+        $runspace.Open()
+        $pipeline.Runspace = $runspace
+        return @{
+            Source = $Source
+            Runspace = $runspace
+            Pipeline = $pipeline
+            Handle = $null
+            StartedAt = $null
+            CheckedAt = $null
+            Result = $null
+        }
+    }
+    catch {
+        $pipeline.Dispose()
+        $runspace.Dispose()
+        throw
+    }
+}
+
+Function Stop-LofiTrackWorker {
+    $worker = $script:LofiTrackWorker
+    $script:LofiTrackWorker = $null
+    if (-not $worker) { return }
+
+    try {
+        # Stopping the pipeline also cancels its native command; Get-LofiTrackOcr's
+        # finally block removes its temporary image and OCR output.
+        $worker.Pipeline.Stop()
+    }
+    finally {
+        $worker.Pipeline.Dispose()
+        $worker.Runspace.Dispose()
+    }
+}
+
+Function Get-LofiTrackOcrAsync {
+    param([string]$Source)
+
+    try {
+        if ($script:LofiTrackWorker -and $script:LofiTrackWorker.Source -ne $Source) {
+            Stop-LofiTrackWorker
+        }
+        if (-not $script:LofiTrackWorker) {
+            $script:LofiTrackWorker = New-LofiTrackWorker -Source $Source
+        }
+        $worker = $script:LofiTrackWorker
+
+        if ($worker.Handle) {
+            if ($worker.Handle.IsCompleted) {
+                $results = @($worker.Pipeline.EndInvoke($worker.Handle))
+                $worker.Handle = $null
+                if ($worker.Pipeline.HadErrors) {
+                    throw $worker.Pipeline.Streams.Error[0].Exception
+                }
+                if ($results.Count -eq 0) { throw 'Lofi track detection returned no result.' }
+                $worker.Result = $results[-1]
+                $worker.CheckedAt = [datetime]::UtcNow
+                Write-LofiTrackUpdate -Track $worker.Result.track
+            }
+            elseif (([datetime]::UtcNow - $worker.StartedAt).TotalSeconds -ge 30) {
+                throw 'Lofi track detection timed out. Playback controls remain available.'
+            }
+        }
+
+        if (-not $worker.Handle -and (-not $worker.CheckedAt -or ([datetime]::UtcNow - $worker.CheckedAt).TotalSeconds -ge 8)) {
+            $worker.Pipeline.Commands.Clear()
+            $worker.Pipeline.Streams.ClearStreams()
+            $null = $worker.Pipeline.AddCommand('Get-LofiTrackOcr').AddParameter('Source', $Source)
+            $worker.StartedAt = [datetime]::UtcNow
+            $worker.Handle = $worker.Pipeline.BeginInvoke()
+        }
+
+        if ($worker.Result) { return $worker.Result }
+        return @{ ok = $true; available = $true; track = $null; message = 'Detecting Lofi track...' }
+    }
+    catch {
+        $message = $_.Exception.Message
+        Stop-LofiTrackWorker
+        return @{ ok = $false; available = $true; track = $null; message = $message }
+    }
+}
+
 # Function to check if the selected player is available
 Function Test-Player {
     param (
