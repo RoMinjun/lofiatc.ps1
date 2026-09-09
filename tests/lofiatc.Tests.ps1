@@ -32,6 +32,52 @@ Describe 'lofiatc.ps1 helper functions' {
     }
 
     Context 'Resolve-StreamUrl' {
+        BeforeAll {
+            function yt-dlp {
+                $script:resolverArguments = @($args)
+                return $script:resolverOutput
+            }
+            function youtube-dl {
+                $script:resolverArguments = @($args)
+                return $script:resolverOutput
+            }
+        }
+
+        BeforeEach {
+            $script:resolverOutput = 'https://example.test/live.m3u8'
+            $script:resolverArguments = @()
+        }
+
+        It 'requests one combined stream and prefers HLS for YouTube playback' {
+            Resolve-StreamUrl 'https://www.youtube.com/watch?v=test' | Should -Be $script:resolverOutput
+            $script:resolverArguments | Should -Contain '--no-playlist'
+            $formatIndex = [array]::IndexOf($script:resolverArguments, '-f')
+            $formatIndex | Should -BeGreaterOrEqual 0
+            $script:resolverArguments[$formatIndex + 1] | Should -Be 'best[protocol^=m3u8]/best'
+        }
+
+        It 'uses the same single-stream format with youtube-dl fallback' {
+            Mock Get-Command { $null } -ParameterFilter { $Name -eq 'yt-dlp' }
+            Resolve-StreamUrl 'https://youtu.be/test' | Should -Be $script:resolverOutput
+            $script:resolverArguments | Should -Contain 'best[protocol^=m3u8]/best'
+        }
+
+        It 'does not concatenate separate audio and video URLs' {
+            $script:resolverOutput = @('https://example.test/video', 'https://example.test/audio')
+            $source = 'https://youtu.be/test'
+            Resolve-StreamUrl $source -WarningAction SilentlyContinue | Should -Be $source
+        }
+
+        It 'ignores blank extractor output lines' {
+            $script:resolverOutput = @('', ' https://example.test/live.m3u8 ', '')
+            Resolve-StreamUrl 'https://youtu.be/test' | Should -Be 'https://example.test/live.m3u8'
+        }
+
+        It 'preserves the source when extraction returns no URL' {
+            $script:resolverOutput = $null
+            Resolve-StreamUrl 'https://youtu.be/test' | Should -Be 'https://youtu.be/test'
+        }
+
         It 'converts LiveATC .pls links to d.liveatc.net URLs' {
             Resolve-StreamUrl 'https://www.liveatc.net/play/klax_twr.pls' | Should -Be 'http://d.liveatc.net/klax_twr'
         }
