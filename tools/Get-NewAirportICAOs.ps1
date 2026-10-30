@@ -42,7 +42,7 @@ $remoteICAOs = foreach ($letterCode in 97..122) {
 
 $missingICAOs = @($remoteICAOs | Sort-Object -Unique | Where-Object { -not $baseICAOs.ContainsKey($_) })
 if ($missingICAOs.Count -gt 0) {
-    './fetchtest.ps1 -ICAO ' + ($missingICAOs -join ' ')
+    './fetchtest.ps1 -ICAO ' + ($missingICAOs -join ',')
 }
 else {
     Write-Host 'No new ICAOs found.'
