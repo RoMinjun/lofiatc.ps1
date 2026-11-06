@@ -203,6 +203,7 @@ Function Invoke-MapPlaybackAction {
             }
 
             if (-not (Test-ManagedProcessAlive -Process $script:CurrentLofiProcess)) {
+                Stop-LofiTrackWorker
                 return @{
                     ok        = $true
                     available = $true
@@ -211,7 +212,7 @@ Function Invoke-MapPlaybackAction {
                 }
             }
 
-            return Get-LofiTrackOcr -Source $LofiMusicUrl
+            return Get-LofiTrackOcrAsync -Source $LofiMusicUrl
         }
 
         'playback-status' {
@@ -235,6 +236,7 @@ Function Invoke-MapPlaybackAction {
         }
 
         'stop-lofi' {
+            Stop-LofiTrackWorker
             Stop-ManagedProcess -Process $script:CurrentLofiProcess
 
             $script:CurrentLofiProcess = $null
@@ -513,6 +515,7 @@ Function Invoke-MapPlaybackAction {
         }
 
         'stop-all' {
+            Stop-LofiTrackWorker
             Set-ATCRecoveryStopped -Message 'All playback was stopped by the user.'
             Stop-ManagedProcess -Process $script:CurrentATCProcess
             Stop-ManagedProcess -Process $script:CurrentWebcamProcess
@@ -1517,6 +1520,12 @@ Function Start-PersistentATCMapSession {
             while (-not $contextTask.IsCompleted) {
                 Start-Sleep -Milliseconds 100
 
+                # Enforce the OCR deadline even if the browser stops polling.
+                if ($script:LofiTrackWorker -and $script:LofiTrackWorker.Handle -and
+                    ([datetime]::UtcNow - $script:LofiTrackWorker.StartedAt).TotalSeconds -ge 30) {
+                    $null = Get-LofiTrackOcrAsync -Source $script:LofiTrackWorker.Source
+                }
+
                 if ($AutoRecover -and $script:CurrentMapSelection) {
                     $recoveryState = Update-ATCPlaybackRecovery `
                         -Player $Player `
@@ -1699,6 +1708,7 @@ Function Start-PersistentATCMapSession {
         }
     }
     finally {
+        Stop-LofiTrackWorker
         Stop-ManagedProcess -Process $script:CurrentATCProcess
         Stop-ManagedProcess -Process $script:CurrentWebcamProcess
         Stop-ManagedProcess -Process $script:CurrentLofiProcess

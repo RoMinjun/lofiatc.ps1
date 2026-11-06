@@ -1415,7 +1415,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
         }
 
         It 'returns OCR track data only when Lofi track display is enabled' {
-            Mock Get-LofiTrackOcr {
+            Mock Get-LofiTrackOcrAsync {
                 @{ ok = $true; available = $true; track = 'artist - title'; message = 'Lofi track detected.' }
             }
             Mock Test-ManagedProcessAlive { $true }
@@ -1431,7 +1431,7 @@ level	page_num	block_num	par_num	line_num	word_num	left	top	width	height	conf	te
 
             $disabled.available | Should -BeFalse
             $enabled.track | Should -Be 'artist - title'
-            Should -Invoke Get-LofiTrackOcr -Times 1 -Exactly
+            Should -Invoke Get-LofiTrackOcrAsync -Times 1 -Exactly
         }
 
         It 'keeps existing lofi playback when switching airport channels' {
