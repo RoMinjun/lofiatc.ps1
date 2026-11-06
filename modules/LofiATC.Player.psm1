@@ -133,14 +133,22 @@ Function Resolve-StreamUrl {
 
     if ($url -match 'youtu(be)?\.com|youtu\.be') {
         try {
+            $resolved = $null
+            # Players receive one URL: prefer a continuous HLS stream with both
+            # audio and video, rather than separate tracks or live DASH fragments.
+            $format = 'best[protocol^=m3u8]/best'
             if (Get-Command yt-dlp -ErrorAction SilentlyContinue) {
-                $resolved = yt-dlp -g --no-warnings --skip-download -- $url 2>$null
+                $resolved = yt-dlp -g --no-warnings --skip-download --no-playlist -f $format -- $url 2>$null
             }
             elseif (Get-Command youtube-dl -ErrorAction SilentlyContinue) {
-                $resolved = youtube-dl -g --no-warnings --skip-download -- $url 2>$null
+                $resolved = youtube-dl -g --no-warnings --skip-download --no-playlist -f $format -- $url 2>$null
             }
-            if ($resolved) {
-                $resolvedUrl = ($resolved -join '')
+            $mediaUrls = @($resolved | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+            if ($mediaUrls.Count -eq 1) {
+                $resolvedUrl = ([string]$mediaUrls[0]).Trim()
+            }
+            elseif ($mediaUrls.Count -gt 1) {
+                Write-Warning 'YouTube resolution returned multiple media URLs. Falling back to original URL.'
             }
         }
         catch {

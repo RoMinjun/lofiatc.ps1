@@ -600,6 +600,7 @@ lofiatc -CheckDependencies
 - **fzf not working:** confirm `fzf` is installed and in `PATH`. Run `fzf --version`.  
 - **yt-dlp errors:** update it to the latest version and retry.
 - **YouTube or webcam streams not loading in player:** make sure `yt-dlp` is up to date; recent upstream changes may require extra packages depending on your platform.
+  LofiATC requests a single combined audio/video URL and prefers HLS for continuous playback. If an extractor returns multiple URLs, LofiATC falls back to the original source URL instead of passing an invalid concatenated URL to the player.
 - **Map opens slowly:** use `-ShowMap -NoWeather` to skip live weather fetch and load faster.
 - **Map reports that local ports are unavailable:** another program or a Windows reserved-port range may overlap the map listener. LofiATC automatically searches beyond short reserved ranges before failing.
 - **Airport data is unavailable:** the first map or nearby-airport request needs network access. After a successful request, LofiATC keeps a seven-day user cache and can use stale data during an outage. Run `lofiatc -CheckDependencies` for its status.
